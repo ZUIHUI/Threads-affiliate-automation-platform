@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Threads 聯盟自動化</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Main navigation">
+        <div class="brand-block">
+          <div class="brand-mark" aria-hidden="true">◎</div>
+          <div>
+            <h1>Threads 聯盟自動化</h1>
+            <p>creator_lab</p>
+          </div>
+        </div>
+
+        <nav class="nav-list">
+          <a href="#overview" class="nav-item is-active">總覽</a>
+          <a href="#factory" class="nav-item">內容工廠</a>
+          <a href="#schedule" class="nav-item">發佈排程</a>
+          <a href="#risk" class="nav-item">合規審核</a>
+          <a href="#affiliate" class="nav-item">聯盟管理</a>
+          <a href="#analytics" class="nav-item">收益分析</a>
+          <a href="#prompt" class="nav-item">Prompt</a>
+          <a href="#settings" class="nav-item">設定</a>
+        </nav>
+
+        <div class="workspace-card">
+          <span>專案版</span>
+          <strong>使用中</strong>
+          <div class="meter"><span style="width:78%"></span></div>
+          <small>配額 78%</small>
+        </div>
+      </aside>
+
+      <main class="main" id="overview">
+        <header class="topbar">
+          <button class="icon-button" type="button" aria-label="Toggle sidebar">☰</button>
+          <div class="view-title">
+            <h2>總覽</h2>
+            <span>資料更新於 <strong id="updatedAt">--</strong></span>
+          </div>
+          <div class="topbar-actions">
+            <span class="runtime-pill" id="runtimePill">Loading</span>
+            <button class="button secondary" id="generateBtn" type="button">AI 產草稿</button>
+            <button class="button secondary" id="autoGenerateBtn" type="button">產生並排程</button>
+            <button class="button" id="runBtn" type="button">一鍵發佈</button>
+          </div>
+        </header>
+
+        <section class="ops-grid">
+          <section class="panel content-factory" id="factory">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">內容工廠</p>
+                <h3>內容佇列</h3>
+              </div>
+              <button class="button secondary" id="refreshBtn" type="button">Refresh</button>
+            </div>
+
+            <div class="mini-kpi-grid" id="factoryMetrics"></div>
+
+            <div class="table-wrap" id="schedule">
+              <table>
+                <thead>
+                  <tr>
+                    <th>內容</th>
+                    <th>狀態</th>
+                    <th>主題</th>
+                    <th>關聯連結</th>
+                    <th>預計發佈</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="postRows"></tbody>
+              </table>
+            </div>
+
+            <div class="workflow-strip" aria-label="AI content workflow">
+              <div><span>01</span>主題輸入</div>
+              <div><span>02</span>AI 生成</div>
+              <div><span>03</span>內容優化</div>
+              <div><span>04</span>合規檢查</div>
+              <div><span>05</span>排程發佈</div>
+            </div>
+          </section>
+
+          <section class="panel risk-panel" id="risk">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">合規 / 風險審核</p>
+                <h3>待處理 <span id="riskCount">0</span></h3>
+              </div>
+            </div>
+
+            <div class="risk-tabs" id="riskSummary"></div>
+            <div class="risk-list" id="riskRows"></div>
+
+            <div class="risk-distribution">
+              <div class="donut" id="riskDonut"><strong>0</strong><span>總數</span></div>
+              <div class="legend" id="riskLegend"></div>
+            </div>
+          </section>
+
+          <section class="panel revenue-panel" id="affiliate">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">聯盟收益管道</p>
+                <h3>收益與追蹤</h3>
+              </div>
+            </div>
+
+            <div class="revenue-cards" id="revenueCards"></div>
+            <div class="funnel-flow" id="revenueFunnel"></div>
+
+            <div class="link-table" id="analytics">
+              <div class="link-table-head">
+                <span>熱門聯盟連結</span>
+                <span>點擊</span>
+                <span>轉換</span>
+                <span>收益</span>
+              </div>
+              <div id="linkList"></div>
+            </div>
+          </section>
+        </section>
+
+        <section class="lower-grid">
+          <section class="panel compose-panel">
+            <div class="panel-header compact">
+              <div>
+                <p class="eyebrow">Compose</p>
+                <h3>新增貼文</h3>
+              </div>
+            </div>
+            <form id="composeForm" class="compose-form">
+              <label>
+                <span>活動</span>
+                <select id="campaignSelect" name="campaignId"></select>
+              </label>
+              <label>
+                <span>產品</span>
+                <select id="productSelect" name="productId"></select>
+              </label>
+              <label>
+                <span>Topic tag</span>
+                <input id="topicTag" name="topicTag" type="text" maxlength="50" />
+              </label>
+              <label>
+                <span>排程時間</span>
+                <input id="scheduledAt" name="scheduledAt" type="datetime-local" />
+              </label>
+              <label class="wide">
+                <span>貼文內容</span>
+                <textarea id="postText" name="text" maxlength="500" rows="4"></textarea>
+              </label>
+              <label class="check-row">
+                <input id="approved" name="approved" type="checkbox" />
+                <span>直接進入排程</span>
+              </label>
+              <button class="button compose-submit" type="submit">Create post</button>
+            </form>
+          </section>
+
+          <section class="panel prompt-panel" id="prompt">
+            <div class="panel-header compact">
+              <div>
+                <p class="eyebrow">Prompt System</p>
+                <h3>發文 prompt 範本</h3>
+              </div>
+            </div>
+            <div class="prompt-controls">
+              <label>
+                <span>主題</span>
+                <input id="topicInput" type="text" value="AI 自動化聯盟行銷" />
+              </label>
+              <button class="button secondary" id="topicGenerateBtn" type="button">依主題產 5 則</button>
+            </div>
+            <pre id="promptTemplate"></pre>
+          </section>
+        </section>
+
+        <section class="panel campaign-panel" id="settings">
+          <div class="panel-header compact">
+            <div>
+              <p class="eyebrow">Campaigns</p>
+              <h3>活動與產品</h3>
+            </div>
+          </div>
+          <div class="campaign-list" id="campaignList"></div>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="/console.js"></script>
+  </body>
+</html>

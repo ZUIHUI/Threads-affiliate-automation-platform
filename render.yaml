@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: threads-affiliate-ops
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4173
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: ENABLE_WORKER
+        value: "true"
+      - key: THREADS_GRAPH_BASE
+        value: https://graph.threads.net/v1.0
+      - key: THREADS_DRY_RUN
+        value: "true"
+      - key: THREADS_USER_ID
+        sync: false
+      - key: THREADS_ACCESS_TOKEN
+        sync: false
+      - key: THREADS_PUBLISH_DELAY_MS
+        value: "30000"
+      - key: AI_DRAFT_PROVIDER
+        value: openai
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5.2
+      - key: OPENAI_BASE_URL
+        value: https://api.openai.com/v1
+      - key: DEFAULT_DISCLOSURE_TEXT
+        value: 含聯盟連結
+      - key: DEFAULT_UTM_SOURCE
+        value: threads
+      - key: DEFAULT_UTM_MEDIUM
+        value: affiliate_social
