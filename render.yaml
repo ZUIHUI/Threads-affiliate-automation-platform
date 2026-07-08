@@ -10,6 +10,12 @@ services:
         value: production
       - key: PORT
         value: 4173
+      - key: DATABASE_URL
+        fromDatabase:
+          name: threads-affiliate-ops-db
+          property: connectionString
+      - key: DATABASE_AUTO_MIGRATE
+        value: "true"
       - key: PUBLIC_BASE_URL
         sync: false
       - key: ENABLE_WORKER
@@ -38,3 +44,7 @@ services:
         value: threads
       - key: DEFAULT_UTM_MEDIUM
         value: affiliate_social
+
+databases:
+  - name: threads-affiliate-ops-db
+    plan: free

@@ -23,6 +23,9 @@ function getRuntimeConfig(env) {
     openaiBaseUrl: env.OPENAI_BASE_URL || "https://api.openai.com/v1",
     openaiApiKey: env.OPENAI_API_KEY || "",
     openaiModel: env.OPENAI_MODEL || "gpt-5.2",
+    databaseUrl: env.DATABASE_URL || "",
+    databaseAutoMigrate: asBoolean(env.DATABASE_AUTO_MIGRATE, true),
+    databaseSsl: asBoolean(env.DATABASE_SSL, false),
     defaultDisclosureText: env.DEFAULT_DISCLOSURE_TEXT || "含聯盟連結",
     defaultUtmSource: env.DEFAULT_UTM_SOURCE || "threads",
     defaultUtmMedium: env.DEFAULT_UTM_MEDIUM || "affiliate_social"

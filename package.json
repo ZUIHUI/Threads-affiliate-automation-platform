@@ -4,6 +4,9 @@
   "private": true,
   "description": "Automated Threads affiliate publishing workflow with an operations dashboard.",
   "main": "server.js",
+  "dependencies": {
+    "pg": "^8.13.1"
+  },
   "scripts": {
     "start": "node server.js",
     "test": "node tests/run-tests.js && node tests/ui-contract.js",

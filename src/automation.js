@@ -309,7 +309,7 @@ function capacityRemaining(state) {
 
 async function runAutomation(store, config, options = {}) {
   const startedAt = nowIso();
-  const state = store.read();
+  const state = await store.read();
   const run = {
     id: makeId("run"),
     source: options.source || "manual",
@@ -400,7 +400,7 @@ async function runAutomation(store, config, options = {}) {
     status: run.status,
     createdAt: run.finishedAt
   });
-  store.write(state);
+  await store.write(state);
   return { run, dashboard: buildDashboard(state, config) };
 }
 

@@ -4,6 +4,7 @@ const path = require("node:path");
 const { URL } = require("node:url");
 
 const { createStore } = require("./src/store");
+const { createPostgresStore } = require("./src/postgresStore");
 const {
   buildDashboard,
   createPost,
@@ -19,8 +20,10 @@ const { getPublishingLimit } = require("./src/threadsClient");
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 const DATA_FILE = process.env.DATA_FILE || path.join(ROOT, "data", "store.json");
+const SCHEMA_FILE = path.join(ROOT, "db", "schema.sql");
 let store = null;
 let config = null;
+let storeReady = null;
 
 const CONTENT_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -44,11 +47,28 @@ function sendNoContent(res) {
   res.end();
 }
 
-function configureRuntime(options = {}) {
+function createConfiguredStore(runtimeConfig, options = {}) {
+  if (runtimeConfig.databaseUrl) {
+    return createPostgresStore({
+      connectionString: runtimeConfig.databaseUrl,
+      autoMigrate: runtimeConfig.databaseAutoMigrate,
+      ssl: runtimeConfig.databaseSsl,
+      schemaPath: options.schemaPath || SCHEMA_FILE
+    });
+  }
+  return createStore(options.dataFile || DATA_FILE);
+}
+
+async function configureRuntime(options = {}) {
   if (options.config) config = options.config;
-  if (options.store) store = options.store;
+  if (options.store) {
+    store = options.store;
+    storeReady = null;
+  }
   if (!config) config = getRuntimeConfig(options.env || process.env);
-  if (!store) store = createStore(options.dataFile || DATA_FILE);
+  if (!store) store = createConfiguredStore(config, options);
+  if (store.ready && !storeReady) storeReady = Promise.resolve(store.ready());
+  if (storeReady) await storeReady;
   return { store, config };
 }
 
@@ -100,8 +120,8 @@ async function serveStatic(req, res, pathname) {
   }
 }
 
-function readState() {
-  configureRuntime();
+async function readState() {
+  await configureRuntime();
   return store.read();
 }
 
@@ -116,22 +136,22 @@ function findPost(state, postId) {
 }
 
 async function handleApi(req, res, url) {
-  configureRuntime();
+  await configureRuntime();
   const route = url.pathname;
 
   if (req.method === "GET" && route === "/api/dashboard") {
-    sendJson(res, 200, buildDashboard(readState(), config));
+    sendJson(res, 200, buildDashboard(await readState(), config));
     return;
   }
 
   if (req.method === "GET" && route === "/api/posts") {
-    sendJson(res, 200, { posts: readState().posts });
+    sendJson(res, 200, { posts: (await readState()).posts });
     return;
   }
 
   if (req.method === "POST" && route === "/api/posts") {
     const body = await parseBody(req);
-    const result = store.update((state) => createPost(state, body, config));
+    const result = await store.update((state) => createPost(state, body, config));
     sendJson(res, 201, result);
     return;
   }
@@ -139,7 +159,7 @@ async function handleApi(req, res, url) {
   const approveMatch = route.match(/^\/api\/posts\/([^/]+)\/approve$/);
   if (req.method === "POST" && approveMatch) {
     const postId = approveMatch[1];
-    const result = store.update((state) => {
+    const result = await store.update((state) => {
       const post = findPost(state, postId);
       post.approved = true;
       if (post.status === "draft") post.status = "scheduled";
@@ -159,7 +179,7 @@ async function handleApi(req, res, url) {
   const publishNowMatch = route.match(/^\/api\/posts\/([^/]+)\/publish-now$/);
   if (req.method === "POST" && publishNowMatch) {
     const postId = publishNowMatch[1];
-    store.update((state) => {
+    await store.update((state) => {
       const post = findPost(state, postId);
       post.approved = true;
       post.scheduledAt = new Date().toISOString();
@@ -174,7 +194,7 @@ async function handleApi(req, res, url) {
 
   const validateMatch = route.match(/^\/api\/posts\/([^/]+)\/validate$/);
   if (req.method === "GET" && validateMatch) {
-    const state = readState();
+    const state = await readState();
     const post = findPost(state, validateMatch[1]);
     sendJson(res, 200, validatePost(post, config));
     return;
@@ -182,9 +202,9 @@ async function handleApi(req, res, url) {
 
   if (req.method === "POST" && route === "/api/automation/generate") {
     const body = await parseBody(req);
-    const state = readState();
+    const state = await readState();
     const result = await generateDraftsAsync(state, body, config);
-    store.write(state);
+    await store.write(state);
     sendJson(res, 201, result);
     return;
   }
@@ -198,7 +218,7 @@ async function handleApi(req, res, url) {
 
   if (req.method === "POST" && route === "/api/links") {
     const body = await parseBody(req);
-    const result = store.update((state) => upsertAffiliateLink(state, body, config));
+    const result = await store.update((state) => upsertAffiliateLink(state, body, config));
     sendJson(res, 201, result);
     return;
   }
@@ -210,7 +230,7 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === "GET" && route === "/api/export") {
-    sendJson(res, 200, readState());
+    sendJson(res, 200, await readState());
     return;
   }
 
@@ -223,11 +243,11 @@ async function handleApi(req, res, url) {
 }
 
 async function handleRedirect(req, res, url) {
-  configureRuntime();
+  await configureRuntime();
   const match = url.pathname.match(/^\/r\/([^/]+)$/);
   if (!match) return false;
   const slug = match[1];
-  const result = store.update((state) => {
+  const result = await store.update((state) => {
     const link = state.affiliateLinks.find((item) => item.slug === slug);
     if (!link) {
       const error = new Error("Tracking link not found.");
@@ -257,7 +277,7 @@ async function handleRedirect(req, res, url) {
 
 async function requestHandler(req, res) {
   try {
-    configureRuntime();
+    await configureRuntime();
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
     if (await handleRedirect(req, res, url)) return;
     if (url.pathname === "/health") {
@@ -280,8 +300,8 @@ async function requestHandler(req, res) {
 
 let workerActive = false;
 let workerStarted = false;
-function startWorker() {
-  configureRuntime();
+async function startWorker() {
+  await configureRuntime();
   if (!config.enableWorker || workerStarted) return;
   workerStarted = true;
   setInterval(async () => {
@@ -290,7 +310,7 @@ function startWorker() {
     try {
       await runAutomation(store, config, { source: "worker" });
     } catch (error) {
-      store.update((state) => {
+      await store.update((state) => {
         state.automationRuns.unshift({
           id: `run_${Date.now()}`,
           status: "failed",
@@ -312,22 +332,32 @@ function startServer(port, options = {}) {
     options = port;
     port = undefined;
   }
-  configureRuntime(options);
-  const listenPort = port ?? config.port;
-  const server = http.createServer(requestHandler);
-  return new Promise((resolve) => {
-    server.listen(listenPort, () => {
-      startWorker();
-      const address = server.address();
-      const actualPort = typeof address === "object" && address ? address.port : listenPort;
-      console.log(`Threads Affiliate Ops is running on http://localhost:${actualPort}`);
-      resolve(server);
+  return configureRuntime(options).then(() => {
+    const listenPort = port ?? config.port;
+    const server = http.createServer(requestHandler);
+    return new Promise((resolve, reject) => {
+      server.on("error", reject);
+      server.listen(listenPort, async () => {
+        try {
+          await startWorker();
+        } catch (error) {
+          reject(error);
+          return;
+        }
+        const address = server.address();
+        const actualPort = typeof address === "object" && address ? address.port : listenPort;
+        console.log(`Threads Affiliate Ops is running on http://localhost:${actualPort}`);
+        resolve(server);
+      });
     });
   });
 }
 
 if (require.main === module) {
-  startServer();
+  startServer().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
 }
 
 module.exports = {

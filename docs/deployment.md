@@ -53,10 +53,26 @@ For offline demos, set `AI_DRAFT_PROVIDER=template`.
 
 ## Database
 
-1. Create a PostgreSQL database.
-2. Run `db/schema.sql`.
-3. Migrate the JSON store adapter to PostgreSQL queries table by table.
-4. Store access tokens as secret references, not raw database values.
+Runtime persistence is enabled when `DATABASE_URL` is present.
+
+The app stores its live dashboard state in `app_settings.value` under the key
+`json_store_state`, while `db/schema.sql` also creates normalized tables for
+future reporting and webhook expansion.
+
+Required database variables:
+
+```env
+DATABASE_URL=postgresql://user:password@host:5432/database
+DATABASE_AUTO_MIGRATE=true
+DATABASE_SSL=false
+```
+
+Notes:
+
+- `DATABASE_AUTO_MIGRATE=true` runs `db/schema.sql` on startup. The schema is idempotent.
+- Set `DATABASE_SSL=true` only when your external Postgres provider requires TLS and the URL does not already include `sslmode=require`.
+- Without `DATABASE_URL`, the app falls back to the local JSON file store for development.
+- Store Threads and OpenAI tokens in platform environment variables, not in database rows.
 
 ## Threads App Setup
 
@@ -90,15 +106,17 @@ docker run --env-file .env -p 4173:4173 threads-affiliate-ops
 
 1. Create a new Railway project from this repository.
 2. Railway will use `railway.json` and the root `Dockerfile`.
-3. Add the environment variables from `.env.example`.
-4. Start with `THREADS_DRY_RUN=true`.
-5. Set `PUBLIC_BASE_URL` to the Railway public domain after the first deploy.
-6. Switch `THREADS_DRY_RUN=false` only after Threads credentials are verified.
+3. Add a PostgreSQL service to the project.
+4. Set `DATABASE_URL` to the PostgreSQL connection URL exposed by Railway.
+5. Add the remaining environment variables from `.env.example`.
+6. Start with `THREADS_DRY_RUN=true`.
+7. Set `PUBLIC_BASE_URL` to the Railway public domain after the first deploy.
+8. Switch `THREADS_DRY_RUN=false` only after Threads credentials are verified.
 
 ## Render
 
 1. Create a new Render Blueprint from this repository.
-2. Render will read `render.yaml`.
+2. Render will read `render.yaml`, create the free `threads-affiliate-ops-db`, and inject `DATABASE_URL`.
 3. Fill the `sync: false` secrets in the Render dashboard.
 4. Keep `THREADS_DRY_RUN=true` for the first smoke test.
 5. Set `PUBLIC_BASE_URL` to the Render service URL after deploy.

@@ -3,13 +3,13 @@
 
 create extension if not exists pgcrypto;
 
-create table app_settings (
+create table if not exists app_settings (
   key text primary key,
   value jsonb not null,
   updated_at timestamptz not null default now()
 );
 
-create table admin_users (
+create table if not exists admin_users (
   id uuid primary key default gen_random_uuid(),
   email text not null unique,
   display_name text not null,
@@ -18,7 +18,7 @@ create table admin_users (
   updated_at timestamptz not null default now()
 );
 
-create table threads_accounts (
+create table if not exists threads_accounts (
   id uuid primary key default gen_random_uuid(),
   display_name text not null,
   threads_user_id text not null unique,
@@ -31,7 +31,7 @@ create table threads_accounts (
   updated_at timestamptz not null default now()
 );
 
-create table campaigns (
+create table if not exists campaigns (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   status text not null default 'draft',
@@ -43,7 +43,7 @@ create table campaigns (
   updated_at timestamptz not null default now()
 );
 
-create table affiliate_programs (
+create table if not exists affiliate_programs (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   network text not null,
@@ -53,7 +53,7 @@ create table affiliate_programs (
   updated_at timestamptz not null default now()
 );
 
-create table products (
+create table if not exists products (
   id uuid primary key default gen_random_uuid(),
   campaign_id uuid not null references campaigns(id),
   affiliate_program_id uuid references affiliate_programs(id),
@@ -68,7 +68,7 @@ create table products (
   updated_at timestamptz not null default now()
 );
 
-create table affiliate_links (
+create table if not exists affiliate_links (
   id uuid primary key default gen_random_uuid(),
   campaign_id uuid not null references campaigns(id),
   product_id uuid not null references products(id),
@@ -83,7 +83,7 @@ create table affiliate_links (
   updated_at timestamptz not null default now()
 );
 
-create table posts (
+create table if not exists posts (
   id uuid primary key default gen_random_uuid(),
   account_id uuid not null references threads_accounts(id),
   campaign_id uuid not null references campaigns(id),
@@ -108,7 +108,7 @@ create table posts (
   )
 );
 
-create table post_assets (
+create table if not exists post_assets (
   id uuid primary key default gen_random_uuid(),
   post_id uuid not null references posts(id) on delete cascade,
   media_type text not null,
@@ -117,7 +117,7 @@ create table post_assets (
   created_at timestamptz not null default now()
 );
 
-create table automation_runs (
+create table if not exists automation_runs (
   id uuid primary key default gen_random_uuid(),
   source text not null,
   status text not null,
@@ -130,7 +130,7 @@ create table automation_runs (
   finished_at timestamptz
 );
 
-create table click_events (
+create table if not exists click_events (
   id uuid primary key default gen_random_uuid(),
   affiliate_link_id uuid not null references affiliate_links(id),
   post_id uuid references posts(id),
@@ -140,7 +140,7 @@ create table click_events (
   created_at timestamptz not null default now()
 );
 
-create table conversion_events (
+create table if not exists conversion_events (
   id uuid primary key default gen_random_uuid(),
   affiliate_link_id uuid not null references affiliate_links(id),
   click_event_id uuid references click_events(id),
@@ -153,7 +153,7 @@ create table conversion_events (
   created_at timestamptz not null default now()
 );
 
-create table payouts (
+create table if not exists payouts (
   id uuid primary key default gen_random_uuid(),
   affiliate_program_id uuid references affiliate_programs(id),
   amount numeric(12, 2) not null,
@@ -164,7 +164,7 @@ create table payouts (
   created_at timestamptz not null default now()
 );
 
-create table audit_logs (
+create table if not exists audit_logs (
   id uuid primary key default gen_random_uuid(),
   actor_id uuid references admin_users(id),
   action text not null,
@@ -174,8 +174,8 @@ create table audit_logs (
   created_at timestamptz not null default now()
 );
 
-create index idx_posts_queue on posts(status, approved, scheduled_at);
-create index idx_posts_campaign on posts(campaign_id, scheduled_at desc);
-create index idx_click_events_link_time on click_events(affiliate_link_id, created_at desc);
-create index idx_conversion_events_link_time on conversion_events(affiliate_link_id, occurred_at desc);
-create index idx_affiliate_links_slug on affiliate_links(slug);
+create index if not exists idx_posts_queue on posts(status, approved, scheduled_at);
+create index if not exists idx_posts_campaign on posts(campaign_id, scheduled_at desc);
+create index if not exists idx_click_events_link_time on click_events(affiliate_link_id, created_at desc);
+create index if not exists idx_conversion_events_link_time on conversion_events(affiliate_link_id, occurred_at desc);
+create index if not exists idx_affiliate_links_slug on affiliate_links(slug);
