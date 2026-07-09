@@ -86,6 +86,12 @@ If OpenAI is not configured or the request fails, the same run falls back to the
 local deterministic script template and stores `scriptSource=template`, so the
 worker can keep running without manual recovery.
 
+Before a script is scheduled, the engine validates it with the local Threads
+post validator. Overlong scripts are shortened while preserving disclosure and
+the tracking link. Scripts that still exceed limits, contain too many links, or
+trip high-risk claim checks are not scheduled; they are stored in
+`blockedScripts` on the run and surfaced in the dashboard guardrail feed.
+
 ## Compliance Rules
 
 The FTC says social endorsements need clear disclosure when there is a financial

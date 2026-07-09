@@ -26,6 +26,10 @@ const requiredHtml = [
   'id="profitScripts"',
   'id="profitSourceStatuses"',
   'id="profitSignals"',
+  'id="profitBlockedScripts"',
+  'id="sideConnectorList"',
+  'id="commandStats"',
+  'id="autopilotSummary"',
   'id="conversionEvents"',
   "內容工廠",
   "合規 / 風險審核",
@@ -46,6 +50,7 @@ const requiredJs = [
   "sourceStatuses",
   "externalSignals",
   "script.source",
+  "blockedScripts",
   "已產生 5 則草稿"
 ];
 
@@ -59,6 +64,10 @@ const requiredCss = [
   ".profit-layout",
   ".intel-strip",
   ".signal-row",
+  ".command-strip",
+  ".sidebar-connectors",
+  ".autopilot-summary",
+  ".blocked-script-feed",
   ".conversion-feed",
   ".content-factory",
   ".risk-panel",

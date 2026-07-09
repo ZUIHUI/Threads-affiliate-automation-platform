@@ -221,6 +221,26 @@ async function main() {
   assert.equal(aiProfitResult.scripts[0].hook, "AI profit hook 1");
   assert.equal(aiProfitResult.profitEngine.generatedScripts[0].source, "openai");
 
+  const postCountBeforeBlocked = signalStore.read().posts.length;
+  const blockedResult = signalStore.update((state) => runProfitEngine(state, aiProfitConfig, {
+    source: "test",
+    force: true,
+    createPosts: true,
+    intelligence,
+    aiScripts: [{
+      type: "bad_links",
+      hook: "Too many links",
+      post: `含聯盟連結：這則故意放太多連結 https://a1.test https://a2.test https://a3.test https://a4.test https://a5.test https://a6.test\n\n你會先看哪個？`,
+      cta: "bad",
+      risk_note: "should be blocked"
+    }],
+    aiScriptSource: "openai"
+  }));
+  assert.equal(blockedResult.createdPosts.length, 0);
+  assert.equal(blockedResult.run.blockedScriptCount, 1);
+  assert.equal(blockedResult.blockedScripts[0].reason.includes("unique links"), true);
+  assert.equal(signalStore.read().posts.length, postCountBeforeBlocked);
+
   const normalized = normalizeDrafts({
     drafts: Array.from({ length: 5 }, (_, index) => ({
       hook: `hook ${index + 1}`,

@@ -30,10 +30,18 @@
         </nav>
 
         <div class="workspace-card">
-          <span>專案版</span>
-          <strong>使用中</strong>
+          <span>Autonomy Mode</span>
+          <strong id="sideAutonomyStatus">Loading</strong>
           <div class="meter"><span style="width:78%"></span></div>
-          <small>配額 78%</small>
+          <small id="sideRuntimeSummary">等待同步</small>
+        </div>
+
+        <div class="sidebar-connectors">
+          <div class="sidebar-section-title">
+            <span>API Connectors</span>
+            <b id="sideConnectorCount">0</b>
+          </div>
+          <div id="sideConnectorList"></div>
         </div>
       </aside>
 
@@ -52,6 +60,29 @@
           </div>
         </header>
 
+        <section class="command-strip" id="commandStats" aria-label="Autonomous command metrics">
+          <div>
+            <span>AI Scripts</span>
+            <strong id="cmdScripts">0</strong>
+          </div>
+          <div>
+            <span>Ad Signals</span>
+            <strong id="cmdSignals">0</strong>
+          </div>
+          <div>
+            <span>Offer Autopilot</span>
+            <strong id="cmdOffers">0</strong>
+          </div>
+          <div>
+            <span>Conversion Feedback</span>
+            <strong id="cmdConversions">0</strong>
+          </div>
+          <div>
+            <span>Guardrails</span>
+            <strong id="cmdGuardrails">0</strong>
+          </div>
+        </section>
+
         <section class="ops-grid">
           <section class="panel profit-engine-panel" id="profit-engine">
             <div class="panel-header">
@@ -61,6 +92,8 @@
               </div>
               <button class="button" id="profitRunBtn" type="button">研究並產生文案</button>
             </div>
+
+            <div class="autopilot-summary" id="autopilotSummary"></div>
 
             <div class="profit-layout">
               <div class="connector-rail">
@@ -86,6 +119,7 @@
             </div>
 
             <div class="guardrail-strip" id="profitGuardrails"></div>
+            <div class="blocked-script-feed" id="profitBlockedScripts"></div>
           </section>
 
           <section class="panel content-factory" id="factory">

@@ -1,5 +1,7 @@
 const crypto = require("node:crypto");
 
+const { countThreadsUnits, validatePost } = require("./validators");
+
 const PROFIT_MODELS = [
   {
     id: "model_trust_stack",
@@ -397,8 +399,50 @@ function normalizeScriptOverrides(scripts, config, cta, count) {
   }).filter(Boolean);
 }
 
+function truncateThreadsText(text, maxUnits) {
+  let units = 0;
+  let output = "";
+  for (const char of Array.from(String(text || ""))) {
+    const size = /\p{Extended_Pictographic}/u.test(char) ? Buffer.byteLength(char, "utf8") : 1;
+    if (units + size > maxUnits) break;
+    output += char;
+    units += size;
+  }
+  return output.trim();
+}
+
+function repairPostText(post, config) {
+  const maxUnits = Number(config.postCharacterLimitBytes || 500);
+  if (countThreadsUnits(post.text) <= maxUnits) return post;
+  const cta = post.linkAttachment || post.cta || "";
+  const disclosure = config.defaultDisclosureText || "含聯盟連結";
+  const suffix = cta ? `\n\n延伸資源：${cta}` : "";
+  const prefix = post.text.includes(disclosure) || /#ad\b/i.test(post.text)
+    ? ""
+    : `${disclosure}：`;
+  const allowedBodyUnits = Math.max(80, maxUnits - countThreadsUnits(`${prefix}${suffix}`) - 12);
+  const body = truncateThreadsText(post.text.replace(cta, "").trim(), allowedBodyUnits);
+  post.text = `${prefix}${body}${suffix}`.trim();
+  return post;
+}
+
+function guardAutonomousPost(post, config) {
+  const repaired = repairPostText(post, config);
+  const validation = validatePost(repaired, config);
+  const blocked = !validation.valid || validation.risk.level === "high";
+  return {
+    post: repaired,
+    validation,
+    blocked,
+    reason: blocked
+      ? [...validation.errors, ...validation.risk.warnings].join(" ") || "High-risk content was blocked."
+      : ""
+  };
+}
+
 function createAutonomousPosts(state, config, model, campaign, product, link, scripts, autoApprove) {
   const created = [];
+  const blocked = [];
   const baseTime = Date.now();
   for (const script of scripts) {
     const scheduledAt = new Date(baseTime + (created.length + 1) * 45 * 60 * 1000).toISOString();
@@ -422,10 +466,21 @@ function createAutonomousPosts(state, config, model, campaign, product, link, sc
       createdAt: nowIso(),
       updatedAt: nowIso()
     };
-    state.posts.push(post);
-    created.push(post);
+    const guarded = guardAutonomousPost(post, config);
+    if (guarded.blocked) {
+      blocked.push({
+        hook: script.hook,
+        type: script.type,
+        reason: guarded.reason,
+        validation: guarded.validation,
+        createdAt: nowIso()
+      });
+      continue;
+    }
+    state.posts.push(guarded.post);
+    created.push(guarded.post);
   }
-  return created;
+  return { created, blocked };
 }
 
 function shouldSkipRun(engine, config, force) {
@@ -509,9 +564,11 @@ function runProfitEngine(state, config, options = {}) {
     ? aiScripts
     : buildNaturalScripts(selected, campaign, product, link, config, count, selectedSignal);
   const scriptSource = aiScripts.length ? (options.aiScriptSource || "openai") : "template";
-  const createdPosts = options.createPosts === false
-    ? []
+  const postPlan = options.createPosts === false
+    ? { created: [], blocked: [] }
     : createAutonomousPosts(state, config, selected, campaign, product, link, scripts, options.autoApprove !== false);
+  const createdPosts = postPlan.created;
+  const blockedScripts = postPlan.blocked;
 
   const insight = {
     id: makeId("ad"),
@@ -541,6 +598,8 @@ function runProfitEngine(state, config, options = {}) {
     updatedProductIds: offerSync.updatedProductIds,
     scriptSource,
     aiScriptError: options.aiScriptError || "",
+    blockedScriptCount: blockedScripts.length,
+    blockedScripts,
     sourceStatuses: engine.sourceStatuses,
     status: "completed",
     createdAt: nowIso()
@@ -576,6 +635,7 @@ function runProfitEngine(state, config, options = {}) {
     skipped: false,
     run,
     createdPosts,
+    blockedScripts,
     scripts,
     intelligence: options.intelligence || null,
     profitEngine: buildProfitDashboard(state, config)
@@ -625,6 +685,7 @@ function buildProfitDashboard(state, config) {
     adInsights: engine.adInsights.slice(0, 6),
     generatedScripts: engine.generatedScripts.slice(0, 4),
     runs: engine.runs.slice(0, 5),
+    blockedScripts: engine.runs.flatMap((run) => run.blockedScripts || []).slice(0, 6),
     scheduledAutonomyPosts,
     guardrails: [
       "每則商業推薦都要包含聯盟揭露。",

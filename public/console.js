@@ -82,10 +82,43 @@ function renderRuntime(data) {
   $("#runtimePill").textContent = data.runtime.dryRun ? "DRY RUN" : "LIVE";
   $("#runtimePill").className = `runtime-pill ${data.runtime.dryRun ? "" : "badge good"}`;
   $("#promptTemplate").textContent = data.promptTemplate || "";
+  $("#sideAutonomyStatus").textContent = data.runtime.autonomyMode ? "自主運行中" : "手動監控";
+  $("#sideRuntimeSummary").textContent = `${data.runtime.dryRun ? "Dry-run" : "Live"} · ${data.runtime.hasThreadsCredentials ? "Threads ready" : "Needs Threads token"}`;
+  $("#cmdScripts").textContent = data.profitEngine?.generatedScripts?.length || 0;
+  $("#cmdSignals").textContent = data.profitEngine?.externalSignals?.length || 0;
+  $("#cmdOffers").textContent = data.profitEngine?.offerAutopilot?.activeSyncedProductCount || 0;
+  $("#cmdConversions").textContent = data.metrics.conversions || 0;
+  $("#cmdGuardrails").textContent = data.profitEngine?.blockedScripts?.length || 0;
 }
 
 function renderProfitEngine(data) {
   const engine = data.profitEngine || {};
+  $("#sideConnectorCount").textContent = (engine.sources || []).length;
+  $("#sideConnectorList").innerHTML = (engine.sources || []).map((source) => `
+    <div class="side-connector">
+      <span class="${source.runtimeStatus === "connected" ? "is-on" : ""}"></span>
+      <div>
+        <strong>${escapeHtml(source.name)}</strong>
+        <small>${escapeHtml(source.runtimeStatus || source.status)}</small>
+      </div>
+    </div>
+  `).join("");
+
+  const offer = engine.offerAutopilot || {};
+  $("#autopilotSummary").innerHTML = [
+    ["Sources", (engine.sourceStatuses || []).length, "API / feed checks"],
+    ["Signals", (engine.externalSignals || []).length, "Ad + offer inputs"],
+    ["Offers", offer.activeSyncedProductCount || 0, `max ${offer.maxOffersPerRun || 0}/run`],
+    ["Queued", engine.scheduledAutonomyPosts || 0, "autonomous posts"],
+    ["Blocked", (engine.blockedScripts || []).length, "guardrail catches"]
+  ].map(([label, value, hint]) => `
+    <article>
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      <small>${escapeHtml(hint)}</small>
+    </article>
+  `).join("");
+
   $("#connectorList").innerHTML = (engine.sources || []).map((source) => `
     <article class="connector-item">
       <span>${escapeHtml(source.runtimeStatus || source.status)}</span>
@@ -143,6 +176,19 @@ function renderProfitEngine(data) {
   $("#profitGuardrails").innerHTML = (engine.guardrails || []).map((item) => `
     <span>${escapeHtml(item)}</span>
   `).join("");
+
+  $("#profitBlockedScripts").innerHTML = (engine.blockedScripts || []).length ? `
+    <strong>Blocked scripts</strong>
+    ${(engine.blockedScripts || []).map((script) => `
+      <article class="blocked-script-row">
+        <span class="badge bad">blocked</span>
+        <div>
+          <strong>${escapeHtml(script.hook || script.type || "script")}</strong>
+          <p>${escapeHtml(script.reason || "Guardrail blocked this script.")}</p>
+        </div>
+      </article>
+    `).join("")}
+  ` : "";
 }
 
 function renderFactoryMetrics(data) {
