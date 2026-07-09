@@ -6,7 +6,7 @@ const path = require("node:path");
 const { getRuntimeConfig } = require("../src/config");
 const { createStore } = require("../src/store");
 const { extractUniqueUrls, validatePost } = require("../src/validators");
-const { buildAutonomyPolicy, generateDrafts, generateDraftsAsync, recordConversion, runAutomation } = require("../src/automation");
+const { buildAutonomyPolicy, buildDashboard, generateDrafts, generateDraftsAsync, recordConversion, runAutomation } = require("../src/automation");
 const { buildProfitRunPreview, runProfitEngine } = require("../src/profitEngine");
 const { buildAutonomyReadiness } = require("../src/readiness");
 const { buildMetaAdLibraryUrl, collectAdIntelligence } = require("../src/adIntelligenceClient");
@@ -173,6 +173,22 @@ async function main() {
   assert.equal(profitResult.profitEngine.experiments.experiments.length, 4);
   assert.equal(profitResult.profitEngine.experiments.optimizationQueue.length > 0, true);
   assert.equal(profitResult.scripts[0].post.includes("這輪系統會補齊尚未測過的獲利模式"), true);
+  const attributedPost = profitResult.createdPosts[0];
+  const attributedUrl = new URL(attributedPost.linkAttachment);
+  assert.equal(attributedUrl.searchParams.get("post"), attributedPost.id);
+  assert.equal(attributedUrl.searchParams.get("model"), attributedPost.funnelRatio);
+  const attributedConversion = store.update((state) => recordConversion(state, {
+    postId: attributedPost.id,
+    networkEventId: "post-order-1",
+    commissionValue: 11,
+    orderValue: 55,
+    status: "approved"
+  }));
+  assert.equal(attributedConversion.conversion.postId, attributedPost.id);
+  assert.equal(attributedConversion.conversion.modelId, attributedPost.funnelRatio);
+  const attributedDashboard = buildDashboard(store.read(), config);
+  assert.equal(attributedDashboard.attribution.summary.attributedConversions >= 1, true);
+  assert.equal(attributedDashboard.attribution.topPosts[0].postId, attributedPost.id);
 
   const signalStore = createStore(path.join(tempDir, "signal-store.json"));
   const signalResult = signalStore.update((state) => runProfitEngine(state, intelligenceConfig, {
@@ -430,6 +446,17 @@ async function main() {
   assert.equal(dashboard.growthLoop.missions.some((mission) => mission.id === "natural_script_generation"), true);
   assert.equal(Number.isFinite(dashboard.growthLoop.summary.automationScore), true);
   assert.equal(typeof dashboard.growthLoop.controls.canRunCycle, "boolean");
+  assert.equal(dashboard.attribution.summary.attributedConversions >= 1, true);
+  const trackedPost = dashboard.posts.find((post) => String(post.linkAttachment || "").includes("post="));
+  assert.equal(Boolean(trackedPost), true);
+  const localTrackingUrl = new URL(trackedPost.linkAttachment);
+  localTrackingUrl.protocol = "http:";
+  localTrackingUrl.host = `127.0.0.1:${address.port}`;
+  const redirectResponse = await fetch(localTrackingUrl, { redirect: "manual" });
+  assert.equal(redirectResponse.status, 302);
+  const redirectLocation = new URL(redirectResponse.headers.get("location"));
+  assert.equal(redirectLocation.searchParams.get("subid"), trackedPost.id);
+  assert.equal(redirectLocation.searchParams.get("utm_term"), trackedPost.funnelRatio);
   assert.equal(dashboard.readiness.checks.some((check) => check.id === "worker"), true);
   const readinessResponse = await fetch(`http://127.0.0.1:${address.port}/api/readiness`);
   const readinessPayload = await readinessResponse.json();

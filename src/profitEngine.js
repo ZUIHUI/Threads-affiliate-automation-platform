@@ -100,8 +100,18 @@ function stableId(prefix, value) {
   return `${prefix}_${digest}`;
 }
 
-function trackingUrl(config, slug) {
-  return `${config.publicBaseUrl.replace(/\/$/, "")}/r/${slug}`;
+function trackingUrl(config, slug, attribution = {}) {
+  const url = new URL(`${config.publicBaseUrl.replace(/\/$/, "")}/r/${slug}`);
+  const params = {
+    post: attribution.postId,
+    model: attribution.modelId,
+    campaign: attribution.campaignId,
+    product: attribution.productId
+  };
+  Object.entries(params).forEach(([key, value]) => {
+    if (value) url.searchParams.set(key, value);
+  });
+  return url.toString();
 }
 
 function slugify(value) {
@@ -175,9 +185,22 @@ function scoreProfitModel(model, state, signals = []) {
   const products = state.products || [];
   const links = state.affiliateLinks || [];
   const posts = state.posts || [];
-  const conversionCount = links.reduce((total, link) => total + Number(link.conversions || 0), 0);
-  const clickCount = links.reduce((total, link) => total + Number(link.clicks || 0), 0);
-  const revenue = links.reduce((total, link) => total + Number(link.revenue || 0), 0);
+  const modelPostIds = new Set(posts.filter((post) => post.funnelRatio === model.id).map((post) => post.id));
+  const attributedClicks = (state.clickEvents || []).filter((event) =>
+    event.modelId === model.id || modelPostIds.has(event.postId)
+  ).length;
+  const attributedConversions = (state.conversionEvents || []).filter((event) =>
+    event.modelId === model.id || modelPostIds.has(event.postId)
+  );
+  const attributedRevenue = attributedConversions
+    .filter((event) => !["rejected", "refunded", "void", "cancelled"].includes(event.status))
+    .reduce((total, event) => total + Number(event.commissionValue || 0), 0);
+  const globalConversionCount = links.reduce((total, link) => total + Number(link.conversions || 0), 0);
+  const globalClickCount = links.reduce((total, link) => total + Number(link.clicks || 0), 0);
+  const globalRevenue = links.reduce((total, link) => total + Number(link.revenue || 0), 0);
+  const conversionCount = attributedConversions.length || globalConversionCount;
+  const clickCount = attributedClicks || globalClickCount;
+  const revenue = attributedRevenue || globalRevenue;
   const activeCampaignBonus = campaigns.some((campaign) => campaign.status === "active") ? 6 : -8;
   const productBonus = products.some((product) => product.status === "active") ? 5 : -10;
   const signalBonus = Math.min(10, Math.round(clickCount / 30) + conversionCount);
@@ -457,10 +480,18 @@ function createAutonomousPosts(state, config, model, campaign, product, link, sc
   const created = [];
   const blocked = [];
   const baseTime = Date.now();
+  const baseTrackingUrl = trackingUrl(config, link.slug);
   for (const script of scripts) {
     const scheduledAt = new Date(baseTime + (created.length + 1) * 45 * 60 * 1000).toISOString();
+    const postId = makeId("post");
+    const attributedUrl = trackingUrl(config, link.slug, {
+      postId,
+      modelId: model.id,
+      campaignId: campaign.id,
+      productId: product.id
+    });
     const post = {
-      id: makeId("post"),
+      id: postId,
       accountId: "acct_primary",
       campaignId: campaign.id,
       productId: product.id,
@@ -468,14 +499,15 @@ function createAutonomousPosts(state, config, model, campaign, product, link, sc
       contentType: "自然推薦腳本",
       funnelRatio: model.id,
       hook: script.hook,
-      cta: trackingUrl(config, link.slug),
+      cta: attributedUrl,
       riskNote: script.risk_note || "自動獲利引擎：有揭露聯盟關係，未承諾收益，使用問題式互動結尾。",
       topicTag: campaign.name.replace(/[.#&]/g, "").slice(0, 50),
-      text: script.post,
+      text: String(script.post || "").replaceAll(baseTrackingUrl, attributedUrl),
       status: autoApprove ? "scheduled" : "draft",
       approved: Boolean(autoApprove),
       scheduledAt,
-      linkAttachment: trackingUrl(config, link.slug),
+      linkAttachment: attributedUrl,
+      trackingCode: postId,
       createdAt: nowIso(),
       updatedAt: nowIso()
     };
@@ -582,6 +614,8 @@ function buildOptimizationQueue(experiments, signals) {
 function buildExperimentLoop(state, config, engine, scores) {
   const posts = state.posts || [];
   const linksById = new Map((state.affiliateLinks || []).map((link) => [link.id, link]));
+  const clickEvents = state.clickEvents || [];
+  const conversionEvents = state.conversionEvents || [];
   const signals = engine.externalSignals || [];
   const totalScore = scores.reduce((total, model) => total + Number(model.score || 0), 0) || 1;
   const runs = engine.runs || [];
@@ -591,9 +625,23 @@ function buildExperimentLoop(state, config, engine, scores) {
     const publishedCount = modelPosts.filter((post) => ["published", "simulated"].includes(post.status)).length;
     const linkIds = new Set(modelPosts.map((post) => post.affiliateLinkId).filter(Boolean));
     const modelLinks = [...linkIds].map((id) => linksById.get(id)).filter(Boolean);
-    const clicks = modelLinks.reduce((total, link) => total + Number(link.clicks || 0), 0);
-    const conversions = modelLinks.reduce((total, link) => total + Number(link.conversions || 0), 0);
-    const revenue = modelLinks.reduce((total, link) => total + Number(link.revenue || 0), 0);
+    const postIds = new Set(modelPosts.map((post) => post.id));
+    const attributedClicks = clickEvents.filter((event) =>
+      event.modelId === model.id || postIds.has(event.postId)
+    ).length;
+    const attributedConversions = conversionEvents.filter((event) =>
+      event.modelId === model.id || postIds.has(event.postId)
+    );
+    const fallbackClicks = modelLinks.reduce((total, link) => total + Number(link.clicks || 0), 0);
+    const fallbackConversions = modelLinks.reduce((total, link) => total + Number(link.conversions || 0), 0);
+    const fallbackRevenue = modelLinks.reduce((total, link) => total + Number(link.revenue || 0), 0);
+    const clicks = attributedClicks || fallbackClicks;
+    const conversions = attributedConversions.length || fallbackConversions;
+    const revenue = attributedConversions.length
+      ? attributedConversions
+        .filter((event) => !["rejected", "refunded", "void", "cancelled"].includes(event.status))
+        .reduce((total, event) => total + Number(event.commissionValue || 0), 0)
+      : fallbackRevenue;
     const lastRun = runs.find((run) => run.selectedModelId === model.id) || null;
     const blockedScriptCount = runs
       .filter((run) => run.selectedModelId === model.id)

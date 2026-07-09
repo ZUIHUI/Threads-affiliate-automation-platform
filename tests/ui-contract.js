@@ -43,6 +43,7 @@ const requiredHtml = [
   'id="postRows"',
   'id="riskRows"',
   'id="revenueFunnel"',
+  'id="attributionGrid"',
   'id="promptTemplate"',
   'id="profitModels"',
   'id="profitScripts"',
@@ -96,6 +97,7 @@ const requiredJs = [
   "/api/profit-engine/run",
   "/api/posts/",
   "sourceStatuses",
+  "data.attribution",
   "externalSignals",
   "script.source",
   "blockedScripts",
@@ -214,6 +216,9 @@ const requiredCss = [
   ".revenue-panel",
   ".workflow-strip",
   ".funnel-flow",
+  ".attribution-grid",
+  ".attribution-card",
+  ".attribution-list",
   "@media (max-width: 1400px)"
 ];
 

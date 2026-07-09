@@ -156,6 +156,10 @@ create table if not exists click_events (
   id uuid primary key default gen_random_uuid(),
   affiliate_link_id uuid not null references affiliate_links(id),
   post_id uuid references posts(id),
+  campaign_id uuid references campaigns(id),
+  product_id uuid references products(id),
+  model_id text,
+  tracking_code text,
   user_agent text,
   referer text,
   ip_hash text,
@@ -166,6 +170,11 @@ create table if not exists conversion_events (
   id uuid primary key default gen_random_uuid(),
   affiliate_link_id uuid not null references affiliate_links(id),
   click_event_id uuid references click_events(id),
+  post_id uuid references posts(id),
+  campaign_id uuid references campaigns(id),
+  product_id uuid references products(id),
+  model_id text,
+  tracking_code text,
   network_event_id text,
   order_value numeric(12, 2),
   commission_value numeric(12, 2) not null default 0,
@@ -199,7 +208,10 @@ create table if not exists audit_logs (
 create index if not exists idx_posts_queue on posts(status, approved, scheduled_at);
 create index if not exists idx_posts_campaign on posts(campaign_id, scheduled_at desc);
 create index if not exists idx_click_events_link_time on click_events(affiliate_link_id, created_at desc);
+create index if not exists idx_click_events_post_time on click_events(post_id, created_at desc);
 create index if not exists idx_conversion_events_link_time on conversion_events(affiliate_link_id, occurred_at desc);
+create index if not exists idx_conversion_events_post_time on conversion_events(post_id, occurred_at desc);
+create index if not exists idx_conversion_events_model_time on conversion_events(model_id, occurred_at desc);
 create index if not exists idx_affiliate_links_slug on affiliate_links(slug);
 create index if not exists idx_profit_engine_runs_created_at on profit_engine_runs(created_at desc);
 create index if not exists idx_ad_intelligence_insights_model_time on ad_intelligence_insights(model_id, created_at desc);

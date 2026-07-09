@@ -643,17 +643,40 @@ async function handleRedirect(req, res, url) {
       throw error;
     }
     const now = new Date().toISOString();
+    const postId = url.searchParams.get("post") || "";
+    const modelId = url.searchParams.get("model") || "";
+    const campaignId = url.searchParams.get("campaign") || link.campaignId || "";
+    const productId = url.searchParams.get("product") || link.productId || "";
+    const post = postId ? state.posts.find((item) => item.id === postId) : null;
     link.clicks += 1;
     link.updatedAt = now;
-    state.clickEvents.unshift({
+    if (post) {
+      post.clicks = Number(post.clicks || 0) + 1;
+      post.updatedAt = now;
+    }
+    const click = {
       id: `clk_${Date.now()}`,
       affiliateLinkId: link.id,
+      postId,
+      campaignId,
+      productId,
+      modelId,
+      trackingCode: postId,
       slug,
       userAgent: req.headers["user-agent"] || "",
       referer: req.headers.referer || "",
       createdAt: now
-    });
-    return { targetUrl: link.targetUrl };
+    };
+    state.clickEvents.unshift(click);
+    const target = new URL(link.targetUrl);
+    if (postId) {
+      target.searchParams.set("utm_content", postId);
+      target.searchParams.set("subid", postId);
+      target.searchParams.set("sub_id", postId);
+    }
+    if (modelId) target.searchParams.set("utm_term", modelId);
+    if (campaignId) target.searchParams.set("utm_campaign", campaignId);
+    return { targetUrl: target.toString() };
   });
   res.writeHead(302, {
     location: result.targetUrl,

@@ -1284,6 +1284,60 @@ body {
   font-size: 15px;
 }
 
+.attribution-grid {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.7fr) minmax(150px, 0.7fr) minmax(260px, 1.6fr);
+  gap: 8px;
+  padding: 0 14px 16px;
+}
+
+.attribution-card,
+.attribution-list {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.attribution-card span,
+.attribution-list > strong {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.attribution-card strong {
+  font-size: 18px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.attribution-card small,
+.attribution-list small,
+.attribution-list p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.attribution-list div {
+  display: grid;
+  gap: 3px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.attribution-list div span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 800;
+}
+
 .link-table {
   padding: 12px 14px 16px;
 }
@@ -3076,6 +3130,7 @@ body {
   .workflow-strip,
   .revenue-cards,
   .funnel-flow,
+  .attribution-grid,
   .profit-models,
   .campaign-list {
     grid-template-columns: 1fr;

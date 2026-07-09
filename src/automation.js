@@ -25,8 +25,18 @@ function slugify(value) {
     .slice(0, 48) || `link-${Date.now()}`;
 }
 
-function trackingUrl(config, slug) {
-  return `${config.publicBaseUrl.replace(/\/$/, "")}/r/${slug}`;
+function trackingUrl(config, slug, attribution = {}) {
+  const url = new URL(`${config.publicBaseUrl.replace(/\/$/, "")}/r/${slug}`);
+  const params = {
+    post: attribution.postId,
+    model: attribution.modelId,
+    campaign: attribution.campaignId,
+    product: attribution.productId
+  };
+  Object.entries(params).forEach(([key, value]) => {
+    if (value) url.searchParams.set(key, value);
+  });
+  return url.toString();
 }
 
 function sum(items, picker) {
@@ -46,6 +56,27 @@ function formatDateTime(value) {
 
 function findById(items, id) {
   return items.find((item) => item.id === id);
+}
+
+function attributedTrackingUrl(config, link, post) {
+  return trackingUrl(config, link.slug, {
+    postId: post.id,
+    modelId: post.funnelRatio,
+    campaignId: post.campaignId,
+    productId: post.productId
+  });
+}
+
+function attachAttributedTracking(post, link, config, baseUrl = "") {
+  const base = baseUrl || trackingUrl(config, link.slug);
+  const attributed = attributedTrackingUrl(config, link, post);
+  post.cta = attributed;
+  post.linkAttachment = attributed;
+  if (post.text && base && post.text.includes(base)) {
+    post.text = post.text.replaceAll(base, attributed);
+  }
+  post.trackingCode = post.id;
+  return post;
 }
 
 function pipelineStatusScore(status) {
@@ -664,6 +695,91 @@ function buildAutonomousGrowthLoop(state, config, profitEngine, readiness, auton
   };
 }
 
+function buildAttributionDashboard(state) {
+  const posts = state.posts || [];
+  const postMap = new Map(posts.map((post) => [post.id, post]));
+  const clickEvents = state.clickEvents || [];
+  const conversionEvents = state.conversionEvents || [];
+  const revenueEvents = conversionEvents.filter((event) =>
+    !["rejected", "refunded", "void", "cancelled"].includes(event.status)
+  );
+  const postStats = new Map();
+  const modelStats = new Map();
+
+  function ensurePost(postId) {
+    if (!postId) return null;
+    if (!postStats.has(postId)) {
+      const post = postMap.get(postId) || {};
+      postStats.set(postId, {
+        postId,
+        modelId: post.funnelRatio || "",
+        hook: post.hook || post.topicTag || postId,
+        contentType: post.contentType || "",
+        clicks: 0,
+        conversions: 0,
+        revenue: 0
+      });
+    }
+    return postStats.get(postId);
+  }
+
+  function ensureModel(modelId) {
+    if (!modelId) return null;
+    if (!modelStats.has(modelId)) {
+      modelStats.set(modelId, {
+        modelId,
+        clicks: 0,
+        conversions: 0,
+        revenue: 0
+      });
+    }
+    return modelStats.get(modelId);
+  }
+
+  for (const event of clickEvents) {
+    const postStat = ensurePost(event.postId);
+    if (postStat) postStat.clicks += 1;
+    const modelId = event.modelId || postStat?.modelId || "";
+    const modelStat = ensureModel(modelId);
+    if (modelStat) modelStat.clicks += 1;
+  }
+
+  for (const event of revenueEvents) {
+    const revenue = Number(event.commissionValue || 0);
+    const postStat = ensurePost(event.postId);
+    if (postStat) {
+      postStat.conversions += 1;
+      postStat.revenue += revenue;
+    }
+    const modelId = event.modelId || postStat?.modelId || "";
+    const modelStat = ensureModel(modelId);
+    if (modelStat) {
+      modelStat.conversions += 1;
+      modelStat.revenue += revenue;
+    }
+  }
+
+  const topPosts = [...postStats.values()]
+    .sort((a, b) => b.revenue - a.revenue || b.conversions - a.conversions || b.clicks - a.clicks)
+    .slice(0, 5);
+  const topModels = [...modelStats.values()]
+    .sort((a, b) => b.revenue - a.revenue || b.conversions - a.conversions || b.clicks - a.clicks)
+    .slice(0, 5);
+
+  return {
+    summary: {
+      attributedClicks: clickEvents.filter((event) => event.postId || event.modelId).length,
+      attributedConversions: revenueEvents.filter((event) => event.postId || event.modelId).length,
+      attributedRevenue: revenueEvents
+        .filter((event) => event.postId || event.modelId)
+        .reduce((total, event) => total + Number(event.commissionValue || 0), 0),
+      unattributedConversions: revenueEvents.filter((event) => !event.postId && !event.modelId).length
+    },
+    topPosts,
+    topModels
+  };
+}
+
 function buildDashboard(state, config) {
   const posts = state.posts;
   const affiliateLinks = state.affiliateLinks;
@@ -692,6 +808,7 @@ function buildDashboard(state, config) {
   const autonomyPipeline = buildAutonomyPipeline(state, config, profitEngine, readiness, metrics);
   const operatingMap = buildOperatingMap(state, config, profitEngine, readiness, autonomyPolicy, autonomyPipeline, metrics);
   const growthLoop = buildAutonomousGrowthLoop(state, config, profitEngine, readiness, autonomyPolicy, autonomyPipeline, metrics);
+  const attribution = buildAttributionDashboard(state);
 
   return {
     generatedAt: nowIso(),
@@ -730,6 +847,7 @@ function buildDashboard(state, config) {
     autonomyPipeline,
     operatingMap,
     growthLoop,
+    attribution,
     settings: state.settings
   };
 }
@@ -776,6 +894,7 @@ function renderTemplate(product, campaign, link, config, index) {
 function createDraftPosts(state, input, config, drafts, campaign, product, link, topic) {
   const now = new Date();
   const created = [];
+  const baseTrackingUrl = trackingUrl(config, link.slug);
   for (const draft of drafts) {
     const scheduled = new Date(now.getTime() + (created.length + 1) * 60 * 60 * 1000);
     const isConversion = draft.ratio === "conversion";
@@ -795,10 +914,12 @@ function createDraftPosts(state, input, config, drafts, campaign, product, link,
       status: input.autoApprove ? "scheduled" : "draft",
       approved: Boolean(input.autoApprove),
       scheduledAt: scheduled.toISOString(),
-      linkAttachment: isConversion ? trackingUrl(config, link.slug) : "",
+      linkAttachment: isConversion ? baseTrackingUrl : "",
       createdAt: nowIso(),
       updatedAt: nowIso()
     };
+    attachAttributedTracking(post, link, config, baseTrackingUrl);
+    if (!isConversion && !draft.post.includes(baseTrackingUrl)) post.linkAttachment = "";
     state.posts.push(post);
     created.push(post);
   }
@@ -894,6 +1015,7 @@ function createPost(state, input, config) {
     createdAt: nowIso(),
     updatedAt: nowIso()
   };
+  if (!input.linkAttachment) attachAttributedTracking(post, link, config);
   const validation = validatePost(post, config);
   if (!validation.valid) {
     const error = new Error(validation.errors.join(" "));
@@ -940,11 +1062,38 @@ function upsertAffiliateLink(state, input, config) {
   return { link, trackingUrl: trackingUrl(config, link.slug) };
 }
 
-function findLinkForConversion(state, input) {
+function findPostForAttribution(state, value) {
+  if (!value) return null;
+  const id = String(value).trim();
+  return (state.posts || []).find((post) => post.id === id || post.trackingCode === id) || null;
+}
+
+function resolveConversionAttribution(state, input) {
+  const clickEvent = input.clickEventId
+    ? (state.clickEvents || []).find((event) => event.id === input.clickEventId)
+    : null;
+  const postToken = input.postId
+    || input.post_id
+    || input.post
+    || input.subid
+    || input.sub_id
+    || input.subId
+    || input.utm_content
+    || clickEvent?.postId
+    || "";
+  const post = findPostForAttribution(state, postToken);
+  return { clickEvent, post };
+}
+
+function findLinkForConversion(state, input, attribution = null) {
   const links = state.affiliateLinks || [];
   const link = input.affiliateLinkId
     ? links.find((item) => item.id === input.affiliateLinkId)
-    : links.find((item) => item.slug === input.slug || item.slug === input.affiliateSlug);
+    : attribution?.clickEvent?.affiliateLinkId
+      ? links.find((item) => item.id === attribution.clickEvent.affiliateLinkId)
+      : attribution?.post?.affiliateLinkId
+        ? links.find((item) => item.id === attribution.post.affiliateLinkId)
+        : links.find((item) => item.slug === input.slug || item.slug === input.affiliateSlug);
   if (!link) {
     const error = new Error("A valid affiliateLinkId or slug is required.");
     error.statusCode = 404;
@@ -962,7 +1111,10 @@ function numberFrom(...values) {
 }
 
 function recordConversion(state, input) {
-  const link = findLinkForConversion(state, input);
+  const attribution = resolveConversionAttribution(state, input);
+  const link = findLinkForConversion(state, input, attribution);
+  const post = attribution.post || null;
+  const clickEvent = attribution.clickEvent || null;
   const networkEventId = String(input.networkEventId || input.eventId || input.orderId || "").trim();
   const duplicate = networkEventId
     ? (state.conversionEvents || []).find((event) =>
@@ -985,7 +1137,12 @@ function recordConversion(state, input) {
   const conversion = {
     id: makeId("conv"),
     affiliateLinkId: link.id,
-    clickEventId: input.clickEventId || "",
+    postId: post?.id || clickEvent?.postId || "",
+    campaignId: post?.campaignId || clickEvent?.campaignId || link.campaignId || "",
+    productId: post?.productId || clickEvent?.productId || link.productId || "",
+    modelId: post?.funnelRatio || clickEvent?.modelId || input.modelId || input.model || "",
+    trackingCode: post?.trackingCode || post?.id || input.subid || input.sub_id || "",
+    clickEventId: input.clickEventId || clickEvent?.id || "",
     networkEventId,
     orderValue,
     commissionValue,
@@ -1002,11 +1159,18 @@ function recordConversion(state, input) {
     link.revenue = Number(link.revenue || 0) + commissionValue;
     link.currency = conversion.currency;
     link.updatedAt = conversion.createdAt;
+    if (post) {
+      post.conversions = Number(post.conversions || 0) + 1;
+      post.revenue = Number(post.revenue || 0) + commissionValue;
+      post.updatedAt = conversion.createdAt;
+    }
   }
   state.events.unshift({
     id: makeId("evt"),
     type: "conversion.recorded",
     affiliateLinkId: link.id,
+    postId: conversion.postId,
+    modelId: conversion.modelId,
     conversionId: conversion.id,
     revenueDelta: countsTowardRevenue ? commissionValue : 0,
     createdAt: conversion.createdAt

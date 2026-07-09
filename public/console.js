@@ -1430,6 +1430,8 @@ function renderRevenue(data) {
   const clicks = data.metrics.clicks;
   const conversions = data.metrics.conversions;
   const revenue = data.metrics.revenue;
+  const attribution = data.attribution || {};
+  const attributionSummary = attribution.summary || {};
   const exposure = clicks * 12 + 1540;
   const conversionRate = clicks ? ((conversions / clicks) * 100).toFixed(1) : "0.0";
   const refundRate = "2.1%";
@@ -1457,6 +1459,28 @@ function renderRevenue(data) {
     <div class="funnel-step"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>
   `).join("");
 
+  $("#attributionGrid").innerHTML = `
+    <article class="attribution-card">
+      <span>Attributed revenue</span>
+      <strong>${formatMoney(attributionSummary.attributedRevenue || 0)}</strong>
+      <small>${Number(attributionSummary.attributedConversions || 0)} conversion(s), ${Number(attributionSummary.attributedClicks || 0)} click(s)</small>
+    </article>
+    <article class="attribution-card">
+      <span>Top model</span>
+      <strong>${escapeHtml(attribution.topModels?.[0]?.modelId || "learning")}</strong>
+      <small>${formatMoney(attribution.topModels?.[0]?.revenue || 0)} · ${Number(attribution.topModels?.[0]?.conversions || 0)} conversion(s)</small>
+    </article>
+    <article class="attribution-list">
+      <strong>Top attributed scripts</strong>
+      ${(attribution.topPosts || []).map((post) => `
+        <div>
+          <span>${escapeHtml(post.hook || post.postId)}</span>
+          <small>${escapeHtml(post.modelId || "manual")} · ${Number(post.clicks || 0)} click(s) · ${formatMoney(post.revenue || 0)}</small>
+        </div>
+      `).join("") || `<p>No post-level attribution yet</p>`}
+    </article>
+  `;
+
   $("#linkList").innerHTML = data.affiliateLinks.map((link) => `
     <div class="link-row">
       <strong>${escapeHtml(link.slug)}</strong>
@@ -1475,7 +1499,7 @@ function renderRevenue(data) {
           <span class="badge ${event.status === "approved" || event.status === "paid" ? "good" : "warn"}">${escapeHtml(event.status)}</span>
           <div>
             <strong>${escapeHtml(link ? link.slug : event.affiliateLinkId)}</strong>
-            <p>${escapeHtml(event.networkEventId || event.id)} · ${formatDate(event.occurredAt)}</p>
+            <p>${escapeHtml(event.networkEventId || event.id)} · ${formatDate(event.occurredAt)} · ${escapeHtml(event.postId || event.modelId || "unattributed")}</p>
           </div>
           <small>${formatMoney(event.commissionValue)}</small>
         </article>
