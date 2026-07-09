@@ -151,6 +151,9 @@ async function main() {
   assert.equal(profitResult.skipped, false);
   assert.equal(profitResult.createdPosts.length > 0, true);
   assert.equal(store.read().profitEngine.runs.length > 0, true);
+  assert.equal(profitResult.run.experimentSnapshot.leaderModelId, profitResult.run.selectedModelId);
+  assert.equal(profitResult.profitEngine.experiments.experiments.length, 4);
+  assert.equal(profitResult.profitEngine.experiments.optimizationQueue.length > 0, true);
 
   const signalStore = createStore(path.join(tempDir, "signal-store.json"));
   const signalResult = signalStore.update((state) => runProfitEngine(state, intelligenceConfig, {
@@ -393,6 +396,8 @@ async function main() {
   const dashboard = await dashboardResponse.json();
   assert.equal(dashboard.promptTemplate.includes("Threads 短文內容企劃"), true);
   assert.equal(dashboard.profitEngine.models.length > 0, true);
+  assert.equal(dashboard.profitEngine.experiments.experiments.length > 0, true);
+  assert.equal(Array.isArray(dashboard.profitEngine.experiments.optimizationQueue), true);
   assert.equal(dashboard.readiness.checks.some((check) => check.id === "worker"), true);
   const readinessResponse = await fetch(`http://127.0.0.1:${address.port}/api/readiness`);
   const readinessPayload = await readinessResponse.json();

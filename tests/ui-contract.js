@@ -15,6 +15,7 @@ const requiredHtml = [
   'id="next-actions"',
   'id="decision-brief"',
   'id="worker-health"',
+  'id="experiments"',
   'id="factory"',
   'id="risk"',
   'id="affiliate"',
@@ -48,11 +49,16 @@ const requiredHtml = [
   'id="workerHealthMode"',
   'id="workerHealthGrid"',
   'id="workerHealthNotes"',
+  'id="experimentMode"',
+  'id="experimentSummary"',
+  'id="experimentCards"',
+  'id="optimizationQueue"',
   'id="conversionEvents"',
   "內容工廠",
   "合規 / 風險審核",
   "聯盟收益管道",
-  '<script src="/console.js?v=20260709-worker"></script>'
+  '<link rel="stylesheet" href="/styles.css?v=20260709-experiments" />',
+  '<script src="/console.js?v=20260709-experiments"></script>'
 ];
 
 for (const marker of requiredHtml) {
@@ -76,6 +82,10 @@ const requiredJs = [
   "buildDecisionBrief",
   "renderWorkerHealth",
   "buildWorkerHealth",
+  "renderExperimentLoop",
+  "buildExperimentLoopFallback",
+  "optimizationQueue",
+  "data-profit-experiment",
   "workerEnabled",
   "nextRunHint",
   "confidenceScore",
@@ -123,6 +133,10 @@ const requiredCss = [
   ".worker-health-grid",
   ".worker-card",
   ".worker-mode",
+  ".experiment-panel",
+  ".experiment-summary",
+  ".experiment-card",
+  ".optimization-queue",
   ".blocked-script-feed",
   ".conversion-feed",
   ".content-factory",

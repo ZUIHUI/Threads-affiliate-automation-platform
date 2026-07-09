@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Threads 聯盟自動化</title>
-    <link rel="stylesheet" href="/styles.css?v=20260709-brief" />
+    <link rel="stylesheet" href="/styles.css?v=20260709-experiments" />
   </head>
   <body>
     <div class="app-shell">
@@ -23,6 +23,7 @@
           <a href="#next-actions" class="nav-item">Actions</a>
           <a href="#decision-brief" class="nav-item">Decision</a>
           <a href="#worker-health" class="nav-item">Worker</a>
+          <a href="#experiments" class="nav-item">Experiments</a>
           <a href="#overview" class="nav-item is-active">總覽</a>
           <a href="#profit-engine" class="nav-item">自主獲利</a>
           <a href="#factory" class="nav-item">內容工廠</a>
@@ -144,6 +145,21 @@
           </div>
           <div class="worker-health-grid" id="workerHealthGrid"></div>
           <div class="worker-notes" id="workerHealthNotes"></div>
+        </section>
+
+        <section class="panel experiment-panel" id="experiments">
+          <div class="panel-header compact">
+            <div>
+              <p class="eyebrow">Autonomous Experiment Loop</p>
+              <h3>獲利模式實驗與優化</h3>
+            </div>
+            <span class="experiment-mode" id="experimentMode">Loading</span>
+          </div>
+          <div class="experiment-summary" id="experimentSummary"></div>
+          <div class="experiment-layout">
+            <div class="experiment-cards" id="experimentCards"></div>
+            <div class="optimization-queue" id="optimizationQueue"></div>
+          </div>
         </section>
 
         <section class="ops-grid">
@@ -331,6 +347,6 @@
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="/console.js?v=20260709-worker"></script>
+    <script src="/console.js?v=20260709-experiments"></script>
   </body>
 </html>

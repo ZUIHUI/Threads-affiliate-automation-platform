@@ -518,6 +518,167 @@ function renderWorkerHealth(data) {
   `).join("");
 }
 
+function buildExperimentLoopFallback(data) {
+  const engine = data.profitEngine || {};
+  const models = engine.models || [];
+  const posts = data.posts || [];
+  const linksById = new Map((data.affiliateLinks || []).map((link) => [link.id, link]));
+  const runs = engine.runs || [];
+  const signals = engine.externalSignals || [];
+  const totalScore = models.reduce((total, model) => total + Number(model.score || 0), 0) || 1;
+  const experiments = models.map((model, index) => {
+    const modelPosts = posts.filter((post) => post.funnelRatio === model.id);
+    const linkIds = new Set(modelPosts.map((post) => post.affiliateLinkId).filter(Boolean));
+    const modelLinks = [...linkIds].map((id) => linksById.get(id)).filter(Boolean);
+    const clicks = modelLinks.reduce((total, link) => total + Number(link.clicks || 0), 0);
+    const conversions = modelLinks.reduce((total, link) => total + Number(link.conversions || 0), 0);
+    const revenue = modelLinks.reduce((total, link) => total + Number(link.revenue || 0), 0);
+    const blockedScriptCount = runs
+      .filter((run) => run.selectedModelId === model.id)
+      .reduce((total, run) => total + Number(run.blockedScriptCount || 0), 0);
+    const status = blockedScriptCount > 0 && modelPosts.length === 0
+      ? "blocked"
+      : conversions > 0 && Number(model.score || 0) >= 82
+        ? "scaling"
+        : modelPosts.length > 0
+          ? "learning"
+          : index === 0
+            ? "ready"
+            : "watching";
+    return {
+      modelId: model.id,
+      name: model.name,
+      recommendation: model.recommendation,
+      status,
+      score: Number(model.score || 0),
+      allocationPct: Math.max(index === 0 ? 25 : 8, Math.round((Number(model.score || 0) / totalScore) * 100)),
+      hypothesis: model.adAngle,
+      stage: model.stage,
+      postCount: modelPosts.length,
+      scheduledCount: modelPosts.filter((post) => ["draft", "scheduled", "container_created"].includes(post.status)).length,
+      clicks,
+      conversions,
+      revenue,
+      conversionRate: clicks ? Number(((conversions / clicks) * 100).toFixed(1)) : 0,
+      epc: clicks ? Number((revenue / clicks).toFixed(2)) : 0,
+      blockedScriptCount,
+      nextAction: conversions > 0 ? "Scale adjacent hooks" : modelPosts.length > 0 ? "Collect publish data" : "Seed first scripts"
+    };
+  });
+  const optimizationQueue = [
+    !signals.length ? {
+      priority: "high",
+      modelId: "market_signals",
+      title: "Connect market evidence",
+      action: "Add ad or affiliate offer feeds so experiments optimize from real demand."
+    } : null,
+    ...experiments.map((experiment) => {
+      if (experiment.blockedScriptCount > 0) {
+        return {
+          priority: "high",
+          modelId: experiment.modelId,
+          title: "Repair blocked scripts",
+          action: "Regenerate safer scripts before the next publish cycle."
+        };
+      }
+      if (experiment.postCount === 0) {
+        return {
+          priority: experiment.recommendation === "primary" ? "high" : "medium",
+          modelId: experiment.modelId,
+          title: "Seed first experiment",
+          action: "Create natural scripts so this model can collect traffic evidence."
+        };
+      }
+      return {
+        priority: experiment.conversions > 0 ? "medium" : "low",
+        modelId: experiment.modelId,
+        title: experiment.conversions > 0 ? "Scale winning angle" : "Wait for publish data",
+        action: experiment.nextAction
+      };
+    })
+  ].filter(Boolean).slice(0, 6);
+  const leader = experiments[0] || {};
+  const totalExperimentPosts = experiments.reduce((total, item) => total + Number(item.postCount || 0), 0);
+  const totalExperimentRevenue = experiments.reduce((total, item) => total + Number(item.revenue || 0), 0);
+  const confidence = leader.conversions > 0
+    ? "revenue-backed"
+    : leader.clicks > 0
+      ? "traffic-backed"
+      : engine.lastRunAt
+        ? "model-backed"
+        : "setup";
+  return {
+    loopState: engine.autonomyEnabled ? "autonomous" : "manual",
+    confidence,
+    activeExperimentCount: experiments.filter((item) => ["ready", "learning", "scaling"].includes(item.status)).length,
+    totalExperimentPosts,
+    totalExperimentRevenue,
+    leaderModelId: leader.modelId || "",
+    leaderName: leader.name || "No experiment selected",
+    learningVelocity: `${runs.length} run(s) · ${signals.length} signal(s)`,
+    experiments,
+    optimizationQueue
+  };
+}
+
+function renderExperimentLoop(data) {
+  const loop = data.profitEngine?.experiments?.experiments?.length
+    ? data.profitEngine.experiments
+    : buildExperimentLoopFallback(data);
+  const experiments = loop.experiments || [];
+  const queue = loop.optimizationQueue || [];
+  $("#experimentMode").textContent = `${loop.loopState || "manual"} · ${loop.confidence || "setup"}`;
+  $("#experimentMode").className = `experiment-mode confidence-${escapeHtml(loop.confidence || "setup")}`;
+  $("#experimentSummary").innerHTML = [
+    ["Leader", loop.leaderName || "No experiment", loop.leaderModelId || "not selected"],
+    ["Active", loop.activeExperimentCount || 0, "models in play"],
+    ["Posts", loop.totalExperimentPosts || 0, "experiment content"],
+    ["Revenue", formatMoney(loop.totalExperimentRevenue || 0), "attributed links"],
+    ["Velocity", loop.learningVelocity || "0 run(s)", "learning inputs"]
+  ].map(([label, value, hint]) => `
+    <article>
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      <small>${escapeHtml(hint)}</small>
+    </article>
+  `).join("");
+
+  $("#experimentCards").innerHTML = experiments.map((experiment) => `
+    <article class="experiment-card status-${escapeHtml(experiment.status)}" data-profit-experiment="${escapeHtml(experiment.modelId)}">
+      <div class="experiment-card-head">
+        <span>${escapeHtml(experiment.status)}</span>
+        <strong>${escapeHtml(experiment.name)}</strong>
+      </div>
+      <div class="experiment-score">
+        <b style="width:${Math.max(4, Math.min(Number(experiment.allocationPct || 0), 100))}%"></b>
+      </div>
+      <p>${escapeHtml(experiment.hypothesis || experiment.stage)}</p>
+      <div class="experiment-metrics">
+        <span>Score <b>${Number(experiment.score || 0)}</b></span>
+        <span>Alloc <b>${Number(experiment.allocationPct || 0)}%</b></span>
+        <span>Posts <b>${Number(experiment.postCount || 0)}</b></span>
+        <span>CVR <b>${Number(experiment.conversionRate || 0)}%</b></span>
+        <span>EPC <b>${formatMoney(experiment.epc || 0)}</b></span>
+      </div>
+      <small>${escapeHtml(experiment.nextAction || "Monitor")}</small>
+    </article>
+  `).join("") || `<div class="empty-state">No experiments yet</div>`;
+
+  $("#optimizationQueue").innerHTML = `
+    <strong>Optimization queue</strong>
+    ${queue.map((item) => `
+      <article class="optimization-item priority-${escapeHtml(item.priority)}">
+        <span>${escapeHtml(item.priority)}</span>
+        <div>
+          <strong>${escapeHtml(item.title)}</strong>
+          <p>${escapeHtml(item.action)}</p>
+          <small>${escapeHtml(item.modelId)}</small>
+        </div>
+      </article>
+    `).join("") || `<div class="empty-state">No optimization action pending</div>`}
+  `;
+}
+
 function renderProfitEngine(data) {
   const engine = data.profitEngine || {};
   $("#sideConnectorCount").textContent = (engine.sources || []).length;
@@ -820,6 +981,7 @@ function render(data) {
   renderNextActions(data);
   renderDecisionBrief(data);
   renderWorkerHealth(data);
+  renderExperimentLoop(data);
   renderProfitEngine(data);
   renderFactoryMetrics(data);
   renderPosts(data);

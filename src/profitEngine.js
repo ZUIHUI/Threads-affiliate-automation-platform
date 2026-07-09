@@ -489,6 +489,157 @@ function shouldSkipRun(engine, config, force) {
   return Date.now() - new Date(engine.lastRunAt).getTime() < interval;
 }
 
+function buildOptimizationQueue(experiments, signals) {
+  const queue = [];
+  for (const experiment of experiments) {
+    if (experiment.blockedScriptCount > 0) {
+      queue.push({
+        priority: "high",
+        modelId: experiment.modelId,
+        title: "Repair blocked scripts",
+        action: "Regenerate this model with stricter compliance prompts before the next publish cycle."
+      });
+      continue;
+    }
+    if (experiment.postCount === 0) {
+      queue.push({
+        priority: experiment.recommendation === "primary" ? "high" : "medium",
+        modelId: experiment.modelId,
+        title: "Seed first experiment",
+        action: "Create natural scripts so this model can start collecting traffic and conversion evidence."
+      });
+      continue;
+    }
+    if (experiment.clicks >= 20 && experiment.conversions === 0) {
+      queue.push({
+        priority: "high",
+        modelId: experiment.modelId,
+        title: "Rewrite offer bridge",
+        action: "Clicks exist without conversions; test a clearer CTA, proof point, or lower-friction offer."
+      });
+      continue;
+    }
+    if (experiment.conversions > 0 && experiment.score >= 82) {
+      queue.push({
+        priority: "medium",
+        modelId: experiment.modelId,
+        title: "Scale winning angle",
+        action: "Allocate the next autonomy cycle to adjacent hooks while keeping the same offer proof."
+      });
+      continue;
+    }
+    if (experiment.scheduledCount > 0) {
+      queue.push({
+        priority: "low",
+        modelId: experiment.modelId,
+        title: "Wait for publish data",
+        action: "Keep this variant active until scheduled posts gather enough click feedback."
+      });
+    }
+  }
+  if (!signals.length) {
+    queue.unshift({
+      priority: "high",
+      modelId: "market_signals",
+      title: "Connect market evidence",
+      action: "Add ad or affiliate offer feeds so experiments optimize from real demand instead of built-in playbooks."
+    });
+  }
+  const priorityOrder = { high: 0, medium: 1, low: 2 };
+  return queue
+    .sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority])
+    .slice(0, 6);
+}
+
+function buildExperimentLoop(state, config, engine, scores) {
+  const posts = state.posts || [];
+  const linksById = new Map((state.affiliateLinks || []).map((link) => [link.id, link]));
+  const signals = engine.externalSignals || [];
+  const totalScore = scores.reduce((total, model) => total + Number(model.score || 0), 0) || 1;
+  const runs = engine.runs || [];
+  const experiments = scores.map((model, index) => {
+    const modelPosts = posts.filter((post) => post.funnelRatio === model.id);
+    const scheduledCount = modelPosts.filter((post) => ["draft", "scheduled", "container_created"].includes(post.status)).length;
+    const publishedCount = modelPosts.filter((post) => ["published", "simulated"].includes(post.status)).length;
+    const linkIds = new Set(modelPosts.map((post) => post.affiliateLinkId).filter(Boolean));
+    const modelLinks = [...linkIds].map((id) => linksById.get(id)).filter(Boolean);
+    const clicks = modelLinks.reduce((total, link) => total + Number(link.clicks || 0), 0);
+    const conversions = modelLinks.reduce((total, link) => total + Number(link.conversions || 0), 0);
+    const revenue = modelLinks.reduce((total, link) => total + Number(link.revenue || 0), 0);
+    const lastRun = runs.find((run) => run.selectedModelId === model.id) || null;
+    const blockedScriptCount = runs
+      .filter((run) => run.selectedModelId === model.id)
+      .reduce((total, run) => total + Number(run.blockedScriptCount || 0), 0);
+    const conversionRate = clicks ? Number(((conversions / clicks) * 100).toFixed(1)) : 0;
+    const epc = clicks ? Number((revenue / clicks).toFixed(2)) : 0;
+    const allocationPct = Math.max(index === 0 ? 25 : 8, Math.round((Number(model.score || 0) / totalScore) * 100));
+    const status = blockedScriptCount > 0 && modelPosts.length === 0
+      ? "blocked"
+      : conversions > 0 && Number(model.score || 0) >= 82
+        ? "scaling"
+        : modelPosts.length > 0
+          ? "learning"
+          : index === 0
+            ? "ready"
+            : "watching";
+    const nextAction = status === "blocked"
+      ? "Regenerate safer scripts"
+      : conversions > 0
+        ? "Scale adjacent hooks"
+        : clicks >= 20
+          ? "Rewrite CTA bridge"
+          : modelPosts.length > 0
+            ? "Collect publish data"
+            : "Seed first scripts";
+
+    return {
+      modelId: model.id,
+      name: model.name,
+      recommendation: model.recommendation,
+      status,
+      score: Number(model.score || 0),
+      allocationPct,
+      hypothesis: model.adAngle,
+      stage: model.stage,
+      monetization: model.monetization,
+      postCount: modelPosts.length,
+      scheduledCount,
+      publishedCount,
+      clicks,
+      conversions,
+      revenue,
+      conversionRate,
+      epc,
+      blockedScriptCount,
+      lastRunAt: lastRun?.createdAt || null,
+      nextAction
+    };
+  });
+  const leader = experiments[0] || null;
+  const totalExperimentPosts = experiments.reduce((total, item) => total + item.postCount, 0);
+  const totalExperimentRevenue = experiments.reduce((total, item) => total + item.revenue, 0);
+  const confidence = leader?.conversions > 0
+    ? "revenue-backed"
+    : leader?.clicks > 0
+      ? "traffic-backed"
+      : engine.lastRunAt
+        ? "model-backed"
+        : "setup";
+
+  return {
+    loopState: config.autonomyMode ? "autonomous" : "manual",
+    confidence,
+    activeExperimentCount: experiments.filter((item) => ["ready", "learning", "scaling"].includes(item.status)).length,
+    totalExperimentPosts,
+    totalExperimentRevenue,
+    leaderModelId: leader?.modelId || "",
+    leaderName: leader?.name || "No experiment selected",
+    learningVelocity: `${runs.length} run(s) · ${signals.length} signal(s)`,
+    experiments,
+    optimizationQueue: buildOptimizationQueue(experiments, signals)
+  };
+}
+
 function buildProfitRunPreview(state, config, options = {}) {
   const previewState = JSON.parse(JSON.stringify(state));
   const engine = ensureProfitState(previewState);
@@ -620,6 +771,12 @@ function runProfitEngine(state, config, options = {}) {
     createdAt: run.createdAt
   })));
   engine.runs.unshift(run);
+  const experimentLoop = buildExperimentLoop(state, config, engine, scores);
+  run.experimentSnapshot = {
+    leaderModelId: selected.id,
+    activeExperimentCount: experimentLoop.activeExperimentCount,
+    optimizationActionCount: experimentLoop.optimizationQueue.length
+  };
   engine.adInsights = engine.adInsights.slice(0, 12);
   engine.generatedScripts = engine.generatedScripts.slice(0, 12);
   engine.runs = engine.runs.slice(0, 12);
@@ -676,6 +833,7 @@ function buildProfitDashboard(state, config) {
     sources,
     sourceStatuses: engine.sourceStatuses || [],
     externalSignals: signals.slice(0, 8),
+    experiments: buildExperimentLoop(state, config, engine, scores),
     offerAutopilot: {
       maxOffersPerRun: Number(config.autonomyMaxOffersPerRun || 0),
       syncedProductCount: syncedOfferProducts.length,
@@ -701,6 +859,7 @@ module.exports = {
   PROFIT_MODELS,
   buildProfitRunPreview,
   buildProfitDashboard,
+  buildExperimentLoop,
   ensureProfitState,
   runProfitEngine
 };
