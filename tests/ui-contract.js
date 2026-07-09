@@ -10,6 +10,7 @@ const css = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const requiredHtml = [
   "Threads 聯盟自動化",
   'id="profit-engine"',
+  'id="readiness"',
   'id="factory"',
   'id="risk"',
   'id="affiliate"',
@@ -30,11 +31,14 @@ const requiredHtml = [
   'id="sideConnectorList"',
   'id="commandStats"',
   'id="autopilotSummary"',
+  'id="readinessMode"',
+  'id="readinessSummary"',
+  'id="readinessChecks"',
   'id="conversionEvents"',
   "內容工廠",
   "合規 / 風險審核",
   "聯盟收益管道",
-  '<script src="/console.js"></script>'
+  '<script src="/console.js?v=20260709-readiness"></script>'
 ];
 
 for (const marker of requiredHtml) {
@@ -51,6 +55,9 @@ const requiredJs = [
   "externalSignals",
   "script.source",
   "blockedScripts",
+  "renderReadiness",
+  "readiness.summary",
+  "status-${escapeHtml(check.status)}",
   "已產生 5 則草稿"
 ];
 
@@ -67,6 +74,10 @@ const requiredCss = [
   ".command-strip",
   ".sidebar-connectors",
   ".autopilot-summary",
+  ".readiness-panel",
+  ".readiness-summary",
+  ".readiness-checks",
+  ".readiness-mode",
   ".blocked-script-feed",
   ".conversion-feed",
   ".content-factory",

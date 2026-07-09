@@ -1578,6 +1578,124 @@ body {
   font-size: 24px;
 }
 
+.readiness-panel {
+  margin-bottom: 14px;
+}
+
+.readiness-mode {
+  display: inline-grid;
+  min-width: 128px;
+  place-items: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.readiness-mode.live_ready {
+  border-color: rgba(11, 143, 115, 0.28);
+  color: var(--green-dark);
+  background: rgba(11, 143, 115, 0.1);
+}
+
+.readiness-mode.dry_run_ready,
+.readiness-mode.needs_attention {
+  border-color: rgba(201, 139, 33, 0.3);
+  color: #8b5d0b;
+  background: rgba(201, 139, 33, 0.12);
+}
+
+.readiness-mode.blocked {
+  border-color: rgba(183, 53, 53, 0.28);
+  color: var(--danger);
+  background: rgba(183, 53, 53, 0.1);
+}
+
+.readiness-summary {
+  display: grid;
+  grid-template-columns: 0.7fr 0.55fr 0.55fr 0.55fr minmax(320px, 1.7fr);
+  gap: 10px;
+  padding: 14px 18px 0;
+}
+
+.readiness-summary article,
+.readiness-check {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.readiness-summary article {
+  min-height: 82px;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  padding: 12px;
+}
+
+.readiness-summary span,
+.readiness-summary small,
+.readiness-check p,
+.readiness-check small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.readiness-summary strong {
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.readiness-checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px 18px 18px;
+}
+
+.readiness-check {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 12px;
+  padding: 13px;
+}
+
+.readiness-check > span {
+  align-self: start;
+  justify-self: start;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.readiness-check strong,
+.readiness-check p,
+.readiness-check small {
+  display: block;
+}
+
+.readiness-check p {
+  margin: 5px 0;
+}
+
+.readiness-check.status-ready > span {
+  background: var(--green);
+}
+
+.readiness-check.status-warning > span {
+  background: var(--amber);
+}
+
+.readiness-check.status-blocked > span {
+  background: var(--danger);
+}
+
 @media (max-width: 1400px) {
   .ops-grid {
     grid-template-columns: 1fr;
@@ -1592,8 +1710,13 @@ body {
   }
 
   .command-strip,
+  .readiness-summary,
   .autopilot-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .readiness-checks {
+    grid-template-columns: 1fr;
   }
 
   .post-copy {
@@ -1632,12 +1755,17 @@ body {
 
   .mini-kpi-grid,
   .command-strip,
+  .readiness-summary,
   .autopilot-summary,
   .workflow-strip,
   .revenue-cards,
   .funnel-flow,
   .profit-models,
   .campaign-list {
+    grid-template-columns: 1fr;
+  }
+
+  .readiness-check {
     grid-template-columns: 1fr;
   }
 

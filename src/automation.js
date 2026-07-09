@@ -5,6 +5,7 @@ const { createTextContainer, publishContainer } = require("./threadsClient");
 const { buildPrompt, generatePromptDrafts } = require("./contentTemplates");
 const { generateOpenAIDrafts, shouldUseOpenAI } = require("./openaiClient");
 const { buildProfitDashboard } = require("./profitEngine");
+const { buildAutonomyReadiness } = require("./readiness");
 
 function nowIso() {
   return new Date().toISOString();
@@ -90,6 +91,7 @@ function buildDashboard(state, config) {
     conversionEvents: state.conversionEvents.slice(0, 8),
     promptTemplate: buildPrompt("AI 自動化聯盟行銷"),
     profitEngine: buildProfitDashboard(state, config),
+    readiness: buildAutonomyReadiness(state, config),
     settings: state.settings
   };
 }

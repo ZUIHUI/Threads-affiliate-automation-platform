@@ -127,3 +127,18 @@ CONVERSION_WEBHOOK_SECRET=...
 `THREADS_DRY_RUN=true` keeps the engine self-running without making live Threads
 posts. Set `THREADS_DRY_RUN=false` only after Threads credentials, links, and
 disclosure copy are verified.
+
+## Product Operations Readiness
+
+The admin console includes an **Autonomous Readiness** panel and `/api/readiness`
+endpoint. Treat this as the launch gate for the no-manual profit loop:
+
+- `blocked` means a required dependency such as worker mode, live URL, inventory,
+  or disclosure is missing.
+- `dry_run_ready` means the loop can research, score, write, schedule, and
+  simulate safely.
+- `needs_attention` means live publishing can run but quality inputs such as
+  conversion feedback or market feeds should be improved.
+- `live_ready` means the platform has persistent storage, public tracking,
+  worker autonomy, Threads credentials, AI/ad inputs, conversion feedback, and
+  guardrails configured.

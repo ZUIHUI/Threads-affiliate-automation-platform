@@ -8,6 +8,7 @@ const { createStore } = require("../src/store");
 const { extractUniqueUrls, validatePost } = require("../src/validators");
 const { generateDrafts, generateDraftsAsync, recordConversion, runAutomation } = require("../src/automation");
 const { buildProfitRunPreview, runProfitEngine } = require("../src/profitEngine");
+const { buildAutonomyReadiness } = require("../src/readiness");
 const { buildMetaAdLibraryUrl, collectAdIntelligence } = require("../src/adIntelligenceClient");
 const { generateProfitScripts } = require("../src/profitScriptGenerator");
 const { generateOpenAIDrafts, normalizeDrafts } = require("../src/openaiClient");
@@ -41,6 +42,28 @@ async function main() {
 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "threads-affiliate-ops-"));
   const store = createStore(path.join(tempDir, "store.json"));
+  const localReadiness = buildAutonomyReadiness(store.read(), config);
+  assert.equal(localReadiness.summary.mode, "blocked");
+  assert.equal(localReadiness.checks.some((check) => check.id === "worker" && check.status === "blocked"), true);
+
+  const liveReadyConfig = getRuntimeConfig({
+    PUBLIC_BASE_URL: "https://threads-affiliate.example",
+    ENABLE_WORKER: "true",
+    AUTONOMY_MODE: "true",
+    THREADS_DRY_RUN: "false",
+    THREADS_USER_ID: "threads_user_1",
+    THREADS_ACCESS_TOKEN: "threads-token",
+    DATABASE_URL: "postgresql://user:pass@db.example:5432/app?sslmode=require",
+    PROFIT_SCRIPT_PROVIDER: "openai",
+    OPENAI_API_KEY: "test-key",
+    AD_INTELLIGENCE_FEED_URLS: "https://feeds.test/ads.json",
+    AFFILIATE_OFFER_FEED_URLS: "https://feeds.test/offers.json",
+    CONVERSION_WEBHOOK_SECRET: "secret",
+    DEFAULT_DISCLOSURE_TEXT: "含聯盟連結"
+  });
+  const liveReadiness = buildAutonomyReadiness(store.read(), liveReadyConfig);
+  assert.equal(liveReadiness.summary.mode, "live_ready");
+  assert.equal(liveReadiness.summary.blocked, 0);
   const generated = store.update((state) => generateDrafts(state, { topic: "AI 自動化聯盟行銷", autoApprove: true }, config));
   assert.equal(generated.created.length, 5);
   assert.equal(generated.created[0].contentType, "教學型");
@@ -370,6 +393,12 @@ async function main() {
   const dashboard = await dashboardResponse.json();
   assert.equal(dashboard.promptTemplate.includes("Threads 短文內容企劃"), true);
   assert.equal(dashboard.profitEngine.models.length > 0, true);
+  assert.equal(dashboard.readiness.checks.some((check) => check.id === "worker"), true);
+  const readinessResponse = await fetch(`http://127.0.0.1:${address.port}/api/readiness`);
+  const readinessPayload = await readinessResponse.json();
+  assert.equal(readinessResponse.status, 200);
+  assert.equal(readinessPayload.summary.mode, "blocked");
+  assert.equal(readinessPayload.checks.some((check) => check.id === "database"), true);
   const conversionResponse = await fetch(`http://127.0.0.1:${address.port}/api/conversions`, {
     method: "POST",
     headers: { "content-type": "application/json" },

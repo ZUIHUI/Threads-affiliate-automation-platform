@@ -20,6 +20,7 @@ const { getPublishingLimit } = require("./src/threadsClient");
 const { buildProfitRunPreview, runProfitEngine } = require("./src/profitEngine");
 const { collectAdIntelligence } = require("./src/adIntelligenceClient");
 const { generateProfitScripts } = require("./src/profitScriptGenerator");
+const { buildAutonomyReadiness } = require("./src/readiness");
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
@@ -124,9 +125,10 @@ async function serveStatic(req, res, pathname) {
     const stat = await fs.promises.stat(absolutePath);
     if (!stat.isFile()) return false;
     const ext = path.extname(absolutePath).toLowerCase();
+    const revalidate = [".html", ".js", ".css"].includes(ext);
     res.writeHead(200, {
       "content-type": CONTENT_TYPES[ext] || "application/octet-stream",
-      "cache-control": ext === ".html" ? "no-store" : "public, max-age=3600"
+      "cache-control": revalidate ? "no-store" : "public, max-age=3600"
     });
     fs.createReadStream(absolutePath).pipe(res);
     return true;
@@ -184,6 +186,11 @@ async function handleApi(req, res, url) {
 
   if (req.method === "GET" && route === "/api/dashboard") {
     sendJson(res, 200, buildDashboard(await readState(), config));
+    return;
+  }
+
+  if (req.method === "GET" && route === "/api/readiness") {
+    sendJson(res, 200, buildAutonomyReadiness(await readState(), config));
     return;
   }
 

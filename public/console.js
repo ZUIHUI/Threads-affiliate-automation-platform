@@ -91,6 +91,44 @@ function renderRuntime(data) {
   $("#cmdGuardrails").textContent = data.profitEngine?.blockedScripts?.length || 0;
 }
 
+function renderReadiness(data) {
+  const readiness = data.readiness || {};
+  const summary = readiness.summary || {};
+  const modeLabels = {
+    blocked: "Blocked",
+    dry_run_ready: "Dry-run ready",
+    needs_attention: "Needs attention",
+    live_ready: "Live ready"
+  };
+  $("#readinessMode").textContent = modeLabels[summary.mode] || "Unknown";
+  $("#readinessMode").className = `readiness-mode ${escapeHtml(summary.mode || "unknown")}`;
+
+  $("#readinessSummary").innerHTML = [
+    ["Score", `${summary.score || 0}%`, "autonomy readiness"],
+    ["Ready", summary.ready || 0, "checks passing"],
+    ["Warnings", summary.warning || 0, "safe but incomplete"],
+    ["Blocked", summary.blocked || 0, "must fix"],
+    ["Next", summary.nextAction || "-", "highest priority"]
+  ].map(([label, value, hint]) => `
+    <article>
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      <small>${escapeHtml(hint)}</small>
+    </article>
+  `).join("");
+
+  $("#readinessChecks").innerHTML = (readiness.checks || []).map((check) => `
+    <article class="readiness-check status-${escapeHtml(check.status)}">
+      <span>${escapeHtml(check.status)}</span>
+      <div>
+        <strong>${escapeHtml(check.label)}</strong>
+        <p>${escapeHtml(check.detail)}</p>
+        <small>${escapeHtml(check.action)}</small>
+      </div>
+    </article>
+  `).join("");
+}
+
 function renderProfitEngine(data) {
   const engine = data.profitEngine || {};
   $("#sideConnectorCount").textContent = (engine.sources || []).length;
@@ -388,6 +426,7 @@ function populateForm(data) {
 function render(data) {
   state.dashboard = data;
   renderRuntime(data);
+  renderReadiness(data);
   renderProfitEngine(data);
   renderFactoryMetrics(data);
   renderPosts(data);

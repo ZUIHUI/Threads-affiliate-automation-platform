@@ -53,6 +53,10 @@ Official references:
 
 - `server.js`: HTTP server, API router, static admin UI, redirect tracking.
 - `src/automation.js`: draft generation, queue processing, dashboard metrics.
+- `src/profitEngine.js`: monetization scoring, offer autopilot, and autonomous script scheduling.
+- `src/adIntelligenceClient.js`: ad, offer, and Meta Ad Library signal ingestion.
+- `src/profitScriptGenerator.js`: OpenAI profit-script generation with template fallback.
+- `src/readiness.js`: deployment and autonomy readiness checks for product operations.
 - `src/openaiClient.js`: optional OpenAI Responses API draft generator with local template fallback.
 - `src/threadsClient.js`: Threads Graph API calls.
 - `src/validators.js`: post validation rules.

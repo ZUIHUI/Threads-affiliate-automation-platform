@@ -127,6 +127,33 @@ Notes:
 - Without `DATABASE_URL`, the app falls back to the local JSON file store for development.
 - Store Threads and OpenAI tokens in platform environment variables, not in database rows.
 
+## Autonomy Readiness Panel
+
+The dashboard includes an **Autonomous Readiness** panel and a machine-readable
+`GET /api/readiness` endpoint. Use it after every deploy before switching from
+dry-run to live publishing.
+
+The panel checks:
+
+- `DATABASE_URL` and Postgres migration readiness.
+- `PUBLIC_BASE_URL` for public tracking redirects.
+- `ENABLE_WORKER=true` plus `AUTONOMY_MODE=true` for no-manual operation.
+- Threads credentials and `THREADS_DRY_RUN` mode.
+- OpenAI profit-script configuration or intentional template fallback.
+- Ad and offer research inputs such as `AD_INTELLIGENCE_FEED_URLS`,
+  `AFFILIATE_OFFER_FEED_URLS`, or Meta Ad Library credentials.
+- Campaign/product/link inventory.
+- `CONVERSION_WEBHOOK_SECRET` for revenue feedback.
+- Disclosure text and offer autopilot caps.
+
+Readiness modes:
+
+- `blocked`: at least one required autonomous operation dependency is missing.
+- `dry_run_ready`: the loop can run safely, but will not publish live Threads posts.
+- `needs_attention`: live mode can run, but one or more quality inputs are missing.
+- `live_ready`: persistent storage, worker loop, publishing credentials, AI/ad inputs,
+  conversion feedback, and compliance guardrails are configured.
+
 ## Threads App Setup
 
 1. Create a Meta app with the Threads use case.
