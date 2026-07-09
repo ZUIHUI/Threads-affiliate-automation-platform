@@ -12,6 +12,7 @@ const requiredHtml = [
   'id="profit-engine"',
   'id="readiness"',
   'id="timeline"',
+  'id="next-actions"',
   'id="factory"',
   'id="risk"',
   'id="affiliate"',
@@ -37,11 +38,14 @@ const requiredHtml = [
   'id="readinessChecks"',
   'id="timelineCount"',
   'id="opTimeline"',
+  'id="nextActionCount"',
+  'id="actionSummary"',
+  'id="nextActionList"',
   'id="conversionEvents"',
   "內容工廠",
   "合規 / 風險審核",
   "聯盟收益管道",
-  '<script src="/console.js?v=20260709-timeline"></script>'
+  '<script src="/console.js?v=20260709-actions"></script>'
 ];
 
 for (const marker of requiredHtml) {
@@ -60,6 +64,10 @@ const requiredJs = [
   "blockedScripts",
   "renderReadiness",
   "renderOpsTimeline",
+  "renderNextActions",
+  "buildNextActions",
+  "handleNextAction",
+  "data-next-action",
   "buildTimelineItems",
   "data.profitEngine?.runs",
   "data.automationRuns",
@@ -90,6 +98,9 @@ const requiredCss = [
   ".timeline-list",
   ".timeline-item",
   ".timeline-badge",
+  ".actions-panel",
+  ".action-summary",
+  ".next-action",
   ".blocked-script-feed",
   ".conversion-feed",
   ".content-factory",

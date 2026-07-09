@@ -1792,6 +1792,96 @@ body {
   background: rgba(201, 139, 33, 0.14);
 }
 
+.actions-panel {
+  margin-bottom: 14px;
+}
+
+.action-count {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.action-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px 18px 0;
+}
+
+.action-summary article {
+  min-height: 72px;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.action-summary span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.action-summary strong {
+  font-size: 24px;
+}
+
+.action-list {
+  display: grid;
+  gap: 10px;
+  padding: 14px 18px 18px;
+}
+
+.next-action {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.next-action > span {
+  justify-self: start;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.next-action.priority-critical > span {
+  background: var(--danger);
+}
+
+.next-action.priority-high > span {
+  background: var(--coral);
+}
+
+.next-action.priority-medium > span {
+  background: var(--amber);
+}
+
+.next-action.priority-low > span {
+  background: var(--blue);
+}
+
+.next-action p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 @media (max-width: 1400px) {
   .ops-grid {
     grid-template-columns: 1fr;
@@ -1813,6 +1903,10 @@ body {
 
   .readiness-checks {
     grid-template-columns: 1fr;
+  }
+
+  .action-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .post-copy {
@@ -1852,6 +1946,7 @@ body {
   .mini-kpi-grid,
   .command-strip,
   .readiness-summary,
+  .action-summary,
   .autopilot-summary,
   .workflow-strip,
   .revenue-cards,
@@ -1868,6 +1963,11 @@ body {
   .timeline-head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .next-action {
+    align-items: stretch;
+    grid-template-columns: 1fr;
   }
 
   .risk-distribution,

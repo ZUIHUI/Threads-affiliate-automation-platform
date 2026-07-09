@@ -195,6 +195,131 @@ function renderOpsTimeline(data) {
   `).join("") || `<div class="empty-state">No autonomous operations recorded yet</div>`;
 }
 
+function nextAction(priority, title, detail, actionLabel, request = null) {
+  return { priority, title, detail, actionLabel, request };
+}
+
+function buildNextActions(data) {
+  const actions = [];
+  const readinessChecks = data.readiness?.checks || [];
+  const blockedReadiness = readinessChecks.filter((check) => check.status === "blocked");
+  const warningReadiness = readinessChecks.filter((check) => check.status === "warning");
+  const engine = data.profitEngine || {};
+  const metrics = data.metrics || {};
+
+  blockedReadiness.slice(0, 2).forEach((check) => {
+    actions.push(nextAction("critical", check.label, check.detail, check.action));
+  });
+
+  if ((engine.externalSignals || []).length === 0) {
+    actions.push(nextAction(
+      "high",
+      "Connect live market signals",
+      "The profit engine is still using built-in playbooks. Connect ad or offer feeds so scoring can follow real market demand.",
+      "Set AD_INTELLIGENCE_FEED_URLS or AFFILIATE_OFFER_FEED_URLS"
+    ));
+  }
+
+  if ((engine.generatedScripts || []).length === 0 || (engine.runs || []).length === 0) {
+    actions.push(nextAction(
+      "high",
+      "Run research-to-script cycle",
+      "Generate a fresh profit model decision and natural affiliate scripts from the current offer inventory.",
+      "Run profit engine",
+      {
+        path: "/api/profit-engine/run",
+        method: "POST",
+        body: { source: "next-actions", force: true, createPosts: true, autoApprove: true }
+      }
+    ));
+  }
+
+  if (Number(metrics.queued || 0) > 0) {
+    actions.push(nextAction(
+      "medium",
+      "Process publishing queue",
+      `${Number(metrics.queued || 0)} approved post(s) are queued for publishing or dry-run simulation.`,
+      "Run queue",
+      { path: "/api/automation/run", method: "POST", body: { source: "next-actions" } }
+    ));
+  }
+
+  if (Number(metrics.drafts || 0) > 0) {
+    actions.push(nextAction(
+      "medium",
+      "Review draft backlog",
+      `${Number(metrics.drafts || 0)} draft post(s) are waiting for approval before the publishing loop can move them.`,
+      "Review drafts in content factory"
+    ));
+  }
+
+  if ((engine.blockedScripts || []).length > 0) {
+    actions.push(nextAction(
+      "high",
+      "Inspect guardrail blocks",
+      `${engine.blockedScripts.length} script(s) were blocked by compliance or Threads validation rules.`,
+      "Open blocked scripts"
+    ));
+  }
+
+  if (Number(metrics.clicks || 0) > 0 && Number(metrics.conversions || 0) === 0) {
+    actions.push(nextAction(
+      "medium",
+      "Connect conversion feedback",
+      "Clicks exist but no conversions are feeding back yet, so model scoring cannot learn from revenue quality.",
+      "Configure /api/conversions webhook"
+    ));
+  }
+
+  warningReadiness.slice(0, 2).forEach((check) => {
+    if (!actions.some((action) => action.title === check.label)) {
+      actions.push(nextAction("low", check.label, check.detail, check.action));
+    }
+  });
+
+  if (!actions.length) {
+    actions.push(nextAction(
+      "low",
+      "Monitor next autonomy cycle",
+      "No urgent action is needed. Keep watching the timeline, conversion feed, and guardrail blocks.",
+      "Continue monitoring"
+    ));
+  }
+
+  const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+  return actions
+    .sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority])
+    .slice(0, 7);
+}
+
+function renderNextActions(data) {
+  const actions = buildNextActions(data);
+  const counts = actions.reduce((acc, action) => {
+    acc[action.priority] = (acc[action.priority] || 0) + 1;
+    return acc;
+  }, {});
+  $("#nextActionCount").textContent = `${actions.length} actions`;
+  $("#actionSummary").innerHTML = ["critical", "high", "medium", "low"].map((priority) => `
+    <article>
+      <span>${escapeHtml(priority)}</span>
+      <strong>${Number(counts[priority] || 0)}</strong>
+    </article>
+  `).join("");
+  $("#nextActionList").innerHTML = actions.map((action, index) => `
+    <article class="next-action priority-${escapeHtml(action.priority)}">
+      <span>${escapeHtml(action.priority)}</span>
+      <div>
+        <strong>${escapeHtml(action.title)}</strong>
+        <p>${escapeHtml(action.detail)}</p>
+      </div>
+      <button class="button ${action.request ? "" : "secondary"}" type="button" data-next-action="${index}">
+        ${escapeHtml(action.actionLabel)}
+      </button>
+    </article>
+  `).join("");
+  state.nextActions = actions;
+}
+
 function renderProfitEngine(data) {
   const engine = data.profitEngine || {};
   $("#sideConnectorCount").textContent = (engine.sources || []).length;
@@ -494,6 +619,7 @@ function render(data) {
   renderRuntime(data);
   renderReadiness(data);
   renderOpsTimeline(data);
+  renderNextActions(data);
   renderProfitEngine(data);
   renderFactoryMetrics(data);
   renderPosts(data);
@@ -586,6 +712,25 @@ async function submitCompose(event) {
   showToast("Post created");
 }
 
+async function handleNextAction(event) {
+  const button = event.target.closest("button[data-next-action]");
+  if (!button) return;
+  const action = state.nextActions?.[Number(button.dataset.nextAction)];
+  if (!action) return;
+  if (!action.request) {
+    showToast(action.actionLabel);
+    return;
+  }
+  button.disabled = true;
+  const result = await api(action.request.path, {
+    method: action.request.method || "POST",
+    body: action.request.body || {}
+  });
+  if (result.dashboard) render(result.dashboard);
+  else await refresh();
+  showToast(`${action.title} completed`);
+}
+
 function bindEvents() {
   $("#refreshBtn").addEventListener("click", refresh);
   $("#runBtn").addEventListener("click", runQueue);
@@ -603,6 +748,12 @@ function bindEvents() {
   });
   $("#composeForm").addEventListener("submit", (event) => {
     submitCompose(event).catch((error) => showToast(error.message));
+  });
+  $("#nextActionList").addEventListener("click", (event) => {
+    handleNextAction(event).catch((error) => {
+      showToast(error.message);
+      refresh();
+    });
   });
   $("#campaignSelect").addEventListener("change", () => populateForm(state.dashboard));
 }
