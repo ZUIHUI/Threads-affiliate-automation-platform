@@ -26,6 +26,9 @@ function getRuntimeConfig(env) {
     databaseUrl: env.DATABASE_URL || "",
     databaseAutoMigrate: asBoolean(env.DATABASE_AUTO_MIGRATE, true),
     databaseSsl: asBoolean(env.DATABASE_SSL, false),
+    autonomyMode: asBoolean(env.AUTONOMY_MODE, false),
+    autonomyIntervalMs: Math.max(15 * 60_000, asNumber(env.AUTONOMY_INTERVAL_MS, 6 * 60 * 60_000)),
+    autonomyMaxScriptsPerRun: Math.max(1, Math.min(asNumber(env.AUTONOMY_MAX_SCRIPTS_PER_RUN, 3), 5)),
     defaultDisclosureText: env.DEFAULT_DISCLOSURE_TEXT || "含聯盟連結",
     defaultUtmSource: env.DEFAULT_UTM_SOURCE || "threads",
     defaultUtmMedium: env.DEFAULT_UTM_MEDIUM || "affiliate_social"

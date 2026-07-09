@@ -7,6 +7,7 @@ const { getRuntimeConfig } = require("../src/config");
 const { createStore } = require("../src/store");
 const { extractUniqueUrls, validatePost } = require("../src/validators");
 const { generateDrafts, generateDraftsAsync, runAutomation } = require("../src/automation");
+const { runProfitEngine } = require("../src/profitEngine");
 const { generateOpenAIDrafts, normalizeDrafts } = require("../src/openaiClient");
 const { createTextContainer, publishContainer, getPublishingLimit } = require("../src/threadsClient");
 
@@ -46,6 +47,16 @@ async function main() {
   assert.equal(result.run.status, "completed");
   assert.equal(result.run.simulated > 0, true);
   assert.equal(result.dashboard.metrics.simulated > 0, true);
+
+  const profitResult = store.update((state) => runProfitEngine(state, config, {
+    source: "test",
+    force: true,
+    createPosts: true,
+    autoApprove: true
+  }));
+  assert.equal(profitResult.skipped, false);
+  assert.equal(profitResult.createdPosts.length > 0, true);
+  assert.equal(store.read().profitEngine.runs.length > 0, true);
 
   const normalized = normalizeDrafts({
     drafts: Array.from({ length: 5 }, (_, index) => ({
@@ -175,6 +186,15 @@ async function main() {
   const dashboardResponse = await fetch(`http://127.0.0.1:${address.port}/api/dashboard`);
   const dashboard = await dashboardResponse.json();
   assert.equal(dashboard.promptTemplate.includes("Threads 短文內容企劃"), true);
+  assert.equal(dashboard.profitEngine.models.length > 0, true);
+  const profitResponse = await fetch(`http://127.0.0.1:${address.port}/api/profit-engine/run`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ source: "test", force: true })
+  });
+  const profitPayload = await profitResponse.json();
+  assert.equal(profitPayload.result.skipped, false);
+  assert.equal(profitPayload.dashboard.profitEngine.generatedScripts.length > 0, true);
   await new Promise((resolve, reject) => {
     server.close((error) => error ? reject(error) : resolve());
   });

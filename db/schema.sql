@@ -130,6 +130,28 @@ create table if not exists automation_runs (
   finished_at timestamptz
 );
 
+create table if not exists profit_engine_runs (
+  id uuid primary key default gen_random_uuid(),
+  source text not null,
+  selected_model_id text not null,
+  selected_model_name text not null,
+  score integer not null default 0,
+  created_post_ids jsonb not null default '[]'::jsonb,
+  status text not null default 'completed',
+  created_at timestamptz not null default now()
+);
+
+create table if not exists ad_intelligence_insights (
+  id uuid primary key default gen_random_uuid(),
+  model_id text not null,
+  source text not null,
+  angle text not null,
+  natural_rewrite text not null,
+  target_campaign_id uuid references campaigns(id),
+  target_product_id uuid references products(id),
+  created_at timestamptz not null default now()
+);
+
 create table if not exists click_events (
   id uuid primary key default gen_random_uuid(),
   affiliate_link_id uuid not null references affiliate_links(id),
@@ -179,3 +201,5 @@ create index if not exists idx_posts_campaign on posts(campaign_id, scheduled_at
 create index if not exists idx_click_events_link_time on click_events(affiliate_link_id, created_at desc);
 create index if not exists idx_conversion_events_link_time on conversion_events(affiliate_link_id, occurred_at desc);
 create index if not exists idx_affiliate_links_slug on affiliate_links(slug);
+create index if not exists idx_profit_engine_runs_created_at on profit_engine_runs(created_at desc);
+create index if not exists idx_ad_intelligence_insights_model_time on ad_intelligence_insights(model_id, created_at desc);

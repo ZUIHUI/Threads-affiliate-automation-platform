@@ -19,6 +19,7 @@
 
         <nav class="nav-list">
           <a href="#overview" class="nav-item is-active">總覽</a>
+          <a href="#profit-engine" class="nav-item">自主獲利</a>
           <a href="#factory" class="nav-item">內容工廠</a>
           <a href="#schedule" class="nav-item">發佈排程</a>
           <a href="#risk" class="nav-item">合規審核</a>
@@ -52,6 +53,30 @@
         </header>
 
         <section class="ops-grid">
+          <section class="panel profit-engine-panel" id="profit-engine">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Autonomous Profit Engine</p>
+                <h3>自主獲利模式監控</h3>
+              </div>
+              <button class="button" id="profitRunBtn" type="button">研究並產生文案</button>
+            </div>
+
+            <div class="profit-layout">
+              <div class="connector-rail">
+                <strong>API / AI 串接</strong>
+                <div id="connectorList"></div>
+              </div>
+              <div class="profit-models" id="profitModels"></div>
+              <div class="script-feed">
+                <strong>自然腳本文案</strong>
+                <div id="profitScripts"></div>
+              </div>
+            </div>
+
+            <div class="guardrail-strip" id="profitGuardrails"></div>
+          </section>
+
           <section class="panel content-factory" id="factory">
             <div class="panel-header">
               <div>

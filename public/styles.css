@@ -763,6 +763,137 @@ body {
   min-width: 0;
 }
 
+.profit-engine-panel {
+  grid-column: 1 / -1;
+}
+
+.profit-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(320px, 1.15fr) minmax(260px, 0.95fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.connector-rail,
+.script-feed {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.connector-rail > strong,
+.script-feed > strong {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+#connectorList,
+#profitScripts {
+  display: grid;
+  gap: 10px;
+}
+
+.connector-item,
+.profit-model-card,
+.script-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 12px;
+}
+
+.connector-item span {
+  display: inline-flex;
+  width: fit-content;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(28, 113, 216, 0.1);
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.connector-item strong,
+.profit-model-card strong,
+.script-card strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.connector-item p,
+.profit-model-card p,
+.script-card p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.profit-models {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.profit-model-card div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.profit-model-card small {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.score-pill {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: white;
+  font-weight: 900;
+  font-size: 14px;
+}
+
+.script-card p {
+  max-height: 94px;
+  overflow: hidden;
+}
+
+.empty-state {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.guardrail-strip {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.guardrail-strip span {
+  border: 1px solid rgba(31, 122, 81, 0.25);
+  background: rgba(31, 122, 81, 0.08);
+  color: var(--green);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .panel {
   box-shadow: 0 10px 26px rgba(33, 46, 38, 0.05);
 }
@@ -1120,6 +1251,10 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .profit-layout {
+    grid-template-columns: 1fr;
+  }
+
   .post-copy {
     max-width: none;
   }
@@ -1158,6 +1293,7 @@ body {
   .workflow-strip,
   .revenue-cards,
   .funnel-flow,
+  .profit-models,
   .campaign-list {
     grid-template-columns: 1fr;
   }

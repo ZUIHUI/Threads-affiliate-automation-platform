@@ -4,6 +4,7 @@ const { validatePost } = require("./validators");
 const { createTextContainer, publishContainer } = require("./threadsClient");
 const { buildPrompt, generatePromptDrafts } = require("./contentTemplates");
 const { generateOpenAIDrafts, shouldUseOpenAI } = require("./openaiClient");
+const { buildProfitDashboard } = require("./profitEngine");
 
 function nowIso() {
   return new Date().toISOString();
@@ -56,7 +57,8 @@ function buildDashboard(state, config) {
       graphBase: config.threadsGraphBase,
       hasThreadsCredentials: Boolean(config.threadsUserId && config.threadsAccessToken),
       aiDraftProvider: config.aiDraftProvider,
-      hasOpenAIApiKey: Boolean(config.openaiApiKey)
+      hasOpenAIApiKey: Boolean(config.openaiApiKey),
+      autonomyMode: config.autonomyMode
     },
     metrics: {
       drafts: posts.filter((post) => post.status === "draft").length,
@@ -86,6 +88,7 @@ function buildDashboard(state, config) {
     recentEvents: state.events.slice(0, 12),
     clickEvents: state.clickEvents.slice(0, 8),
     promptTemplate: buildPrompt("AI 自動化聯盟行銷"),
+    profitEngine: buildProfitDashboard(state, config),
     settings: state.settings
   };
 }

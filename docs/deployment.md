@@ -17,6 +17,7 @@ This repository includes:
 - `railway.json` for Railway.
 - `render.yaml` for Render Blueprint deployment.
 - `/health` as the platform health check endpoint.
+- `docs/profit-model.md` for the autonomous monetization loop and guardrails.
 
 ## Environment Variables
 
@@ -36,6 +37,9 @@ Recommended:
 THREADS_GRAPH_BASE=https://graph.threads.net/v1.0
 THREADS_PUBLISH_DELAY_MS=30000
 AUTOMATION_INTERVAL_MS=60000
+AUTONOMY_MODE=true
+AUTONOMY_INTERVAL_MS=21600000
+AUTONOMY_MAX_SCRIPTS_PER_RUN=3
 DEFAULT_DISCLOSURE_TEXT=含聯盟連結
 AI_DRAFT_PROVIDER=openai
 ```
@@ -87,6 +91,11 @@ Notes:
 ## Worker Mode
 
 Set `ENABLE_WORKER=true` to let the Node process run `runAutomation()` on an interval. Use one worker replica to avoid duplicate publishing. If you scale the web app horizontally, split the worker into a separate process and add a database lock around queue selection.
+
+Set `AUTONOMY_MODE=true` to let the worker research the current profit model,
+generate low-risk natural affiliate scripts, schedule them, and then pass the
+queue to the existing publishing flow. Keep `THREADS_DRY_RUN=true` until all
+credentials, links, and disclosure copy are verified.
 
 ## Docker
 

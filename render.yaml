@@ -20,6 +20,12 @@ services:
         sync: false
       - key: ENABLE_WORKER
         value: "true"
+      - key: AUTONOMY_MODE
+        value: "true"
+      - key: AUTONOMY_INTERVAL_MS
+        value: "21600000"
+      - key: AUTONOMY_MAX_SCRIPTS_PER_RUN
+        value: "3"
       - key: THREADS_GRAPH_BASE
         value: https://graph.threads.net/v1.0
       - key: THREADS_DRY_RUN

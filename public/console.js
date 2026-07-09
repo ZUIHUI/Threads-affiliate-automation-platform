@@ -84,6 +84,42 @@ function renderRuntime(data) {
   $("#promptTemplate").textContent = data.promptTemplate || "";
 }
 
+function renderProfitEngine(data) {
+  const engine = data.profitEngine || {};
+  $("#connectorList").innerHTML = (engine.sources || []).map((source) => `
+    <article class="connector-item">
+      <span>${escapeHtml(source.status)}</span>
+      <strong>${escapeHtml(source.name)}</strong>
+      <p>${escapeHtml(source.role)}</p>
+    </article>
+  `).join("");
+
+  $("#profitModels").innerHTML = (engine.models || []).map((model) => `
+    <article class="profit-model-card">
+      <div>
+        <span class="score-pill">${Number(model.score || 0)}</span>
+        <strong>${escapeHtml(model.name)}</strong>
+      </div>
+      <p>${escapeHtml(model.stage)}</p>
+      <small>${escapeHtml(model.monetization)} · ${escapeHtml(model.marginProfile)}</small>
+    </article>
+  `).join("");
+
+  $("#profitScripts").innerHTML = (engine.generatedScripts || []).map((script) => {
+    const body = String(script.post || "");
+    return `
+      <article class="script-card">
+        <strong>${escapeHtml(script.hook)}</strong>
+        <p>${escapeHtml(body).slice(0, 220)}${body.length > 220 ? "..." : ""}</p>
+      </article>
+    `;
+  }).join("") || `<div class="empty-state">尚未產生自主腳本</div>`;
+
+  $("#profitGuardrails").innerHTML = (engine.guardrails || []).map((item) => `
+    <span>${escapeHtml(item)}</span>
+  `).join("");
+}
+
 function renderFactoryMetrics(data) {
   const metrics = data.metrics;
   const rows = [
@@ -264,6 +300,7 @@ function populateForm(data) {
 function render(data) {
   state.dashboard = data;
   renderRuntime(data);
+  renderProfitEngine(data);
   renderFactoryMetrics(data);
   renderPosts(data);
   renderRisk(data);
@@ -298,6 +335,21 @@ async function generateDrafts(autoApprove) {
   });
   await refresh();
   showToast(autoApprove ? "已產生 5 則並排程" : "已產生 5 則草稿");
+}
+
+async function runProfitEngine() {
+  const result = await api("/api/profit-engine/run", {
+    method: "POST",
+    body: {
+      source: "dashboard",
+      force: true,
+      createPosts: true,
+      autoApprove: true
+    }
+  });
+  render(result.dashboard);
+  const created = result.result.createdPosts?.length || 0;
+  showToast(`自主獲利引擎完成，建立 ${created} 則排程文案`);
 }
 
 async function handlePostAction(event) {
@@ -343,6 +395,9 @@ async function submitCompose(event) {
 function bindEvents() {
   $("#refreshBtn").addEventListener("click", refresh);
   $("#runBtn").addEventListener("click", runQueue);
+  $("#profitRunBtn").addEventListener("click", () => {
+    runProfitEngine().catch((error) => showToast(error.message));
+  });
   $("#generateBtn").addEventListener("click", () => generateDrafts(false));
   $("#autoGenerateBtn").addEventListener("click", () => generateDrafts(true));
   $("#topicGenerateBtn").addEventListener("click", () => generateDrafts(false));

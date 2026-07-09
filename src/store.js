@@ -190,6 +190,15 @@ function defaultState() {
     clickEvents: [],
     conversionEvents: [],
     events: [],
+    profitEngine: {
+      autonomyEnabled: true,
+      objective: "自然真實內容 -> 廣告情報 -> 聯盟成交",
+      lastRunAt: null,
+      runs: [],
+      modelScores: [],
+      adInsights: [],
+      generatedScripts: []
+    },
     version: 1
   };
 }

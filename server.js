@@ -16,6 +16,7 @@ const {
 const { getRuntimeConfig } = require("./src/config");
 const { validatePost } = require("./src/validators");
 const { getPublishingLimit } = require("./src/threadsClient");
+const { runProfitEngine } = require("./src/profitEngine");
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
@@ -216,6 +217,18 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (req.method === "POST" && route === "/api/profit-engine/run") {
+    const body = await parseBody(req);
+    const result = await store.update((state) => runProfitEngine(state, config, {
+      source: body.source || "dashboard",
+      force: body.force !== false,
+      createPosts: body.createPosts !== false,
+      autoApprove: body.autoApprove !== false
+    }));
+    sendJson(res, 200, { result, dashboard: buildDashboard(await readState(), config) });
+    return;
+  }
+
   if (req.method === "POST" && route === "/api/links") {
     const body = await parseBody(req);
     const result = await store.update((state) => upsertAffiliateLink(state, body, config));
@@ -308,6 +321,13 @@ async function startWorker() {
     if (workerActive) return;
     workerActive = true;
     try {
+      if (config.autonomyMode) {
+        await store.update((state) => runProfitEngine(state, config, {
+          source: "worker",
+          createPosts: true,
+          autoApprove: true
+        }));
+      }
       await runAutomation(store, config, { source: "worker" });
     } catch (error) {
       await store.update((state) => {

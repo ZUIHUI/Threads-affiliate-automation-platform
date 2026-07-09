@@ -9,6 +9,7 @@ const css = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 
 const requiredHtml = [
   "Threads 聯盟自動化",
+  'id="profit-engine"',
   'id="factory"',
   'id="risk"',
   'id="affiliate"',
@@ -16,10 +17,13 @@ const requiredHtml = [
   'id="generateBtn"',
   'id="autoGenerateBtn"',
   'id="runBtn"',
+  'id="profitRunBtn"',
   'id="postRows"',
   'id="riskRows"',
   'id="revenueFunnel"',
   'id="promptTemplate"',
+  'id="profitModels"',
+  'id="profitScripts"',
   "內容工廠",
   "合規 / 風險審核",
   "聯盟收益管道",
@@ -34,6 +38,7 @@ const requiredJs = [
   "/api/dashboard",
   "/api/automation/generate",
   "/api/automation/run",
+  "/api/profit-engine/run",
   "/api/posts/",
   "已產生 5 則草稿"
 ];
@@ -44,6 +49,8 @@ for (const marker of requiredJs) {
 
 const requiredCss = [
   ".ops-grid",
+  ".profit-engine-panel",
+  ".profit-layout",
   ".content-factory",
   ".risk-panel",
   ".revenue-panel",
