@@ -14,6 +14,7 @@ const requiredHtml = [
   'id="timeline"',
   'id="next-actions"',
   'id="decision-brief"',
+  'id="worker-health"',
   'id="factory"',
   'id="risk"',
   'id="affiliate"',
@@ -44,11 +45,14 @@ const requiredHtml = [
   'id="nextActionList"',
   'id="decisionConfidence"',
   'id="decisionBrief"',
+  'id="workerHealthMode"',
+  'id="workerHealthGrid"',
+  'id="workerHealthNotes"',
   'id="conversionEvents"',
   "內容工廠",
   "合規 / 風險審核",
   "聯盟收益管道",
-  '<script src="/console.js?v=20260709-brief"></script>'
+  '<script src="/console.js?v=20260709-worker"></script>'
 ];
 
 for (const marker of requiredHtml) {
@@ -70,6 +74,10 @@ const requiredJs = [
   "renderNextActions",
   "renderDecisionBrief",
   "buildDecisionBrief",
+  "renderWorkerHealth",
+  "buildWorkerHealth",
+  "workerEnabled",
+  "nextRunHint",
   "confidenceScore",
   "buildNextActions",
   "handleNextAction",
@@ -111,6 +119,10 @@ const requiredCss = [
   ".decision-grid",
   ".decision-card",
   ".decision-confidence",
+  ".worker-panel",
+  ".worker-health-grid",
+  ".worker-card",
+  ".worker-mode",
   ".blocked-script-feed",
   ".conversion-feed",
   ".content-factory",

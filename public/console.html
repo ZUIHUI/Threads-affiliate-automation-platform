@@ -22,6 +22,7 @@
           <a href="#timeline" class="nav-item">Timeline</a>
           <a href="#next-actions" class="nav-item">Actions</a>
           <a href="#decision-brief" class="nav-item">Decision</a>
+          <a href="#worker-health" class="nav-item">Worker</a>
           <a href="#overview" class="nav-item is-active">總覽</a>
           <a href="#profit-engine" class="nav-item">自主獲利</a>
           <a href="#factory" class="nav-item">內容工廠</a>
@@ -131,6 +132,18 @@
             <span class="decision-confidence" id="decisionConfidence">--</span>
           </div>
           <div class="decision-grid" id="decisionBrief"></div>
+        </section>
+
+        <section class="panel worker-panel" id="worker-health">
+          <div class="panel-header compact">
+            <div>
+              <p class="eyebrow">Worker / Scheduler Health</p>
+              <h3>無人值守排程狀態</h3>
+            </div>
+            <span class="worker-mode" id="workerHealthMode">Loading</span>
+          </div>
+          <div class="worker-health-grid" id="workerHealthGrid"></div>
+          <div class="worker-notes" id="workerHealthNotes"></div>
         </section>
 
         <section class="ops-grid">
@@ -318,6 +331,6 @@
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="/console.js?v=20260709-brief"></script>
+    <script src="/console.js?v=20260709-worker"></script>
   </body>
 </html>

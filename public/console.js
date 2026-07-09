@@ -413,6 +413,111 @@ function renderDecisionBrief(data) {
   `;
 }
 
+function ageLabel(value, referenceValue) {
+  if (!value) return "No heartbeat yet";
+  const then = new Date(value).getTime();
+  const now = referenceValue ? new Date(referenceValue).getTime() : Date.now();
+  if (Number.isNaN(then) || Number.isNaN(now)) return "Unknown";
+  const minutes = Math.max(0, Math.round((now - then) / 60_000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours}h ${rest}m ago` : `${hours}h ago`;
+}
+
+function buildWorkerHealth(data) {
+  const runtime = data.runtime || {};
+  const engine = data.profitEngine || {};
+  const metrics = data.metrics || {};
+  const readiness = data.readiness?.summary || {};
+  const automationRun = (data.automationRuns || [])[0] || {};
+  const profitRun = (engine.runs || [])[0] || {};
+  const recentEvent = (data.recentEvents || [])[0] || {};
+  const heartbeatAt = automationRun.finishedAt
+    || automationRun.startedAt
+    || profitRun.createdAt
+    || engine.lastRunAt
+    || recentEvent.createdAt;
+  const scheduledAutonomyPosts = Number(engine.scheduledAutonomyPosts || 0);
+  const queuedPosts = Number(metrics.queued || 0);
+  const queuePressure = queuedPosts + scheduledAutonomyPosts;
+  const workerMode = !runtime.workerEnabled
+    ? "offline"
+    : !runtime.autonomyMode
+      ? "manual"
+      : runtime.dryRun
+        ? "dry_run"
+        : "live";
+  const modeLabels = {
+    offline: "Worker off",
+    manual: "Manual monitor",
+    dry_run: "Dry-run loop",
+    live: "Live autonomy"
+  };
+  const healthScore = Math.max(0, Math.min(100,
+    (runtime.workerEnabled ? 25 : 0)
+    + (runtime.autonomyMode ? 20 : 0)
+    + ((profitRun.createdAt || engine.lastRunAt) ? 15 : 0)
+    + ((automationRun.finishedAt || automationRun.startedAt) ? 15 : 0)
+    + (Number(readiness.blocked || 0) === 0 ? 10 : 0)
+    + ((runtime.dryRun || runtime.hasThreadsCredentials) ? 15 : 0)
+  ));
+  const notes = [
+    !runtime.workerEnabled ? "Enable ENABLE_WORKER=true so the platform can run without manual clicks." : "",
+    runtime.workerEnabled && !runtime.autonomyMode ? "Enable AUTONOMY_MODE=true when you want research, scripts, and queue processing to run by schedule." : "",
+    runtime.workerEnabled && runtime.autonomyMode && runtime.dryRun ? "Dry-run is protecting the system: it will simulate publishing until Threads credentials are ready." : "",
+    !runtime.dryRun && !runtime.hasThreadsCredentials ? "Live mode needs valid Threads credentials before publishing can succeed." : "",
+    !heartbeatAt ? "No worker heartbeat has been recorded yet; run the profit engine or queue once to seed history." : "",
+    Number(readiness.blocked || 0) > 0 ? `${readiness.blocked} readiness blocker(s) remain before unattended live mode.` : "",
+    queuePressure > 0 ? `${queuePressure} post(s) are waiting in autonomous or queue pressure.` : ""
+  ].filter(Boolean);
+
+  if (!notes.length) {
+    notes.push("Worker health is clear; monitor the next scheduled autonomy loop.");
+  }
+
+  return {
+    mode: workerMode,
+    modeLabel: modeLabels[workerMode],
+    healthScore,
+    heartbeatAt,
+    heartbeatAge: ageLabel(heartbeatAt, data.generatedAt),
+    nextRunHint: engine.nextRunHint || (runtime.workerEnabled ? "Configured interval" : "手動"),
+    latestAutomationStatus: automationRun.status || "No automation run",
+    latestProfitSource: profitRun.source || (engine.lastRunAt ? "profit engine" : "No profit run"),
+    queuePressure,
+    scheduledAutonomyPosts,
+    queuedPosts,
+    readinessMode: readiness.mode || "unknown",
+    readinessBlocked: Number(readiness.blocked || 0),
+    notes
+  };
+}
+
+function renderWorkerHealth(data) {
+  const health = buildWorkerHealth(data);
+  $("#workerHealthMode").textContent = `${health.modeLabel} · ${health.healthScore}%`;
+  $("#workerHealthMode").className = `worker-mode mode-${escapeHtml(health.mode)}`;
+  $("#workerHealthGrid").innerHTML = [
+    ["Health score", `${health.healthScore}%`, "scheduler readiness"],
+    ["Last heartbeat", health.heartbeatAge, health.heartbeatAt ? formatDate(health.heartbeatAt) : "no run recorded"],
+    ["Next cycle", health.nextRunHint, "from profit engine config"],
+    ["Queue pressure", health.queuePressure, `${health.queuedPosts} queued · ${health.scheduledAutonomyPosts} autonomous`],
+    ["Automation run", health.latestAutomationStatus, "latest queue worker result"],
+    ["Readiness", health.readinessMode, `${health.readinessBlocked} blocker(s)`]
+  ].map(([label, value, hint]) => `
+    <article class="worker-card">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      <small>${escapeHtml(hint)}</small>
+    </article>
+  `).join("");
+  $("#workerHealthNotes").innerHTML = health.notes.map((note) => `
+    <p>${escapeHtml(note)}</p>
+  `).join("");
+}
+
 function renderProfitEngine(data) {
   const engine = data.profitEngine || {};
   $("#sideConnectorCount").textContent = (engine.sources || []).length;
@@ -714,6 +819,7 @@ function render(data) {
   renderOpsTimeline(data);
   renderNextActions(data);
   renderDecisionBrief(data);
+  renderWorkerHealth(data);
   renderProfitEngine(data);
   renderFactoryMetrics(data);
   renderPosts(data);
