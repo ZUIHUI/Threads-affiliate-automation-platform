@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Threads 聯盟自動化</title>
-    <link rel="stylesheet" href="/styles.css?v=20260709-actions" />
+    <link rel="stylesheet" href="/styles.css?v=20260709-brief" />
   </head>
   <body>
     <div class="app-shell">
@@ -21,6 +21,7 @@
           <a href="#readiness" class="nav-item">Readiness</a>
           <a href="#timeline" class="nav-item">Timeline</a>
           <a href="#next-actions" class="nav-item">Actions</a>
+          <a href="#decision-brief" class="nav-item">Decision</a>
           <a href="#overview" class="nav-item is-active">總覽</a>
           <a href="#profit-engine" class="nav-item">自主獲利</a>
           <a href="#factory" class="nav-item">內容工廠</a>
@@ -119,6 +120,17 @@
           </div>
           <div class="action-summary" id="actionSummary"></div>
           <div class="action-list" id="nextActionList"></div>
+        </section>
+
+        <section class="panel decision-panel" id="decision-brief">
+          <div class="panel-header compact">
+            <div>
+              <p class="eyebrow">Autopilot Decision Brief</p>
+              <h3>獲利決策摘要</h3>
+            </div>
+            <span class="decision-confidence" id="decisionConfidence">--</span>
+          </div>
+          <div class="decision-grid" id="decisionBrief"></div>
         </section>
 
         <section class="ops-grid">
@@ -306,6 +318,6 @@
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="/console.js?v=20260709-actions"></script>
+    <script src="/console.js?v=20260709-brief"></script>
   </body>
 </html>

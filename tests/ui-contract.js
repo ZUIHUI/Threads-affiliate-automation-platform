@@ -13,6 +13,7 @@ const requiredHtml = [
   'id="readiness"',
   'id="timeline"',
   'id="next-actions"',
+  'id="decision-brief"',
   'id="factory"',
   'id="risk"',
   'id="affiliate"',
@@ -41,11 +42,13 @@ const requiredHtml = [
   'id="nextActionCount"',
   'id="actionSummary"',
   'id="nextActionList"',
+  'id="decisionConfidence"',
+  'id="decisionBrief"',
   'id="conversionEvents"',
   "內容工廠",
   "合規 / 風險審核",
   "聯盟收益管道",
-  '<script src="/console.js?v=20260709-actions"></script>'
+  '<script src="/console.js?v=20260709-brief"></script>'
 ];
 
 for (const marker of requiredHtml) {
@@ -65,6 +68,9 @@ const requiredJs = [
   "renderReadiness",
   "renderOpsTimeline",
   "renderNextActions",
+  "renderDecisionBrief",
+  "buildDecisionBrief",
+  "confidenceScore",
   "buildNextActions",
   "handleNextAction",
   "data-next-action",
@@ -101,6 +107,10 @@ const requiredCss = [
   ".actions-panel",
   ".action-summary",
   ".next-action",
+  ".decision-panel",
+  ".decision-grid",
+  ".decision-card",
+  ".decision-confidence",
   ".blocked-script-feed",
   ".conversion-feed",
   ".content-factory",

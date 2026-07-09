@@ -320,6 +320,99 @@ function renderNextActions(data) {
   state.nextActions = actions;
 }
 
+function buildDecisionBrief(data) {
+  const engine = data.profitEngine || {};
+  const models = engine.models || [];
+  const selected = models[0] || {};
+  const runnerUp = models[1] || {};
+  const latestRun = (engine.runs || [])[0] || {};
+  const metrics = data.metrics || {};
+  const readiness = data.readiness?.summary || {};
+  const signalCount = (engine.externalSignals || []).length;
+  const sourceCount = (engine.sourceStatuses || []).filter((source) => source.status === "connected").length;
+  const conversionRate = Number(metrics.clicks || 0)
+    ? ((Number(metrics.conversions || 0) / Number(metrics.clicks || 0)) * 100).toFixed(1)
+    : "0.0";
+  const scoreGap = Number(selected.score || 0) - Number(runnerUp.score || 0);
+  const confidenceScore = Math.max(0, Math.min(100,
+    Math.round(
+      Number(selected.score || 0) * 0.45
+      + Number(readiness.score || 0) * 0.25
+      + Math.min(signalCount * 8, 16)
+      + Math.min(Number(metrics.conversions || 0) * 3, 12)
+      + Math.max(scoreGap, 0) * 0.15
+    )
+  ));
+  const confidence = confidenceScore >= 82 ? "high" : confidenceScore >= 62 ? "medium" : "low";
+
+  return {
+    confidence,
+    confidenceScore,
+    selectedModel: selected.name || "No model selected",
+    selectedScore: Number(selected.score || 0),
+    runnerUp: runnerUp.name || "No runner-up",
+    scoreGap,
+    latestRunAt: latestRun.createdAt,
+    scriptSource: latestRun.scriptSource || (engine.generatedScripts?.[0]?.source || "not generated"),
+    evidence: [
+      `${models.length} monetization models scored`,
+      `${signalCount} external market signal(s), ${sourceCount} connected source(s)`,
+      `${Number(metrics.clicks || 0)} clicks, ${Number(metrics.conversions || 0)} conversions, ${conversionRate}% conversion rate`,
+      `${(engine.blockedScripts || []).length} guardrail block(s), ${Number(metrics.disclosureCoverage || 0)}% disclosure coverage`
+    ],
+    rationale: [
+      selected.stage ? `Funnel fit: ${selected.stage}` : "Funnel fit is pending until the first profit run completes.",
+      selected.monetization ? `Revenue mode: ${selected.monetization}` : "Revenue mode is not selected yet.",
+      selected.adAngle ? `Natural ad rewrite angle: ${selected.adAngle}` : "Ad angle will improve after live market feeds are connected.",
+      latestRun.source ? `Latest decision source: ${latestRun.source}` : "No autonomous decision run has been recorded yet."
+    ],
+    gaps: [
+      signalCount === 0 ? "Connect ad or offer feeds for real market evidence." : "",
+      sourceCount === 0 ? "No live source has reported connected status yet." : "",
+      Number(metrics.conversions || 0) === 0 ? "Conversion feedback is still too thin for revenue learning." : "",
+      readiness.blocked > 0 ? `${readiness.blocked} readiness blocker(s) remain before live autonomy.` : ""
+    ].filter(Boolean)
+  };
+}
+
+function renderDecisionBrief(data) {
+  const brief = buildDecisionBrief(data);
+  $("#decisionConfidence").textContent = `${brief.confidence} confidence · ${brief.confidenceScore}%`;
+  $("#decisionConfidence").className = `decision-confidence confidence-${escapeHtml(brief.confidence)}`;
+  $("#decisionBrief").innerHTML = `
+    <article class="decision-card decision-primary">
+      <span>Selected model</span>
+      <strong>${escapeHtml(brief.selectedModel)}</strong>
+      <p>Score ${brief.selectedScore} · gap ${brief.scoreGap >= 0 ? "+" : ""}${brief.scoreGap} vs runner-up</p>
+      <small>Runner-up: ${escapeHtml(brief.runnerUp)}</small>
+    </article>
+    <article class="decision-card">
+      <span>Latest run</span>
+      <strong>${escapeHtml(brief.scriptSource)}</strong>
+      <p>${escapeHtml(brief.latestRunAt ? formatDate(brief.latestRunAt) : "No run yet")}</p>
+      <small>Script source and timing help detect fallback behavior.</small>
+    </article>
+    <article class="decision-card wide">
+      <span>Evidence</span>
+      <div class="decision-list">
+        ${brief.evidence.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}
+      </div>
+    </article>
+    <article class="decision-card wide">
+      <span>Rationale</span>
+      <div class="decision-list">
+        ${brief.rationale.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}
+      </div>
+    </article>
+    <article class="decision-card wide">
+      <span>Evidence gaps</span>
+      <div class="decision-list">
+        ${(brief.gaps.length ? brief.gaps : ["No major evidence gap detected."]).map((item) => `<p>${escapeHtml(item)}</p>`).join("")}
+      </div>
+    </article>
+  `;
+}
+
 function renderProfitEngine(data) {
   const engine = data.profitEngine || {};
   $("#sideConnectorCount").textContent = (engine.sources || []).length;
@@ -620,6 +713,7 @@ function render(data) {
   renderReadiness(data);
   renderOpsTimeline(data);
   renderNextActions(data);
+  renderDecisionBrief(data);
   renderProfitEngine(data);
   renderFactoryMetrics(data);
   renderPosts(data);
