@@ -481,6 +481,8 @@ async function main() {
   assert.equal(dashboard.profitEngine.models.length > 0, true);
   assert.equal(dashboard.profitEngine.experiments.experiments.length > 0, true);
   assert.equal(Array.isArray(dashboard.profitEngine.experiments.optimizationQueue), true);
+  assert.equal(dashboard.profitEngine.opportunityScanner.opportunities.length > 0, true);
+  assert.equal(Boolean(dashboard.profitEngine.opportunityScanner.opportunities[0].automationAction), true);
   assert.equal(Boolean(dashboard.profitEngine.optimizer.latestPolicy), true);
   assert.equal(dashboard.autonomyPipeline.steps.length, 6);
   assert.equal(dashboard.autonomyPipeline.steps.some((step) => step.id === "worker_loop"), true);
@@ -539,6 +541,7 @@ async function main() {
   assert.equal(profitPayload.result.run.ingestedSignalCount, 0);
   assert.equal(profitPayload.dashboard.profitEngine.sourceStatuses.length > 0, true);
   assert.equal(Boolean(profitPayload.dashboard.profitEngine.sourceRecovery.mode), true);
+  assert.equal(profitPayload.dashboard.profitEngine.opportunityScanner.opportunities.length > 0, true);
   assert.equal(profitPayload.dashboard.profitEngine.generatedScripts.length > 0, true);
   assert.equal(profitPayload.dashboard.autonomyPipeline.steps.some((step) => step.id === "profit_optimizer"), true);
   assert.equal(profitPayload.dashboard.operatingMap.summary.objective.includes("聯盟成交"), true);

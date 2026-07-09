@@ -1304,6 +1304,41 @@ function renderProfitEngine(data) {
     </article>
   `).join("");
 
+  const scanner = engine.opportunityScanner || {};
+  $("#opportunityScanner").innerHTML = `
+    <div class="opportunity-head">
+      <div>
+        <span>Autonomous Opportunity Scanner</span>
+        <strong>${escapeHtml(scanner.nextAction || "Run profit engine")}</strong>
+      </div>
+      <small>${Number(scanner.topScore || 0)} top score · ${escapeHtml(scanner.confidence || "setup")} confidence · ${Number(scanner.opportunityCount || 0)} ranked</small>
+    </div>
+    <div class="opportunity-list">
+      ${(scanner.opportunities || []).map((item) => `
+        <article class="opportunity-card priority-${escapeHtml(item.priority)}">
+          <header>
+            <span>#${Number(item.rank || 0)}</span>
+            <b>${escapeHtml(item.priority)}</b>
+          </header>
+          <div class="opportunity-main">
+            <strong>${escapeHtml(item.modelName)}</strong>
+            <p>${escapeHtml(item.expectedImpact)}</p>
+          </div>
+          <dl>
+            <div><dt>Score</dt><dd>${Number(item.score || 0)}</dd></div>
+            <div><dt>Offer</dt><dd>${escapeHtml(item.offerName || "-")}</dd></div>
+            <div><dt>Signal</dt><dd>${escapeHtml(item.signalSource || "-")}</dd></div>
+            <div><dt>Action</dt><dd>${escapeHtml(item.automationAction || "-")}</dd></div>
+          </dl>
+          <footer>
+            <span>${escapeHtml(item.guardrailState || "ready")}</span>
+            <small>${(item.evidence || []).slice(0, 3).map((line) => escapeHtml(line)).join(" · ")}</small>
+          </footer>
+        </article>
+      `).join("") || `<div class="empty-state">No autonomous opportunities yet</div>`}
+    </div>
+  `;
+
   $("#connectorList").innerHTML = (engine.sources || []).map((source) => `
     <article class="connector-item">
       <span>${escapeHtml(source.runtimeStatus || source.status)}</span>

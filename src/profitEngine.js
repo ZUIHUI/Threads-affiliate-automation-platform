@@ -935,6 +935,151 @@ function applyOptimizerPolicy(scores, policy) {
   return adjusted.sort((a, b) => b.score - a.score);
 }
 
+function activeProductForModel(state, model, signal) {
+  if (signal?.id) {
+    const signalProduct = (state.products || []).find((product) => product.sourceSignalId === signal.id);
+    if (signalProduct) return signalProduct;
+  }
+  const text = [
+    model.name,
+    model.stage,
+    model.monetization,
+    model.audienceSignal,
+    model.adAngle,
+    signal?.title,
+    signal?.productName,
+    signal?.offer
+  ].filter(Boolean).join(" ").toLowerCase();
+  return (state.products || []).find((product) =>
+    product.status === "active" && text.includes(String(product.name || "").toLowerCase())
+  ) || (state.products || []).find((product) => product.status === "active")
+    || (state.products || [])[0]
+    || null;
+}
+
+function linkForProduct(state, product) {
+  if (!product) return null;
+  return (state.affiliateLinks || []).find((link) => link.productId === product.id) || null;
+}
+
+function opportunityPriority(score, queueItem) {
+  if (queueItem?.priority === "high" || score >= 88) return "high";
+  if (queueItem?.priority === "medium" || score >= 74) return "medium";
+  return "watch";
+}
+
+function buildOpportunityEvidence(experiment, model, signal, product, link) {
+  const evidence = [
+    `model score ${Number(model.score || 0)}`,
+    `${Number(experiment?.clicks || 0)} clicks`,
+    `${Number(experiment?.conversions || 0)} conversions`
+  ];
+  if (Number(experiment?.revenue || 0) > 0) evidence.push(`$${Number(experiment.revenue || 0)} revenue`);
+  if (signal) evidence.push(`${signal.kind || "signal"} from ${signal.source || "feed"}`);
+  if (product) evidence.push(`offer ${product.name || product.id}`);
+  if (link) evidence.push(`tracking ${link.slug}`);
+  return evidence.slice(0, 5);
+}
+
+function buildProfitOpportunities(state, config, engine, scores, experimentLoop) {
+  const signals = engine.externalSignals || [];
+  const queue = experimentLoop.optimizationQueue || [];
+  const experimentsByModel = new Map((experimentLoop.experiments || []).map((experiment) => [experiment.modelId, experiment]));
+  const opportunities = scores.slice(0, 4).map((model, index) => {
+    const experiment = experimentsByModel.get(model.id) || {};
+    const signal = pickSignalForModel(model, signals);
+    const product = activeProductForModel(state, model, signal);
+    const link = linkForProduct(state, product);
+    const queueItem = queue.find((item) => item.modelId === model.id);
+    const marketBoost = signal ? 8 : 0;
+    const revenueBoost = Number(experiment.revenue || 0) > 0 ? 10 : Number(experiment.conversions || 0) > 0 ? 7 : 0;
+    const urgencyBoost = queueItem?.priority === "high" ? 8 : queueItem?.priority === "medium" ? 4 : 0;
+    const guardrailPenalty = Number(experiment.blockedScriptCount || 0) > 0 ? 8 : 0;
+    const score = Math.max(1, Math.min(100, Math.round(
+      Number(model.score || 0) * 0.74 + marketBoost + revenueBoost + urgencyBoost - guardrailPenalty
+    )));
+    const automationAction = queueItem?.title
+      || (Number(experiment.conversions || 0) > 0 ? "Scale winning angle" : signal ? "Generate market-backed scripts" : "Seed first experiment");
+    const expectedImpact = Number(experiment.conversions || 0) > 0
+      ? "Scale revenue-backed hooks while preserving the current offer proof."
+      : signal
+        ? "Turn live market evidence into natural scripts and collect conversion feedback."
+        : "Start a controlled baseline so the optimizer has traffic data to learn from.";
+
+    return {
+      id: stableId("opp", `${model.id}:${signal?.id || "built_in"}:${product?.id || "no_product"}:${automationAction}`),
+      rank: index + 1,
+      priority: opportunityPriority(score, queueItem),
+      score,
+      modelId: model.id,
+      modelName: model.name,
+      offerId: product?.id || "",
+      offerName: product?.name || "No active offer",
+      offerNetwork: product?.network || "",
+      signalId: signal?.id || "",
+      signalSource: signal?.source || "built-in playbook",
+      signalTitle: signal?.title || signal?.productName || model.adAngle,
+      automationAction,
+      expectedImpact,
+      guardrailState: Number(experiment.blockedScriptCount || 0) > 0 ? "strict_repair" : link ? "ready" : "needs_tracking_link",
+      experimentStatus: experiment.status || "setup",
+      allocationPct: Number(experiment.allocationPct || 0),
+      conversionRate: Number(experiment.conversionRate || 0),
+      epc: Number(experiment.epc || 0),
+      evidence: buildOpportunityEvidence(experiment, model, signal, product, link),
+      runRequest: {
+        path: "/api/profit-engine/run",
+        method: "POST",
+        body: {
+          source: "opportunity_scanner",
+          force: true,
+          createPosts: true,
+          autoApprove: true
+        }
+      }
+    };
+  });
+
+  const marketGap = !signals.length ? [{
+    id: "opp_market_evidence",
+    rank: 0,
+    priority: "high",
+    score: 86,
+    modelId: "market_signals",
+    modelName: "Market evidence intake",
+    offerId: "",
+    offerName: "Ad and offer feeds",
+    offerNetwork: "",
+    signalId: "",
+    signalSource: "connector center",
+    signalTitle: "No external ad or offer signals are connected yet.",
+    automationAction: "Connect market evidence",
+    expectedImpact: "Unlock autonomous research from real demand instead of built-in playbooks.",
+    guardrailState: "setup",
+    experimentStatus: "setup",
+    allocationPct: 0,
+    conversionRate: 0,
+    epc: 0,
+    evidence: ["0 external signals", "custom ad feed or affiliate offer feed needed"],
+    runRequest: null
+  }] : [];
+
+  const ranked = [...marketGap, ...opportunities]
+    .sort((a, b) => b.score - a.score)
+    .map((item, index) => ({ ...item, rank: index + 1 }))
+    .slice(0, 5);
+  const top = ranked[0] || null;
+  return {
+    generatedAt: nowIso(),
+    mode: config.autonomyMode ? "autonomous" : "manual",
+    confidence: experimentLoop.confidence || "setup",
+    opportunityCount: ranked.length,
+    topScore: top?.score || 0,
+    nextAction: top?.automationAction || "Run profit engine",
+    opportunities: ranked
+  };
+}
+
 function buildProfitRunPreview(state, config, options = {}) {
   const previewState = JSON.parse(JSON.stringify(state));
   const engine = ensureProfitState(previewState);
@@ -1114,6 +1259,8 @@ function buildProfitDashboard(state, config) {
     };
   });
   const sourceStatuses = mergeStatusHealth(engine.sourceStatuses || [], engine.sourceHealth || {});
+  const experimentLoop = buildExperimentLoop(state, config, engine, scores);
+  const opportunityScanner = buildProfitOpportunities(state, config, engine, scores, experimentLoop);
 
   return {
     autonomyEnabled: Boolean(config.autonomyMode),
@@ -1126,7 +1273,8 @@ function buildProfitDashboard(state, config) {
     sourceHealth: engine.sourceHealth || {},
     sourceRecovery: buildSourceRecovery(sourceStatuses, engine.sourceHealth || {}),
     externalSignals: signals.slice(0, 8),
-    experiments: buildExperimentLoop(state, config, engine, scores),
+    experiments: experimentLoop,
+    opportunityScanner,
     optimizer: {
       latestPolicy: engine.optimizerPolicies[0] || engine.runs.find((run) => run.optimizerPolicy)?.optimizerPolicy || null,
       policyHistory: engine.optimizerPolicies.slice(0, 5),
