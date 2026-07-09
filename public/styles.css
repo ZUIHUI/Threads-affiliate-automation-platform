@@ -2183,6 +2183,88 @@ body {
   color: var(--ink);
 }
 
+.policy-governor {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 10px;
+  padding: 0 18px 12px;
+}
+
+.policy-mode {
+  display: inline-grid;
+  min-height: 64px;
+  place-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.policy-mode.status-pass {
+  color: var(--green-dark);
+  border-color: rgba(11, 143, 115, 0.28);
+  background: rgba(11, 143, 115, 0.1);
+}
+
+.policy-mode.status-pause {
+  color: var(--danger);
+  border-color: rgba(183, 53, 53, 0.28);
+  background: rgba(183, 53, 53, 0.1);
+}
+
+.policy-rules {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.policy-rule {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.policy-rule > span {
+  justify-self: start;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.policy-rule.status-pause > span {
+  background: var(--danger);
+}
+
+.policy-rule.status-watch > span {
+  background: var(--amber);
+}
+
+.policy-rule.status-pass > span {
+  background: var(--green);
+}
+
+.policy-rule strong {
+  display: block;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.policy-rule small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .experiment-panel {
   margin-bottom: 14px;
 }
@@ -2436,6 +2518,7 @@ body {
   .worker-health-grid,
   .pipeline-summary,
   .pipeline-steps,
+  .policy-rules,
   .experiment-summary,
   .autopilot-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2455,6 +2538,7 @@ body {
 
   .experiment-layout,
   .experiment-cards,
+  .policy-governor,
   .optimizer-decision {
     grid-template-columns: 1fr;
   }
@@ -2501,6 +2585,7 @@ body {
   .worker-health-grid,
   .pipeline-summary,
   .pipeline-steps,
+  .policy-rules,
   .experiment-summary,
   .autopilot-summary,
   .workflow-strip,

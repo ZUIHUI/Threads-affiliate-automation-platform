@@ -6,7 +6,7 @@ const path = require("node:path");
 const { getRuntimeConfig } = require("../src/config");
 const { createStore } = require("../src/store");
 const { extractUniqueUrls, validatePost } = require("../src/validators");
-const { generateDrafts, generateDraftsAsync, recordConversion, runAutomation } = require("../src/automation");
+const { buildAutonomyPolicy, generateDrafts, generateDraftsAsync, recordConversion, runAutomation } = require("../src/automation");
 const { buildProfitRunPreview, runProfitEngine } = require("../src/profitEngine");
 const { buildAutonomyReadiness } = require("../src/readiness");
 const { buildMetaAdLibraryUrl, collectAdIntelligence } = require("../src/adIntelligenceClient");
@@ -45,6 +45,21 @@ async function main() {
   const localReadiness = buildAutonomyReadiness(store.read(), config);
   assert.equal(localReadiness.summary.mode, "blocked");
   assert.equal(localReadiness.checks.some((check) => check.id === "worker" && check.status === "blocked"), true);
+  const clearPolicy = buildAutonomyPolicy(store.read(), config);
+  assert.equal(clearPolicy.canRunCycle, true);
+  const pausedPolicyState = store.read();
+  pausedPolicyState.events.unshift({
+    id: "evt_cycle_limit",
+    type: "autonomy.cycle.completed",
+    createdAt: new Date().toISOString()
+  });
+  const pausedPolicy = buildAutonomyPolicy(pausedPolicyState, getRuntimeConfig({
+    PUBLIC_BASE_URL: "http://localhost:4173",
+    THREADS_DRY_RUN: "true",
+    AUTONOMY_MAX_CYCLES_PER_DAY: "1"
+  }));
+  assert.equal(pausedPolicy.canRunCycle, false);
+  assert.equal(pausedPolicy.rules.find((rule) => rule.id === "cycle_budget").status, "pause");
 
   const liveReadyConfig = getRuntimeConfig({
     PUBLIC_BASE_URL: "https://threads-affiliate.example",
@@ -407,6 +422,8 @@ async function main() {
   assert.equal(dashboard.autonomyPipeline.steps.length, 6);
   assert.equal(dashboard.autonomyPipeline.steps.some((step) => step.id === "worker_loop"), true);
   assert.equal(Boolean(dashboard.autonomyPipeline.summary.nextGate), true);
+  assert.equal(Array.isArray(dashboard.autonomyPolicy.rules), true);
+  assert.equal(dashboard.autonomyPolicy.canCreatePosts, true);
   assert.equal(dashboard.readiness.checks.some((check) => check.id === "worker"), true);
   const readinessResponse = await fetch(`http://127.0.0.1:${address.port}/api/readiness`);
   const readinessPayload = await readinessResponse.json();
@@ -455,7 +472,9 @@ async function main() {
   assert.equal(cycleResponse.status, 200);
   assert.equal(cyclePayload.cycle.status, "completed");
   assert.equal(cyclePayload.cycle.source, "test-cycle");
+  assert.equal(cyclePayload.policy.canRunCycle, true);
   assert.equal(cyclePayload.dashboard.autonomyPipeline.latestCycle.source, "test-cycle");
+  assert.equal(cyclePayload.dashboard.autonomyPolicy.rules.some((rule) => rule.id === "cycle_budget"), true);
   assert.equal(cyclePayload.dashboard.recentEvents.some((event) => event.type === "autonomy.cycle.completed"), true);
   await new Promise((resolve, reject) => {
     server.close((error) => error ? reject(error) : resolve());

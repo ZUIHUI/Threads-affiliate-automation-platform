@@ -40,6 +40,8 @@ const requiredHtml = [
   'id="pipelineMode"',
   'id="pipelineSummary"',
   'id="pipelineSteps"',
+  'id="policyMode"',
+  'id="policyRules"',
   'id="autopilotSummary"',
   'id="readinessMode"',
   'id="readinessSummary"',
@@ -63,8 +65,8 @@ const requiredHtml = [
   "內容工廠",
   "合規 / 風險審核",
   "聯盟收益管道",
-  '<link rel="stylesheet" href="/styles.css?v=20260709-cycle" />',
-  '<script src="/console.js?v=20260709-cycle"></script>'
+  '<link rel="stylesheet" href="/styles.css?v=20260709-policy" />',
+  '<script src="/console.js?v=20260709-policy"></script>'
 ];
 
 for (const marker of requiredHtml) {
@@ -85,6 +87,7 @@ const requiredJs = [
   "renderReadiness",
   "renderAutonomyPipeline",
   "buildPipelineFallback",
+  "buildPolicyFallback",
   "pipelineStatusScore",
   "runAutonomyCycle",
   "renderOpsTimeline",
@@ -131,6 +134,9 @@ const requiredCss = [
   ".pipeline-steps",
   ".pipeline-step",
   ".pipeline-mode",
+  ".policy-governor",
+  ".policy-rule",
+  ".policy-mode",
   ".autopilot-summary",
   ".readiness-panel",
   ".readiness-summary",

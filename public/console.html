@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Threads 聯盟自動化</title>
-    <link rel="stylesheet" href="/styles.css?v=20260709-cycle" />
+    <link rel="stylesheet" href="/styles.css?v=20260709-policy" />
   </head>
   <body>
     <div class="app-shell">
@@ -100,6 +100,10 @@
             <span class="pipeline-mode" id="pipelineMode">Loading</span>
           </div>
           <div class="pipeline-summary" id="pipelineSummary"></div>
+          <div class="policy-governor">
+            <span class="policy-mode" id="policyMode">Policy loading</span>
+            <div class="policy-rules" id="policyRules"></div>
+          </div>
           <div class="pipeline-steps" id="pipelineSteps"></div>
         </section>
 
@@ -362,6 +366,6 @@
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="/console.js?v=20260709-cycle"></script>
+    <script src="/console.js?v=20260709-policy"></script>
   </body>
 </html>

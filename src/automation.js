@@ -48,6 +48,103 @@ function pipelineStatusScore(status) {
   return scores[status] || 0;
 }
 
+function isWithinLastDay(value) {
+  const at = new Date(value || 0).getTime();
+  return Number.isFinite(at) && at >= Date.now() - 24 * 60 * 60 * 1000;
+}
+
+function policyRule(id, label, status, value, limit, action) {
+  return { id, label, status, value, limit, action };
+}
+
+function buildAutonomyPolicy(state, config) {
+  const capacity = capacityRemaining(state);
+  const cyclesToday = (state.events || []).filter((event) =>
+    event.type === "autonomy.cycle.completed" && isWithinLastDay(event.createdAt)
+  ).length;
+  const createdAutonomyPostsToday = (state.posts || []).filter((post) =>
+    post.contentType === "自然推薦腳本" && isWithinLastDay(post.createdAt)
+  ).length;
+  const queueDepth = (state.posts || []).filter((post) =>
+    post.approved && ["scheduled", "container_created"].includes(post.status)
+  ).length;
+  const failedRuns = (state.automationRuns || []).slice(0, config.autonomyMaxFailedRuns)
+    .filter((run) => run.status === "failed" || Number(run.failed || 0) > 0).length;
+  const blockedScriptsToday = ((state.profitEngine?.runs || [])).flatMap((run) =>
+    (run.blockedScripts || []).map((script) => ({ ...script, runAt: run.createdAt }))
+  ).filter((script) => isWithinLastDay(script.createdAt || script.runAt)).length;
+
+  const rules = [
+    policyRule(
+      "cycle_budget",
+      "Daily cycle budget",
+      cyclesToday < config.autonomyMaxCyclesPerDay ? "pass" : "pause",
+      cyclesToday,
+      config.autonomyMaxCyclesPerDay,
+      "Increase AUTONOMY_MAX_CYCLES_PER_DAY or wait for the next 24h window."
+    ),
+    policyRule(
+      "content_budget",
+      "Autonomous content budget",
+      createdAutonomyPostsToday < config.autonomyMaxCreatedPostsPerDay ? "pass" : "pause",
+      createdAutonomyPostsToday,
+      config.autonomyMaxCreatedPostsPerDay,
+      "Let queued posts gather feedback before creating more autonomous scripts."
+    ),
+    policyRule(
+      "queue_depth",
+      "Queue depth",
+      queueDepth <= config.autonomyMaxQueueDepth ? "pass" : "pause",
+      queueDepth,
+      config.autonomyMaxQueueDepth,
+      "Process or review the queue before adding more scheduled posts."
+    ),
+    policyRule(
+      "publish_capacity",
+      "24h publish capacity",
+      capacity > 0 ? "pass" : "pause",
+      capacity,
+      state.settings.maxDailyApiPosts || 250,
+      "Daily Threads publishing capacity is exhausted."
+    ),
+    policyRule(
+      "failure_guard",
+      "Recent failures",
+      failedRuns < config.autonomyMaxFailedRuns ? "pass" : "pause",
+      failedRuns,
+      config.autonomyMaxFailedRuns,
+      "Fix recent publish failures before the next unattended cycle."
+    ),
+    policyRule(
+      "guardrail_guard",
+      "Script guardrails",
+      blockedScriptsToday <= config.autonomyMaxBlockedScriptsPerDay ? "pass" : "pause",
+      blockedScriptsToday,
+      config.autonomyMaxBlockedScriptsPerDay,
+      "Too many scripts were blocked; tighten prompts or review offers."
+    )
+  ];
+  const pausedRules = rules.filter((rule) => rule.status === "pause");
+  const mode = pausedRules.length ? "paused" : config.autonomyMode ? "autonomous" : "manual";
+
+  return {
+    mode,
+    canRunCycle: pausedRules.length === 0,
+    canCreatePosts: pausedRules.length === 0,
+    canPublishQueue: capacity > 0 && failedRuns < config.autonomyMaxFailedRuns,
+    nextAction: pausedRules[0]?.action || "Autonomy policy is clear.",
+    rules,
+    limits: {
+      cyclesToday,
+      createdAutonomyPostsToday,
+      queueDepth,
+      capacity,
+      failedRuns,
+      blockedScriptsToday
+    }
+  };
+}
+
 function buildAutonomyPipeline(state, config, profitEngine, readiness, metrics) {
   const connectedSources = (profitEngine.sourceStatuses || []).filter((source) => source.status === "connected").length;
   const configuredSources = config.adIntelligenceFeedUrls.length
@@ -59,7 +156,9 @@ function buildAutonomyPipeline(state, config, profitEngine, readiness, metrics) 
   const conversionCount = metrics.conversions || 0;
   const hasConversionWebhook = Boolean(config.conversionWebhookSecret);
   const readinessBlocked = readiness.summary?.blocked || 0;
-  const latestCycleEvent = (state.events || []).find((event) => event.type === "autonomy.cycle.completed") || null;
+  const latestCycleEvent = (state.events || []).find((event) =>
+    ["autonomy.cycle.completed", "autonomy.cycle.paused"].includes(event.type)
+  ) || null;
 
   const steps = [
     {
@@ -146,6 +245,8 @@ function buildAutonomyPipeline(state, config, profitEngine, readiness, metrics) 
       id: latestCycleEvent.cycleId,
       source: latestCycleEvent.source,
       status: latestCycleEvent.status,
+      policyMode: latestCycleEvent.policyMode || "",
+      policyAction: latestCycleEvent.policyAction || "",
       optimizerMode: latestCycleEvent.optimizerMode,
       createdPostCount: latestCycleEvent.createdPostCount || 0,
       processed: latestCycleEvent.processed || 0,
@@ -182,6 +283,7 @@ function buildDashboard(state, config) {
   };
   const profitEngine = buildProfitDashboard(state, config);
   const readiness = buildAutonomyReadiness(state, config);
+  const autonomyPolicy = buildAutonomyPolicy(state, config);
 
   return {
     generatedAt: nowIso(),
@@ -216,6 +318,7 @@ function buildDashboard(state, config) {
     promptTemplate: buildPrompt("AI 自動化聯盟行銷"),
     profitEngine,
     readiness,
+    autonomyPolicy,
     autonomyPipeline: buildAutonomyPipeline(state, config, profitEngine, readiness, metrics),
     settings: state.settings
   };
@@ -611,6 +714,7 @@ async function runAutomation(store, config, options = {}) {
 
 module.exports = {
   buildDashboard,
+  buildAutonomyPolicy,
   createPost,
   generateDrafts,
   generateDraftsAsync,

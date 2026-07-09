@@ -171,8 +171,50 @@ function buildPipelineFallback(data) {
   };
 }
 
+function buildPolicyFallback(data) {
+  const metrics = data.metrics || {};
+  const runtime = data.runtime || {};
+  const queueDepth = Number(metrics.queued || 0);
+  const rules = [
+    {
+      id: "queue_depth",
+      label: "Queue depth",
+      status: queueDepth <= 50 ? "pass" : "pause",
+      value: queueDepth,
+      limit: 50,
+      action: "Process or review the queue before adding more scheduled posts."
+    },
+    {
+      id: "publish_capacity",
+      label: "Dry-run/live capacity",
+      status: runtime.dryRun || runtime.hasThreadsCredentials ? "pass" : "pause",
+      value: runtime.dryRun ? "dry-run" : "live",
+      limit: "ready",
+      action: "Set Threads credentials or keep dry-run enabled."
+    },
+    {
+      id: "conversion_feedback",
+      label: "Conversion feedback",
+      status: Number(metrics.conversions || 0) > 0 ? "pass" : "watch",
+      value: Number(metrics.conversions || 0),
+      limit: "1+",
+      action: "Connect conversion webhook for revenue learning."
+    }
+  ];
+  const pausedRules = rules.filter((rule) => rule.status === "pause");
+  return {
+    mode: pausedRules.length ? "paused" : runtime.autonomyMode ? "autonomous" : "manual",
+    canRunCycle: pausedRules.length === 0,
+    canCreatePosts: pausedRules.length === 0,
+    canPublishQueue: pausedRules.length === 0,
+    nextAction: pausedRules[0]?.action || "Autonomy policy is clear.",
+    rules
+  };
+}
+
 function renderAutonomyPipeline(data) {
   const pipeline = data.autonomyPipeline || buildPipelineFallback(data);
+  const policy = data.autonomyPolicy || buildPolicyFallback(data);
   const summary = pipeline.summary || {};
   const steps = pipeline.steps || [];
   const latestCycle = pipeline.latestCycle || null;
@@ -200,6 +242,17 @@ function renderAutonomyPipeline(data) {
         <small>${escapeHtml(step.nextAction)}</small>
       </div>
       <b>${escapeHtml(step.value)}</b>
+    </article>
+  `).join("");
+  $("#policyMode").textContent = `${policy.mode || "manual"} · ${policy.canRunCycle ? "cycle ready" : "cycle paused"}`;
+  $("#policyMode").className = `policy-mode status-${policy.canRunCycle ? "pass" : "pause"}`;
+  $("#policyRules").innerHTML = (policy.rules || []).map((rule) => `
+    <article class="policy-rule status-${escapeHtml(rule.status)}">
+      <span>${escapeHtml(rule.status)}</span>
+      <div>
+        <strong>${escapeHtml(rule.label)}</strong>
+        <small>${escapeHtml(rule.value)} / ${escapeHtml(rule.limit)}</small>
+      </div>
     </article>
   `).join("");
 }

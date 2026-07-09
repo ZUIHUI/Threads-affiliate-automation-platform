@@ -7,6 +7,7 @@ const { createStore } = require("./src/store");
 const { createPostgresStore } = require("./src/postgresStore");
 const {
   buildDashboard,
+  buildAutonomyPolicy,
   createPost,
   generateDraftsAsync,
   generateDrafts,
@@ -174,26 +175,74 @@ async function runAutonomyCycle(options = {}) {
   await configureRuntime();
   const startedAt = new Date().toISOString();
   const source = options.source || "cycle";
+  const policy = buildAutonomyPolicy(await readState(), config);
+  const ignorePolicy = Boolean(options.ignorePolicy);
   const shouldRunProfit = options.profit !== false;
-  const shouldRunQueue = options.publishQueue !== false;
+  const shouldRunQueue = options.publishQueue !== false && (ignorePolicy || policy.canPublishQueue);
   let intelligence = null;
   let aiDraft = { scripts: [], source: "template", error: "" };
   let profitResult = null;
   let automationResult = null;
+
+  if (!policy.canRunCycle && !ignorePolicy) {
+    const finishedAt = new Date().toISOString();
+    const cycle = {
+      id: `cycle_${Date.now()}`,
+      status: "paused",
+      source,
+      startedAt,
+      finishedAt,
+      policyMode: policy.mode,
+      policyAction: policy.nextAction,
+      profitSkipped: true,
+      selectedModelId: "",
+      optimizerMode: "",
+      ingestedSignalCount: 0,
+      aiScriptSource: "skipped",
+      aiScriptError: "",
+      createdPostCount: 0,
+      blockedScriptCount: 0,
+      queueStatus: "skipped",
+      processed: 0,
+      simulated: 0,
+      published: 0,
+      failed: 0
+    };
+    await store.update((state) => {
+      state.events.unshift({
+        id: `evt_${Date.now()}`,
+        type: "autonomy.cycle.paused",
+        cycleId: cycle.id,
+        status: cycle.status,
+        source: cycle.source,
+        policyMode: policy.mode,
+        policyAction: policy.nextAction,
+        createdAt: cycle.finishedAt
+      });
+      return {};
+    });
+    return {
+      cycle,
+      policy,
+      result: null,
+      automation: null,
+      dashboard: buildDashboard(await readState(), config)
+    };
+  }
 
   if (shouldRunProfit) {
     intelligence = options.ingest === false ? null : await collectAdIntelligence(config);
     aiDraft = await buildProfitAiScripts({
       source,
       force: options.force !== false,
-      createPosts: options.createPosts !== false,
+      createPosts: options.createPosts !== false && (ignorePolicy || policy.canCreatePosts),
       autoApprove: options.autoApprove !== false,
       intelligence
     }, options);
     profitResult = await store.update((state) => runProfitEngine(state, config, {
       source,
       force: options.force !== false,
-      createPosts: options.createPosts !== false,
+      createPosts: options.createPosts !== false && (ignorePolicy || policy.canCreatePosts),
       autoApprove: options.autoApprove !== false,
       intelligence,
       aiScripts: aiDraft.scripts,
@@ -213,6 +262,8 @@ async function runAutonomyCycle(options = {}) {
     source,
     startedAt,
     finishedAt,
+    policyMode: policy.mode,
+    policyAction: policy.nextAction,
     profitSkipped: Boolean(profitResult?.skipped),
     selectedModelId: profitResult?.run?.selectedModelId || "",
     optimizerMode: profitResult?.run?.optimizerPolicy?.mode || "",
@@ -235,6 +286,8 @@ async function runAutonomyCycle(options = {}) {
       cycleId: cycle.id,
       status: cycle.status,
       source: cycle.source,
+      policyMode: cycle.policyMode,
+      policyAction: cycle.policyAction,
       selectedModelId: cycle.selectedModelId,
       optimizerMode: cycle.optimizerMode,
       createdPostCount: cycle.createdPostCount,
@@ -249,6 +302,7 @@ async function runAutonomyCycle(options = {}) {
 
   return {
     cycle,
+    policy,
     result: profitResult,
     automation: automationResult,
     dashboard: buildDashboard(await readState(), config)
@@ -361,7 +415,8 @@ async function handleApi(req, res, url) {
       createPosts: body.createPosts !== false,
       autoApprove: body.autoApprove !== false,
       publishQueue: body.publishQueue !== false,
-      profit: body.profit !== false
+      profit: body.profit !== false,
+      ignorePolicy: body.ignorePolicy === true
     });
     sendJson(res, 200, result);
     return;
