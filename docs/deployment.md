@@ -206,9 +206,21 @@ docker run --env-file .env -p 4173:4173 threads-affiliate-ops
 4. Keep `THREADS_DRY_RUN=true` for the first smoke test.
 5. Set `PUBLIC_BASE_URL` to the Render service URL after deploy.
 
+## Production runbook
+
+Use `docs/runbook.md` for the full pre-launch and dry-run -> live sequence, plus endpoint-level smoke checks.
+
 ## Verification
 
 Core verification:
+
+```bash
+curl https://<domain>/health
+curl https://<domain>/api/readiness
+curl https://<domain>/api/dashboard
+```
+
+If you are running tests from source, you can also run:
 
 ```bash
 node tests/run-tests.js
