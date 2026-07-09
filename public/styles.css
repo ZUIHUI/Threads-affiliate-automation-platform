@@ -2058,6 +2058,303 @@ body {
   line-height: 1.45;
 }
 
+.operating-map-section {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 14px;
+  padding: 18px;
+  border: 1px solid #26372f;
+  border-radius: 8px;
+  background: #111816;
+  color: #f8fbf7;
+  box-shadow: 0 20px 44px rgba(14, 24, 19, 0.16);
+}
+
+.operating-map-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.operating-map-header h3 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.15;
+}
+
+.operating-map-header p:not(.eyebrow) {
+  margin: 8px 0 0;
+  max-width: 680px;
+  color: #b9c9c1;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.operating-map-section .eyebrow,
+.rail-title span,
+.loop-canvas-head span,
+.decision-rail-head span {
+  color: #8da39a;
+}
+
+.operating-map-score {
+  min-width: 230px;
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  text-align: right;
+}
+
+.operating-map-score > span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  color: #dbe8e2;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.operating-map-score > span.status-active {
+  color: #c9f7e6;
+  border-color: rgba(97, 214, 169, 0.35);
+  background: rgba(97, 214, 169, 0.12);
+}
+
+.operating-map-score > span.status-dry_run,
+.operating-map-score > span.status-watch {
+  color: #ffe0a6;
+  border-color: rgba(201, 139, 33, 0.38);
+  background: rgba(201, 139, 33, 0.14);
+}
+
+.operating-map-score > span.status-paused {
+  color: #ffc7b8;
+  border-color: rgba(217, 98, 69, 0.44);
+  background: rgba(217, 98, 69, 0.14);
+}
+
+.operating-map-score strong {
+  font-size: 38px;
+  line-height: 1;
+}
+
+.operating-map-score small {
+  color: #aebfb7;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.operating-map-grid {
+  display: grid;
+  grid-template-columns: 286px minmax(0, 1fr) 326px;
+  gap: 14px;
+  align-items: stretch;
+}
+
+.agent-rail,
+.loop-canvas,
+.decision-rail {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 8px;
+  background: #f9fbf8;
+  color: var(--ink);
+}
+
+.agent-rail,
+.decision-rail {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 14px;
+}
+
+.rail-title,
+.loop-canvas-head,
+.decision-rail-head {
+  display: grid;
+  gap: 5px;
+}
+
+.rail-title span,
+.loop-canvas-head span,
+.decision-rail-head span {
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.rail-title strong,
+.loop-canvas-head strong,
+.decision-rail-head strong {
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+#operatingMapLanes {
+  display: grid;
+  gap: 9px;
+}
+
+.agent-lane {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.agent-lane.status-active,
+.flow-node.status-active {
+  border-left-color: var(--green);
+}
+
+.agent-lane.status-dry_run,
+.agent-lane.status-watch,
+.flow-node.status-dry_run,
+.flow-node.status-watch {
+  border-left-color: var(--amber);
+}
+
+.agent-lane.status-manual,
+.flow-node.status-manual {
+  border-left-color: var(--blue);
+}
+
+.agent-lane.status-paused,
+.agent-lane.status-blocked,
+.flow-node.status-paused,
+.flow-node.status-blocked {
+  border-left-color: var(--coral);
+}
+
+.agent-lane > span,
+.flow-node > span {
+  justify-self: start;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.agent-lane strong,
+.flow-node strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.agent-lane p,
+.agent-lane small,
+.flow-node p,
+.flow-node small,
+.decision-reasons p,
+.decision-rail > small {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.loop-canvas {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 12px;
+  padding: 14px;
+}
+
+.loop-canvas-head {
+  grid-template-columns: minmax(0, 1fr);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.operating-flow {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.flow-node {
+  min-height: 178px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.flow-node footer {
+  align-self: end;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.flow-node b {
+  color: var(--ink);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.decision-facts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.decision-facts div {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.decision-facts dt,
+.decision-facts dd {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.decision-facts dt {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.decision-facts dd {
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.decision-reasons {
+  display: grid;
+  gap: 8px;
+}
+
+.decision-reasons p {
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: #eef4f0;
+}
+
 .control-panel {
   margin-bottom: 14px;
 }
@@ -2509,6 +2806,14 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .operating-map-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .operating-flow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .intel-strip {
     grid-template-columns: 1fr;
   }
@@ -2577,6 +2882,17 @@ body {
     align-items: stretch;
   }
 
+  .operating-map-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .operating-map-score {
+    min-width: 0;
+    justify-items: start;
+    text-align: left;
+  }
+
   .mini-kpi-grid,
   .command-strip,
   .readiness-summary,
@@ -2593,6 +2909,14 @@ body {
   .funnel-flow,
   .profit-models,
   .campaign-list {
+    grid-template-columns: 1fr;
+  }
+
+  .operating-flow {
+    grid-template-columns: 1fr;
+  }
+
+  .decision-facts div {
     grid-template-columns: 1fr;
   }
 

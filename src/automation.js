@@ -33,6 +33,10 @@ function sum(items, picker) {
   return items.reduce((total, item) => total + Number(picker(item) || 0), 0);
 }
 
+function formatMoney(value) {
+  return `$${Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+}
+
 function findById(items, id) {
   return items.find((item) => item.id === id);
 }
@@ -43,6 +47,7 @@ function pipelineStatusScore(status) {
     dry_run: 78,
     watch: 64,
     manual: 48,
+    paused: 40,
     blocked: 18
   };
   return scores[status] || 0;
@@ -259,6 +264,175 @@ function buildAutonomyPipeline(state, config, profitEngine, readiness, metrics) 
   };
 }
 
+function buildOperatingMap(state, config, profitEngine, readiness, autonomyPolicy, autonomyPipeline, metrics) {
+  const sources = profitEngine.sources || [];
+  const connectedSources = sources.filter((source) => source.runtimeStatus === "connected").length;
+  const configuredSources = config.adIntelligenceFeedUrls.length
+    + config.affiliateOfferFeedUrls.length
+    + (config.metaAdLibraryAccessToken && config.metaAdLibraryQuery ? 1 : 0);
+  const signalCount = (profitEngine.externalSignals || []).length;
+  const scriptCount = (profitEngine.generatedScripts || []).length;
+  const runCount = (profitEngine.runs || []).length;
+  const modelCount = (profitEngine.models || []).length;
+  const blockedScriptCount = (profitEngine.blockedScripts || []).length;
+  const policyClear = Boolean(autonomyPolicy.canRunCycle);
+  const readinessScore = Number(readiness.summary?.score || 0);
+  const pipelineScore = Number(autonomyPipeline.summary?.score || 0);
+  const policyScore = policyClear ? 100 : 42;
+  const healthScore = Math.round((pipelineScore * 0.45) + (readinessScore * 0.35) + (policyScore * 0.2));
+  const optimizerPolicy = profitEngine.optimizer?.latestPolicy || null;
+  const experiments = profitEngine.experiments || {};
+  const leaderModel = (profitEngine.models || []).find((model) => model.id === experiments.leaderModelId)
+    || (profitEngine.models || [])[0]
+    || {};
+  const selectedProduct = (state.products || []).find((product) =>
+    product.id === profitEngine.generatedScripts?.[0]?.productId
+  ) || (state.products || []).find((product) => product.status === "active") || {};
+  const conversionRate = metrics.clicks ? Number(((metrics.conversions / metrics.clicks) * 100).toFixed(1)) : 0;
+  const liveReady = Boolean(autonomyPipeline.summary?.readyForUnattended);
+  const mode = autonomyPolicy.mode === "paused"
+    ? "policy_paused"
+    : liveReady
+      ? "unattended_live"
+      : config.threadsDryRun
+        ? "dry_run"
+        : config.autonomyMode
+          ? "autonomous_setup"
+          : "manual_build";
+
+  const lanes = [
+    {
+      id: "market_api",
+      label: "API / market intake",
+      status: connectedSources > 0 ? "active" : configuredSources > 0 ? "watch" : "blocked",
+      value: connectedSources > 0 ? `${connectedSources}/${sources.length || configuredSources}` : `${configuredSources} configured`,
+      detail: connectedSources > 0
+        ? "Ad and offer signals are feeding the engine."
+        : configuredSources > 0
+          ? "Sources are configured; waiting for ingest evidence."
+          : "Connect ad intelligence or affiliate offer feeds.",
+      action: connectedSources > 0 ? "Monitor freshness" : "Set market signal feeds"
+    },
+    {
+      id: "ai_script_agent",
+      label: "AI natural script agent",
+      status: config.openaiApiKey ? "active" : scriptCount > 0 ? "watch" : "manual",
+      value: config.openaiApiKey ? "OpenAI ready" : `${scriptCount} scripts`,
+      detail: config.openaiApiKey
+        ? "Can generate natural, compliant Threads scripts."
+        : "Template fallback is operating until OPENAI_API_KEY is set.",
+      action: config.openaiApiKey ? "Generate variants" : "Connect OpenAI"
+    },
+    {
+      id: "offer_autopilot",
+      label: "Offer autopilot",
+      status: profitEngine.offerAutopilot?.activeSyncedProductCount > 0 ? "active" : "watch",
+      value: `${profitEngine.offerAutopilot?.activeSyncedProductCount || 0} active`,
+      detail: `Can import up to ${profitEngine.offerAutopilot?.maxOffersPerRun || 0} offer(s) per run.`,
+      action: "Keep testing offer fit"
+    },
+    {
+      id: "threads_publish_api",
+      label: "Threads publish API",
+      status: config.threadsDryRun ? "dry_run" : config.threadsUserId && config.threadsAccessToken ? "active" : "blocked",
+      value: config.threadsDryRun ? "dry-run" : "live",
+      detail: config.threadsDryRun
+        ? "Queue processing is simulated."
+        : config.threadsUserId && config.threadsAccessToken
+          ? "Threads credentials are present for live publishing."
+          : "Threads credentials are missing.",
+      action: config.threadsDryRun ? "Validate then switch live" : "Watch quota"
+    },
+    {
+      id: "conversion_feedback",
+      label: "Conversion feedback",
+      status: metrics.conversions > 0 ? "active" : config.conversionWebhookSecret ? "watch" : "blocked",
+      value: `${metrics.conversions || 0} conversions`,
+      detail: metrics.conversions > 0
+        ? `${formatMoney(metrics.revenue)} revenue has fed back into scoring.`
+        : config.conversionWebhookSecret
+          ? "Webhook is protected; waiting for affiliate network events."
+          : "Revenue learning needs a protected conversion webhook.",
+      action: metrics.conversions > 0 ? "Scale winners" : "Connect postback"
+    }
+  ];
+
+  const flow = [
+    {
+      id: "research_profit_model",
+      label: "Research profit model",
+      status: runCount > 0 ? "active" : "manual",
+      value: `${modelCount} models`,
+      detail: leaderModel.name ? `Leader: ${leaderModel.name}` : "Run research to pick the first model.",
+      signal: experiments.confidence || "setup"
+    },
+    {
+      id: "rewrite_natural",
+      label: "Rewrite as natural Threads scripts",
+      status: scriptCount > 0 ? "active" : config.openaiApiKey ? "watch" : "manual",
+      value: `${scriptCount} scripts`,
+      detail: scriptCount > 0 ? "Natural affiliate scripts are ready for queueing." : "Generate the first script set.",
+      signal: blockedScriptCount ? `${blockedScriptCount} blocked` : "guarded"
+    },
+    {
+      id: "acquire_ads",
+      label: "Acquire ad and offer evidence",
+      status: signalCount > 0 ? "active" : configuredSources > 0 ? "watch" : "blocked",
+      value: `${signalCount} signals`,
+      detail: signalCount > 0 ? "External market evidence is influencing scoring." : "Built-in playbooks are still carrying the model.",
+      signal: connectedSources > 0 ? "live" : "setup"
+    },
+    {
+      id: "schedule_publish",
+      label: "Schedule and publish",
+      status: metrics.queued > 0 ? "active" : config.threadsDryRun ? "dry_run" : "watch",
+      value: `${metrics.queued || 0} queued`,
+      detail: config.threadsDryRun ? "Dry-run protects live account while validating." : "Queue is ready for live processing.",
+      signal: `${metrics.published + metrics.simulated} sent`
+    },
+    {
+      id: "learn_optimize",
+      label: "Learn and optimize",
+      status: metrics.conversions > 0 ? "active" : metrics.clicks > 0 ? "watch" : "manual",
+      value: `${conversionRate}% CVR`,
+      detail: optimizerPolicy?.targetAction || "Collect clicks and conversions for the next policy.",
+      signal: optimizerPolicy?.mode || "baseline"
+    }
+  ];
+
+  const reasons = [
+    ...(optimizerPolicy?.reasons || []),
+    autonomyPolicy.nextAction,
+    readiness.summary?.nextAction,
+    blockedScriptCount ? `${blockedScriptCount} script(s) were blocked by guardrails.` : ""
+  ].filter(Boolean).slice(0, 4);
+
+  return {
+    summary: {
+      mode,
+      healthScore,
+      objective: profitEngine.objective || "自然真實內容 -> 廣告情報 -> 聯盟成交",
+      loopLabel: liveReady ? "unattended live loop" : config.threadsDryRun ? "dry-run validation loop" : "autonomy setup loop",
+      nextAction: autonomyPolicy.mode === "paused" ? autonomyPolicy.nextAction : autonomyPipeline.summary?.nextAction || "Monitor loop",
+      unattendedReady: liveReady,
+      revenue: metrics.revenue,
+      conversionRate
+    },
+    lanes,
+    flow,
+    decision: {
+      title: optimizerPolicy?.targetAction || "Continue highest scoring model",
+      confidence: experiments.confidence || "setup",
+      selectedModel: leaderModel.name || "No model selected",
+      selectedOffer: selectedProduct.offer || selectedProduct.name || "No active offer",
+      policyMode: autonomyPolicy.mode,
+      guardrailState: blockedScriptCount > 0 ? "needs_review" : "clear",
+      nextAction: autonomyPolicy.mode === "paused" ? autonomyPolicy.nextAction : optimizerPolicy?.targetAction || "Run profit engine",
+      reasons
+    }
+  };
+}
+
 function buildDashboard(state, config) {
   const posts = state.posts;
   const affiliateLinks = state.affiliateLinks;
@@ -284,6 +458,8 @@ function buildDashboard(state, config) {
   const profitEngine = buildProfitDashboard(state, config);
   const readiness = buildAutonomyReadiness(state, config);
   const autonomyPolicy = buildAutonomyPolicy(state, config);
+  const autonomyPipeline = buildAutonomyPipeline(state, config, profitEngine, readiness, metrics);
+  const operatingMap = buildOperatingMap(state, config, profitEngine, readiness, autonomyPolicy, autonomyPipeline, metrics);
 
   return {
     generatedAt: nowIso(),
@@ -319,7 +495,8 @@ function buildDashboard(state, config) {
     profitEngine,
     readiness,
     autonomyPolicy,
-    autonomyPipeline: buildAutonomyPipeline(state, config, profitEngine, readiness, metrics),
+    autonomyPipeline,
+    operatingMap,
     settings: state.settings
   };
 }
@@ -715,6 +892,7 @@ async function runAutomation(store, config, options = {}) {
 module.exports = {
   buildDashboard,
   buildAutonomyPolicy,
+  buildOperatingMap,
   createPost,
   generateDrafts,
   generateDraftsAsync,

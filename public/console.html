@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Threads 聯盟自動化</title>
-    <link rel="stylesheet" href="/styles.css?v=20260709-policy" />
+    <link rel="stylesheet" href="/styles.css?v=20260709-map" />
   </head>
   <body>
     <div class="app-shell">
@@ -25,6 +25,7 @@
           <a href="#decision-brief" class="nav-item">Decision</a>
           <a href="#worker-health" class="nav-item">Worker</a>
           <a href="#experiments" class="nav-item">Experiments</a>
+          <a href="#operating-map" class="nav-item">Ops Map</a>
           <a href="#overview" class="nav-item is-active">總覽</a>
           <a href="#profit-engine" class="nav-item">自主獲利</a>
           <a href="#factory" class="nav-item">內容工廠</a>
@@ -88,6 +89,38 @@
           <div>
             <span>Guardrails</span>
             <strong id="cmdGuardrails">0</strong>
+          </div>
+        </section>
+
+        <section class="operating-map-section" id="operating-map" aria-label="Autonomous profit operating map">
+          <div class="operating-map-header">
+            <div>
+              <p class="eyebrow">Autonomous Profit OS</p>
+              <h3>API 到收益的無人化控制塔</h3>
+              <p id="operatingMapObjective">自然真實內容 → 廣告情報 → 聯盟成交</p>
+            </div>
+            <div class="operating-map-score">
+              <span id="operatingMapMode">Loading</span>
+              <strong id="operatingMapScore">--</strong>
+              <small id="operatingMapLoop">waiting</small>
+            </div>
+          </div>
+          <div class="operating-map-grid">
+            <aside class="agent-rail" aria-label="API and AI agents">
+              <div class="rail-title">
+                <span>Left rail</span>
+                <strong>API / AI 自動串接</strong>
+              </div>
+              <div id="operatingMapLanes"></div>
+            </aside>
+            <div class="loop-canvas" aria-label="Autonomous profit flow">
+              <div class="loop-canvas-head">
+                <span>Autonomous loop</span>
+                <strong id="operatingMapNextAction">Loading</strong>
+              </div>
+              <div class="operating-flow" id="operatingMapFlow"></div>
+            </div>
+            <aside class="decision-rail" id="operatingMapDecision" aria-label="Autopilot decision"></aside>
           </div>
         </section>
 
@@ -366,6 +399,6 @@
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="/console.js?v=20260709-policy"></script>
+    <script src="/console.js?v=20260709-map"></script>
   </body>
 </html>

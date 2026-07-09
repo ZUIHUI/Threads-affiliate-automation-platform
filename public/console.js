@@ -92,7 +92,7 @@ function renderRuntime(data) {
 }
 
 function pipelineStatusScore(status) {
-  const scores = { active: 100, dry_run: 78, watch: 64, manual: 48, blocked: 18 };
+  const scores = { active: 100, dry_run: 78, watch: 64, manual: 48, paused: 40, blocked: 18 };
   return scores[status] || 0;
 }
 
@@ -210,6 +210,197 @@ function buildPolicyFallback(data) {
     nextAction: pausedRules[0]?.action || "Autonomy policy is clear.",
     rules
   };
+}
+
+function buildOperatingMapFallback(data) {
+  const runtime = data.runtime || {};
+  const engine = data.profitEngine || {};
+  const metrics = data.metrics || {};
+  const pipeline = data.autonomyPipeline || buildPipelineFallback(data);
+  const policy = data.autonomyPolicy || buildPolicyFallback(data);
+  const sources = engine.sources || [];
+  const connectedSources = sources.filter((source) => source.runtimeStatus === "connected").length;
+  const signalCount = (engine.externalSignals || []).length;
+  const scriptCount = (engine.generatedScripts || []).length;
+  const conversionRate = Number(metrics.clicks || 0)
+    ? Number(((Number(metrics.conversions || 0) / Number(metrics.clicks || 0)) * 100).toFixed(1))
+    : 0;
+  const healthScore = Math.round(((pipeline.summary?.score || 0) * 0.7) + (policy.canRunCycle ? 30 : 12));
+  const leader = engine.models?.[0] || {};
+
+  return {
+    summary: {
+      mode: policy.mode === "paused" ? "policy_paused" : runtime.dryRun ? "dry_run" : runtime.autonomyMode ? "autonomous_setup" : "manual_build",
+      healthScore,
+      objective: engine.objective || "自然真實內容 -> 廣告情報 -> 聯盟成交",
+      loopLabel: runtime.dryRun ? "dry-run validation loop" : "autonomy operating loop",
+      nextAction: policy.nextAction || pipeline.summary?.nextAction || "Monitor loop",
+      unattendedReady: Boolean(pipeline.summary?.readyForUnattended),
+      revenue: metrics.revenue || 0,
+      conversionRate
+    },
+    lanes: [
+      {
+        id: "market_api",
+        label: "API / market intake",
+        status: connectedSources > 0 ? "active" : signalCount > 0 ? "watch" : "blocked",
+        value: `${signalCount} signals`,
+        detail: connectedSources > 0 ? `${connectedSources} source(s) connected.` : "Connect ad or affiliate feeds.",
+        action: "Sync market signals"
+      },
+      {
+        id: "ai_script_agent",
+        label: "AI natural script agent",
+        status: runtime.hasOpenAIApiKey ? "active" : scriptCount > 0 ? "watch" : "manual",
+        value: `${scriptCount} scripts`,
+        detail: runtime.hasOpenAIApiKey ? "AI provider ready." : "Template fallback active.",
+        action: runtime.hasOpenAIApiKey ? "Generate variants" : "Connect OpenAI"
+      },
+      {
+        id: "threads_publish_api",
+        label: "Threads publish API",
+        status: runtime.dryRun ? "dry_run" : runtime.hasThreadsCredentials ? "active" : "blocked",
+        value: runtime.dryRun ? "dry-run" : "live",
+        detail: runtime.dryRun ? "Publishing is simulated." : "Live publish path.",
+        action: "Watch queue"
+      },
+      {
+        id: "conversion_feedback",
+        label: "Conversion feedback",
+        status: Number(metrics.conversions || 0) > 0 ? "active" : "blocked",
+        value: `${Number(metrics.conversions || 0)} conversions`,
+        detail: "Revenue events tune future model scoring.",
+        action: "Connect postback"
+      }
+    ],
+    flow: [
+      {
+        id: "research_profit_model",
+        label: "Research profit model",
+        status: (engine.runs || []).length ? "active" : "manual",
+        value: `${(engine.models || []).length} models`,
+        detail: leader.name ? `Leader: ${leader.name}` : "Run research to pick a model.",
+        signal: engine.experiments?.confidence || "setup"
+      },
+      {
+        id: "rewrite_natural",
+        label: "Rewrite as natural Threads scripts",
+        status: scriptCount > 0 ? "active" : "manual",
+        value: `${scriptCount} scripts`,
+        detail: "Turns offers into honest, low-risk posts.",
+        signal: "guarded"
+      },
+      {
+        id: "acquire_ads",
+        label: "Acquire ad and offer evidence",
+        status: signalCount > 0 ? "active" : "blocked",
+        value: `${signalCount} signals`,
+        detail: "Ads and offers become scoring evidence.",
+        signal: connectedSources > 0 ? "live" : "setup"
+      },
+      {
+        id: "schedule_publish",
+        label: "Schedule and publish",
+        status: Number(metrics.queued || 0) > 0 ? "active" : runtime.dryRun ? "dry_run" : "watch",
+        value: `${Number(metrics.queued || 0)} queued`,
+        detail: "Validated posts enter the publishing queue.",
+        signal: `${Number(metrics.published || 0) + Number(metrics.simulated || 0)} sent`
+      },
+      {
+        id: "learn_optimize",
+        label: "Learn and optimize",
+        status: Number(metrics.conversions || 0) > 0 ? "active" : Number(metrics.clicks || 0) > 0 ? "watch" : "manual",
+        value: `${conversionRate}% CVR`,
+        detail: "Feedback updates the next autonomous policy.",
+        signal: engine.optimizer?.latestPolicy?.mode || "baseline"
+      }
+    ],
+    decision: {
+      title: engine.optimizer?.latestPolicy?.targetAction || "Continue highest scoring model",
+      confidence: engine.experiments?.confidence || "setup",
+      selectedModel: leader.name || "No model selected",
+      selectedOffer: engine.generatedScripts?.[0]?.hook || "No active script",
+      policyMode: policy.mode,
+      guardrailState: (engine.blockedScripts || []).length ? "needs_review" : "clear",
+      nextAction: policy.nextAction || "Run profit engine",
+      reasons: [
+        ...(engine.optimizer?.latestPolicy?.reasons || []),
+        policy.nextAction || "",
+        pipeline.summary?.nextAction || ""
+      ].filter(Boolean).slice(0, 4)
+    }
+  };
+}
+
+function operatingStatusLabel(status) {
+  const labels = {
+    active: "active",
+    dry_run: "dry-run",
+    watch: "watch",
+    manual: "manual",
+    paused: "paused",
+    blocked: "blocked"
+  };
+  return labels[status] || status || "unknown";
+}
+
+function renderOperatingMap(data) {
+  const map = data.operatingMap || buildOperatingMapFallback(data);
+  const summary = map.summary || {};
+  const lanes = map.lanes || [];
+  const flow = map.flow || [];
+  const decision = map.decision || {};
+  const modeClass = summary.unattendedReady ? "active" : summary.mode === "policy_paused" ? "paused" : summary.mode === "dry_run" ? "dry_run" : "watch";
+
+  $("#operatingMapObjective").textContent = summary.objective || "自然真實內容 → 廣告情報 → 聯盟成交";
+  $("#operatingMapMode").textContent = String(summary.mode || "manual").replaceAll("_", " ");
+  $("#operatingMapMode").className = `status-${modeClass}`;
+  $("#operatingMapScore").textContent = `${Number(summary.healthScore || 0)}%`;
+  $("#operatingMapLoop").textContent = `${summary.loopLabel || "autonomy loop"} · ${formatMoney(summary.revenue || 0)} · ${Number(summary.conversionRate || 0)}% CVR`;
+  $("#operatingMapNextAction").textContent = summary.nextAction || "Monitor loop";
+
+  $("#operatingMapLanes").innerHTML = lanes.map((lane) => `
+    <article class="agent-lane status-${escapeHtml(lane.status)}">
+      <span>${escapeHtml(operatingStatusLabel(lane.status))}</span>
+      <div>
+        <strong>${escapeHtml(lane.label)}</strong>
+        <p>${escapeHtml(lane.detail)}</p>
+      </div>
+      <small>${escapeHtml(lane.value)} · ${escapeHtml(lane.action)}</small>
+    </article>
+  `).join("");
+
+  $("#operatingMapFlow").innerHTML = flow.map((step, index) => `
+    <article class="flow-node status-${escapeHtml(step.status)}">
+      <span>${String(index + 1).padStart(2, "0")}</span>
+      <div>
+        <strong>${escapeHtml(step.label)}</strong>
+        <p>${escapeHtml(step.detail)}</p>
+      </div>
+      <footer>
+        <b>${escapeHtml(step.value)}</b>
+        <small>${escapeHtml(step.signal)}</small>
+      </footer>
+    </article>
+  `).join("");
+
+  $("#operatingMapDecision").innerHTML = `
+    <div class="decision-rail-head">
+      <span>Autopilot decision</span>
+      <strong>${escapeHtml(decision.title || "Monitor")}</strong>
+    </div>
+    <dl class="decision-facts">
+      <div><dt>Confidence</dt><dd>${escapeHtml(decision.confidence || "setup")}</dd></div>
+      <div><dt>Model</dt><dd>${escapeHtml(decision.selectedModel || "-")}</dd></div>
+      <div><dt>Offer</dt><dd>${escapeHtml(decision.selectedOffer || "-")}</dd></div>
+      <div><dt>Policy</dt><dd>${escapeHtml(decision.policyMode || "manual")}</dd></div>
+      <div><dt>Guardrails</dt><dd>${escapeHtml(decision.guardrailState || "clear")}</dd></div>
+    </dl>
+    <div class="decision-reasons">
+      ${(decision.reasons || []).map((reason) => `<p>${escapeHtml(reason)}</p>`).join("") || "<p>No decision evidence yet.</p>"}
+    </div>
+    <small>${escapeHtml(decision.nextAction || "Run profit engine")}</small>
+  `;
 }
 
 function renderAutonomyPipeline(data) {
@@ -1186,6 +1377,7 @@ function populateForm(data) {
 function render(data) {
   state.dashboard = data;
   renderRuntime(data);
+  renderOperatingMap(data);
   renderAutonomyPipeline(data);
   renderReadiness(data);
   renderOpsTimeline(data);
