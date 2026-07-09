@@ -486,6 +486,20 @@ async function main() {
   assert.equal(cyclePayload.dashboard.operatingMap.summary.healthScore > 0, true);
   assert.equal(cyclePayload.dashboard.growthLoop.summary.autoExecutable >= 0, true);
   assert.equal(cyclePayload.dashboard.recentEvents.some((event) => event.type === "autonomy.cycle.completed"), true);
+  const growthResponse = await fetch(`http://127.0.0.1:${address.port}/api/growth-loop/run`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      source: "test-growth",
+      force: true
+    })
+  });
+  const growthPayload = await growthResponse.json();
+  assert.equal(growthResponse.status, 200);
+  assert.equal(growthPayload.status, "executed");
+  assert.equal(Boolean(growthPayload.mission.id), true);
+  assert.equal(growthPayload.dashboard.recentEvents.some((event) => event.type === "growth_loop.executed"), true);
+  assert.equal(Boolean(growthPayload.dashboard.growthLoop.summary.lastExecution), true);
   await new Promise((resolve, reject) => {
     server.close((error) => error ? reject(error) : resolve());
   });

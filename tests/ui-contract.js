@@ -92,6 +92,7 @@ const requiredJs = [
   "/api/automation/generate",
   "/api/automation/run",
   "/api/autonomy/cycle",
+  "/api/growth-loop/run",
   "/api/profit-engine/run",
   "/api/posts/",
   "sourceStatuses",

@@ -171,6 +171,30 @@ async function buildProfitAiScripts(runOptions, requestOptions = {}) {
   }
 }
 
+async function runProfitEngineRequest(body = {}) {
+  const intelligence = body.ingest === false
+    ? null
+    : await collectAdIntelligence(config);
+  const aiDraft = await buildProfitAiScripts({
+    source: body.source || "growth-loop",
+    force: body.force !== false,
+    createPosts: body.createPosts !== false,
+    autoApprove: body.autoApprove !== false,
+    intelligence
+  }, body);
+  const result = await store.update((state) => runProfitEngine(state, config, {
+    source: body.source || "growth-loop",
+    force: body.force !== false,
+    createPosts: body.createPosts !== false,
+    autoApprove: body.autoApprove !== false,
+    intelligence,
+    aiScripts: aiDraft.scripts,
+    aiScriptSource: aiDraft.source,
+    aiScriptError: aiDraft.error
+  }));
+  return { result, dashboard: buildDashboard(await readState(), config) };
+}
+
 async function runAutonomyCycle(options = {}) {
   await configureRuntime();
   const startedAt = new Date().toISOString();
@@ -309,6 +333,135 @@ async function runAutonomyCycle(options = {}) {
   };
 }
 
+async function recordGrowthLoopEvent(type, mission, status, source, metadata = {}) {
+  const createdAt = new Date().toISOString();
+  await store.update((state) => {
+    state.events.unshift({
+      id: `evt_${Date.now()}`,
+      type,
+      status,
+      source,
+      missionId: mission?.id || "",
+      missionTitle: mission?.title || "",
+      missionStatus: mission?.status || "",
+      missionAutomation: mission?.automation || "",
+      createdAt,
+      ...metadata
+    });
+    return {};
+  });
+}
+
+async function executeGrowthMission(mission, source) {
+  if (!mission?.request?.path) {
+    const error = new Error("Growth mission has no executable request.");
+    error.statusCode = 409;
+    throw error;
+  }
+  const body = {
+    ...(mission.request.body || {}),
+    source: mission.request.body?.source || source
+  };
+
+  if (mission.request.path === "/api/autonomy/cycle") {
+    return runAutonomyCycle({
+      source: body.source,
+      force: body.force !== false,
+      ingest: body.ingest !== false,
+      ai: body.ai !== false,
+      createPosts: body.createPosts !== false,
+      autoApprove: body.autoApprove !== false,
+      publishQueue: body.publishQueue !== false,
+      profit: body.profit !== false,
+      ignorePolicy: body.ignorePolicy === true
+    });
+  }
+
+  if (mission.request.path === "/api/profit-engine/run") {
+    return runProfitEngineRequest(body);
+  }
+
+  if (mission.request.path === "/api/automation/run") {
+    return runAutomation(store, config, body);
+  }
+
+  const error = new Error(`Unsupported growth mission request: ${mission.request.path}`);
+  error.statusCode = 400;
+  throw error;
+}
+
+async function runGrowthAutopilot(options = {}) {
+  await configureRuntime();
+  const startedAt = new Date().toISOString();
+  const source = options.source || "growth-autopilot";
+  const dashboard = buildDashboard(await readState(), config);
+  const missions = dashboard.growthLoop?.missions || [];
+  const requestedMission = options.missionId
+    ? missions.find((mission) => mission.id === options.missionId)
+    : null;
+  const mission = requestedMission
+    || missions.find((item) => item.status === "auto" && item.request)
+    || null;
+
+  if (!mission) {
+    await recordGrowthLoopEvent("growth_loop.idle", null, "idle", source, {
+      reason: dashboard.growthLoop?.summary?.nextAction || "No executable growth mission is ready."
+    });
+    return {
+      status: "idle",
+      source,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      mission: null,
+      reason: dashboard.growthLoop?.summary?.nextAction || "No executable growth mission is ready.",
+      dashboard: buildDashboard(await readState(), config)
+    };
+  }
+
+  if (!mission.request || (requestedMission && mission.status !== "auto" && options.force !== true)) {
+    await recordGrowthLoopEvent("growth_loop.skipped", mission, "skipped", source, {
+      reason: mission.action || "Mission is not currently executable."
+    });
+    return {
+      status: "skipped",
+      source,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      mission,
+      reason: mission.action || "Mission is not currently executable.",
+      dashboard: buildDashboard(await readState(), config)
+    };
+  }
+
+  try {
+    const result = await executeGrowthMission(mission, source);
+    await recordGrowthLoopEvent("growth_loop.executed", mission, "executed", source, {
+      resultStatus: result?.cycle?.status
+        || result?.run?.status
+        || result?.result?.run?.status
+        || (result?.result?.skipped ? "skipped" : "completed"),
+      createdPostCount: result?.cycle?.createdPostCount || result?.result?.createdPosts?.length || 0,
+      processed: result?.cycle?.processed || result?.run?.processed || 0,
+      published: result?.cycle?.published || result?.run?.published || 0,
+      simulated: result?.cycle?.simulated || result?.run?.simulated || 0
+    });
+    return {
+      status: "executed",
+      source,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      mission,
+      result,
+      dashboard: buildDashboard(await readState(), config)
+    };
+  } catch (error) {
+    await recordGrowthLoopEvent("growth_loop.failed", mission, "failed", source, {
+      error: error.message || "Growth autopilot failed."
+    });
+    throw error;
+  }
+}
+
 function findPost(state, postId) {
   const post = state.posts.find((item) => item.id === postId);
   if (!post) {
@@ -422,29 +575,24 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (req.method === "POST" && route === "/api/growth-loop/run") {
+    const body = await parseBody(req);
+    const result = await runGrowthAutopilot({
+      source: body.source || "dashboard_growth",
+      missionId: body.missionId || "",
+      force: body.force === true
+    });
+    sendJson(res, 200, result);
+    return;
+  }
+
   if (req.method === "POST" && route === "/api/profit-engine/run") {
     const body = await parseBody(req);
-    const intelligence = body.ingest === false
-      ? null
-      : await collectAdIntelligence(config);
-    const aiDraft = await buildProfitAiScripts({
-      source: body.source || "dashboard",
-      force: body.force !== false,
-      createPosts: body.createPosts !== false,
-      autoApprove: body.autoApprove !== false,
-      intelligence
-    }, body);
-    const result = await store.update((state) => runProfitEngine(state, config, {
-      source: body.source || "dashboard",
-      force: body.force !== false,
-      createPosts: body.createPosts !== false,
-      autoApprove: body.autoApprove !== false,
-      intelligence,
-      aiScripts: aiDraft.scripts,
-      aiScriptSource: aiDraft.source,
-      aiScriptError: aiDraft.error
-    }));
-    sendJson(res, 200, { result, dashboard: buildDashboard(await readState(), config) });
+    const result = await runProfitEngineRequest({
+      ...body,
+      source: body.source || "dashboard"
+    });
+    sendJson(res, 200, result);
     return;
   }
 
@@ -548,14 +696,21 @@ async function startWorker() {
     if (workerActive) return;
     workerActive = true;
     try {
-      await runAutonomyCycle({
-        source: "worker",
-        force: false,
-        profit: config.autonomyMode,
-        createPosts: true,
-        autoApprove: true,
-        publishQueue: true
-      });
+      if (config.autonomyMode) {
+        await runGrowthAutopilot({
+          source: "worker",
+          force: false
+        });
+      } else {
+        await runAutonomyCycle({
+          source: "worker",
+          force: false,
+          profit: false,
+          createPosts: true,
+          autoApprove: true,
+          publishQueue: true
+        });
+      }
     } catch (error) {
       await store.update((state) => {
         state.automationRuns.unshift({
@@ -611,5 +766,6 @@ module.exports = {
   configureRuntime,
   requestHandler,
   runAutonomyCycle,
+  runGrowthAutopilot,
   startServer
 };

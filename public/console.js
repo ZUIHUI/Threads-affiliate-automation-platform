@@ -509,7 +509,8 @@ function renderGrowthLoop(data) {
     ["Paused", summary.paused || 0, "policy guarded"],
     ["Waiting", summary.waiting || 0, "needs data"],
     ["Next", summary.nextMissionTitle || "Monitor", summary.nextAction || "No action"],
-    ["Cadence", summary.cadence || "manual", summary.workerWillRun ? "worker scheduled" : "operator assisted"]
+    ["Cadence", summary.cadence || "manual", summary.workerWillRun ? "worker scheduled" : "operator assisted"],
+    ["Last", summary.lastExecution?.missionTitle || "none", summary.lastExecution ? `${summary.lastExecution.status} · ${formatDate(summary.lastExecution.createdAt)}` : "no executor event"]
   ].map(([label, value, hint]) => `
     <article>
       <span>${escapeHtml(label)}</span>
@@ -1668,9 +1669,13 @@ async function handleGrowthMission(event) {
   const mission = state.growthMissions?.[Number(button.dataset.growthMission)];
   if (!mission?.request) return;
   button.disabled = true;
-  const result = await api(mission.request.path, {
-    method: mission.request.method || "POST",
-    body: mission.request.body || {}
+  const result = await api("/api/growth-loop/run", {
+    method: "POST",
+    body: {
+      source: "dashboard_growth",
+      missionId: mission.id,
+      force: true
+    }
   });
   if (result.dashboard) render(result.dashboard);
   else await refresh();

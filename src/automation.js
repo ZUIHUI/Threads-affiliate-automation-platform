@@ -481,6 +481,7 @@ function buildAutonomousGrowthLoop(state, config, profitEngine, readiness, auton
   const hasRevenueSignal = conversionCount > 0 || Number(metrics.revenue || 0) > 0;
   const due = isDue(latestRun?.createdAt || profitEngine.lastRunAt, config.autonomyIntervalMs);
   const workerWillRun = Boolean(config.enableWorker && config.autonomyMode && autonomyPolicy.canRunCycle);
+  const latestGrowthEvent = (state.events || []).find((event) => String(event.type || "").startsWith("growth_loop.")) || null;
   const cycleRequest = {
     path: "/api/autonomy/cycle",
     method: "POST",
@@ -499,7 +500,7 @@ function buildAutonomousGrowthLoop(state, config, profitEngine, readiness, auton
       lane: "research",
       title: "取得行銷廣告與 offer 訊號",
       priority: signalCount > 0 ? "medium" : "high",
-      status: configuredSources > 0 ? signalCount > 0 ? "auto" : "waiting" : "needs_config",
+      status: configuredSources > 0 ? "auto" : "needs_config",
       automation: configuredSources > 0 ? "worker_ingest" : "config_required",
       trigger: configuredSources > 0
         ? `${configuredSources} configured source(s), ${connectedSources} connected`
@@ -507,9 +508,9 @@ function buildAutonomousGrowthLoop(state, config, profitEngine, readiness, auton
       expectedImpact: "把 built-in playbook 升級成市場證據驅動的 scoring。",
       action: configuredSources > 0 ? "Next cycle ingests market signals." : "Set AD_INTELLIGENCE_FEED_URLS or AFFILIATE_OFFER_FEED_URLS.",
       request: configuredSources > 0 ? {
-        path: "/api/autonomy/cycle",
+        path: "/api/profit-engine/run",
         method: "POST",
-        body: { source: "growth-loop.market", force: true, createPosts: false, publishQueue: false }
+        body: { source: "growth-loop.market", force: true, createPosts: false, ingest: true }
       } : null
     }),
     growthMission({
@@ -638,7 +639,14 @@ function buildAutonomousGrowthLoop(state, config, profitEngine, readiness, auton
       nextAction: nextMission?.action || "Monitor growth loop",
       cadence: config.autonomyMode ? `${Math.round(config.autonomyIntervalMs / 60000)} min` : "manual",
       nextRunAt,
-      dryRun: config.threadsDryRun
+      dryRun: config.threadsDryRun,
+      lastExecution: latestGrowthEvent ? {
+        type: latestGrowthEvent.type,
+        missionId: latestGrowthEvent.missionId || "",
+        missionTitle: latestGrowthEvent.missionTitle || "",
+        status: latestGrowthEvent.status || "",
+        createdAt: latestGrowthEvent.createdAt
+      } : null
     },
     missions,
     controls: {
