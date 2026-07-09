@@ -462,17 +462,76 @@ function repairPostText(post, config) {
   return post;
 }
 
-function guardAutonomousPost(post, config) {
+function normalizeForFreshness(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/[^\p{Letter}\p{Number}]+/gu, "")
+    .trim();
+}
+
+function charShingles(value, size = 4) {
+  const chars = Array.from(value);
+  if (chars.length <= size) return new Set(value ? [value] : []);
+  const shingles = new Set();
+  for (let index = 0; index <= chars.length - size; index += 1) {
+    shingles.add(chars.slice(index, index + size).join(""));
+  }
+  return shingles;
+}
+
+function similarityScore(a, b) {
+  const left = charShingles(normalizeForFreshness(a));
+  const right = charShingles(normalizeForFreshness(b));
+  if (!left.size || !right.size) return 0;
+  let overlap = 0;
+  for (const item of left) {
+    if (right.has(item)) overlap += 1;
+  }
+  return overlap / Math.max(left.size, right.size);
+}
+
+function findFreshnessConflict(post, posts, config) {
+  const cutoff = Date.now() - Number(config.contentFreshnessLookbackDays || 14) * 24 * 60 * 60 * 1000;
+  const threshold = Number(config.contentSimilarityThreshold || 0.88);
+  const candidates = (posts || []).filter((item) => {
+    if (item.id === post.id) return false;
+    if (item.productId !== post.productId && item.campaignId !== post.campaignId) return false;
+    if (!["draft", "scheduled", "container_created", "published", "simulated"].includes(item.status)) return false;
+    const createdAt = new Date(item.createdAt || item.scheduledAt || item.updatedAt || 0).getTime();
+    return Number.isFinite(createdAt) && createdAt >= cutoff;
+  });
+  let best = null;
+  for (const candidate of candidates) {
+    const score = similarityScore(post.text, candidate.text);
+    if (score >= threshold && (!best || score > best.score)) {
+      best = { post: candidate, score };
+    }
+  }
+  return best;
+}
+
+function guardAutonomousPost(post, config, existingPosts = []) {
   const repaired = repairPostText(post, config);
   const validation = validatePost(repaired, config);
-  const blocked = !validation.valid || validation.risk.level === "high";
+  const freshnessConflict = validation.valid && validation.risk.level !== "high"
+    ? findFreshnessConflict(repaired, existingPosts, config)
+    : null;
+  const blocked = !validation.valid || validation.risk.level === "high" || Boolean(freshnessConflict);
+  const freshnessReason = freshnessConflict
+    ? `Content freshness blocked this script: ${Math.round(freshnessConflict.score * 100)}% similar to ${freshnessConflict.post.id}.`
+    : "";
   return {
     post: repaired,
     validation,
     blocked,
     reason: blocked
-      ? [...validation.errors, ...validation.risk.warnings].join(" ") || "High-risk content was blocked."
-      : ""
+      ? [...validation.errors, ...validation.risk.warnings, freshnessReason].filter(Boolean).join(" ") || "High-risk content was blocked."
+      : "",
+    freshness: freshnessConflict ? {
+      matchedPostId: freshnessConflict.post.id,
+      score: Number(freshnessConflict.score.toFixed(3))
+    } : null
   };
 }
 
@@ -511,13 +570,14 @@ function createAutonomousPosts(state, config, model, campaign, product, link, sc
       createdAt: nowIso(),
       updatedAt: nowIso()
     };
-    const guarded = guardAutonomousPost(post, config);
+    const guarded = guardAutonomousPost(post, config, state.posts);
     if (guarded.blocked) {
       blocked.push({
         hook: script.hook,
         type: script.type,
         reason: guarded.reason,
         validation: guarded.validation,
+        freshness: guarded.freshness,
         createdAt: nowIso()
       });
       continue;
@@ -985,6 +1045,7 @@ function buildProfitDashboard(state, config) {
     guardrails: [
       "每則商業推薦都要包含聯盟揭露。",
       "只允許自然語氣與可驗證承諾，不使用保證收益。",
+      `自動封鎖 ${Number(config.contentFreshnessLookbackDays || 14)} 天內高度相似的腳本。`,
       "優先使用 dry-run 驗證；切 live 前需填 Threads credentials。",
       "每次循環限制產文數，避免重複與過度發文。"
     ]

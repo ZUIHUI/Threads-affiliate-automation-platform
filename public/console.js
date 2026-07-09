@@ -1334,6 +1334,7 @@ function renderProfitEngine(data) {
         <div>
           <strong>${escapeHtml(script.hook || script.type || "script")}</strong>
           <p>${escapeHtml(script.reason || "Guardrail blocked this script.")}</p>
+          ${script.freshness ? `<small>Matched ${escapeHtml(script.freshness.matchedPostId)} · ${Math.round(Number(script.freshness.score || 0) * 100)}%</small>` : ""}
         </div>
       </article>
     `).join("")}

@@ -45,6 +45,8 @@ function getRuntimeConfig(env) {
     autonomyMaxQueueDepth: Math.max(1, Math.min(asNumber(env.AUTONOMY_MAX_QUEUE_DEPTH, 50), 250)),
     autonomyMaxFailedRuns: Math.max(1, Math.min(asNumber(env.AUTONOMY_MAX_FAILED_RUNS, 3), 20)),
     autonomyMaxBlockedScriptsPerDay: Math.max(0, Math.min(asNumber(env.AUTONOMY_MAX_BLOCKED_SCRIPTS_PER_DAY, 6), 50)),
+    contentFreshnessLookbackDays: Math.max(1, Math.min(asNumber(env.CONTENT_FRESHNESS_LOOKBACK_DAYS, 14), 90)),
+    contentSimilarityThreshold: Math.max(0.5, Math.min(asNumber(env.CONTENT_SIMILARITY_THRESHOLD, 0.88), 0.98)),
     adIntelligenceFeedUrls: asList(env.AD_INTELLIGENCE_FEED_URLS),
     affiliateOfferFeedUrls: asList(env.AFFILIATE_OFFER_FEED_URLS),
     adIntelligenceMaxItems: Math.max(1, Math.min(asNumber(env.AD_INTELLIGENCE_MAX_ITEMS, 24), 100)),

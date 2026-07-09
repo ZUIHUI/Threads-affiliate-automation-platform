@@ -189,6 +189,26 @@ async function main() {
   const attributedDashboard = buildDashboard(store.read(), config);
   assert.equal(attributedDashboard.attribution.summary.attributedConversions >= 1, true);
   assert.equal(attributedDashboard.attribution.topPosts[0].postId, attributedPost.id);
+  const duplicateScriptResult = store.update((state) => runProfitEngine(state, getRuntimeConfig({
+    PUBLIC_BASE_URL: "http://localhost:4173",
+    THREADS_DRY_RUN: "true",
+    CONTENT_SIMILARITY_THRESHOLD: "0.6"
+  }), {
+    source: "freshness-test",
+    force: true,
+    createPosts: true,
+    aiScripts: [{
+      type: "duplicate",
+      hook: attributedPost.hook,
+      post: attributedPost.text,
+      cta: "same idea",
+      risk_note: "freshness test"
+    }],
+    aiScriptSource: "test"
+  }));
+  assert.equal(duplicateScriptResult.createdPosts.length, 0);
+  assert.equal(duplicateScriptResult.blockedScripts[0].reason.includes("Content freshness blocked"), true);
+  assert.equal(Boolean(duplicateScriptResult.blockedScripts[0].freshness.matchedPostId), true);
 
   const signalStore = createStore(path.join(tempDir, "signal-store.json"));
   const signalResult = signalStore.update((state) => runProfitEngine(state, intelligenceConfig, {

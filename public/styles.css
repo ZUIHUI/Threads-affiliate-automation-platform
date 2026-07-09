@@ -1020,6 +1020,14 @@ body {
   line-height: 1.45;
 }
 
+.blocked-script-row small {
+  display: block;
+  margin-top: 5px;
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .panel {
   box-shadow: 0 10px 26px rgba(33, 46, 38, 0.05);
 }
