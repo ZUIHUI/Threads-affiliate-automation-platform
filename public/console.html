@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Threads 聯盟自動化</title>
-    <link rel="stylesheet" href="/styles.css?v=20260709-map" />
+    <link rel="stylesheet" href="/styles.css?v=20260709-growth" />
   </head>
   <body>
     <div class="app-shell">
@@ -26,6 +26,7 @@
           <a href="#worker-health" class="nav-item">Worker</a>
           <a href="#experiments" class="nav-item">Experiments</a>
           <a href="#operating-map" class="nav-item">Ops Map</a>
+          <a href="#growth-loop" class="nav-item">Growth</a>
           <a href="#overview" class="nav-item is-active">總覽</a>
           <a href="#profit-engine" class="nav-item">自主獲利</a>
           <a href="#factory" class="nav-item">內容工廠</a>
@@ -122,6 +123,19 @@
             </div>
             <aside class="decision-rail" id="operatingMapDecision" aria-label="Autopilot decision"></aside>
           </div>
+        </section>
+
+        <section class="panel growth-loop-panel" id="growth-loop">
+          <div class="panel-header compact">
+            <div>
+              <p class="eyebrow">Self-Optimizing Growth Loop</p>
+              <h3>無須人工的優化任務佇列</h3>
+            </div>
+            <span class="growth-mode" id="growthLoopMode">Loading</span>
+          </div>
+          <div class="growth-summary" id="growthLoopSummary"></div>
+          <div class="growth-controls" id="growthLoopControls"></div>
+          <div class="growth-mission-list" id="growthLoopMissions"></div>
         </section>
 
         <section class="panel control-panel" id="control-tower">
@@ -399,6 +413,6 @@
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="/console.js?v=20260709-map"></script>
+    <script src="/console.js?v=20260709-growth"></script>
   </body>
 </html>

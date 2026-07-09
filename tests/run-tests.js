@@ -427,6 +427,9 @@ async function main() {
   assert.equal(dashboard.operatingMap.flow.some((step) => step.id === "research_profit_model"), true);
   assert.equal(dashboard.operatingMap.lanes.some((lane) => lane.id === "ai_script_agent"), true);
   assert.equal(Boolean(dashboard.operatingMap.decision.selectedModel), true);
+  assert.equal(dashboard.growthLoop.missions.some((mission) => mission.id === "natural_script_generation"), true);
+  assert.equal(Number.isFinite(dashboard.growthLoop.summary.automationScore), true);
+  assert.equal(typeof dashboard.growthLoop.controls.canRunCycle, "boolean");
   assert.equal(dashboard.readiness.checks.some((check) => check.id === "worker"), true);
   const readinessResponse = await fetch(`http://127.0.0.1:${address.port}/api/readiness`);
   const readinessPayload = await readinessResponse.json();
@@ -459,6 +462,7 @@ async function main() {
   assert.equal(profitPayload.dashboard.profitEngine.generatedScripts.length > 0, true);
   assert.equal(profitPayload.dashboard.autonomyPipeline.steps.some((step) => step.id === "profit_optimizer"), true);
   assert.equal(profitPayload.dashboard.operatingMap.summary.objective.includes("聯盟成交"), true);
+  assert.equal(profitPayload.dashboard.growthLoop.missions.some((mission) => mission.id === "queue_publish"), true);
   const cycleResponse = await fetch(`http://127.0.0.1:${address.port}/api/autonomy/cycle`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -480,6 +484,7 @@ async function main() {
   assert.equal(cyclePayload.dashboard.autonomyPipeline.latestCycle.source, "test-cycle");
   assert.equal(cyclePayload.dashboard.autonomyPolicy.rules.some((rule) => rule.id === "cycle_budget"), true);
   assert.equal(cyclePayload.dashboard.operatingMap.summary.healthScore > 0, true);
+  assert.equal(cyclePayload.dashboard.growthLoop.summary.autoExecutable >= 0, true);
   assert.equal(cyclePayload.dashboard.recentEvents.some((event) => event.type === "autonomy.cycle.completed"), true);
   await new Promise((resolve, reject) => {
     server.close((error) => error ? reject(error) : resolve());

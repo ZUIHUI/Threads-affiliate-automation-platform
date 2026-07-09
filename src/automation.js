@@ -37,6 +37,13 @@ function formatMoney(value) {
   return `$${Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
 
+function formatDateTime(value) {
+  if (!value) return "never";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "unknown";
+  return date.toISOString();
+}
+
 function findById(items, id) {
   return items.find((item) => item.id === id);
 }
@@ -433,6 +440,222 @@ function buildOperatingMap(state, config, profitEngine, readiness, autonomyPolic
   };
 }
 
+function growthMission(input) {
+  return {
+    id: input.id,
+    lane: input.lane,
+    title: input.title,
+    priority: input.priority || "medium",
+    status: input.status || "waiting",
+    automation: input.automation || "observe",
+    trigger: input.trigger || "",
+    expectedImpact: input.expectedImpact || "",
+    action: input.action || "",
+    request: input.request || null
+  };
+}
+
+function priorityRank(priority) {
+  return { critical: 0, high: 1, medium: 2, low: 3 }[priority] ?? 4;
+}
+
+function isDue(lastRunAt, intervalMs) {
+  if (!lastRunAt) return true;
+  const at = new Date(lastRunAt).getTime();
+  return !Number.isFinite(at) || at <= Date.now() - Number(intervalMs || 0);
+}
+
+function buildAutonomousGrowthLoop(state, config, profitEngine, readiness, autonomyPolicy, autonomyPipeline, metrics) {
+  const configuredSources = config.adIntelligenceFeedUrls.length
+    + config.affiliateOfferFeedUrls.length
+    + (config.metaAdLibraryAccessToken && config.metaAdLibraryQuery ? 1 : 0);
+  const connectedSources = (profitEngine.sourceStatuses || []).filter((source) => source.status === "connected").length;
+  const signalCount = (profitEngine.externalSignals || []).length;
+  const scriptCount = (profitEngine.generatedScripts || []).length;
+  const runCount = (profitEngine.runs || []).length;
+  const latestRun = (profitEngine.runs || [])[0] || null;
+  const blockedScriptCount = (profitEngine.blockedScripts || []).length;
+  const queueDepth = Number(metrics.queued || 0);
+  const clickCount = Number(metrics.clicks || 0);
+  const conversionCount = Number(metrics.conversions || 0);
+  const hasRevenueSignal = conversionCount > 0 || Number(metrics.revenue || 0) > 0;
+  const due = isDue(latestRun?.createdAt || profitEngine.lastRunAt, config.autonomyIntervalMs);
+  const workerWillRun = Boolean(config.enableWorker && config.autonomyMode && autonomyPolicy.canRunCycle);
+  const cycleRequest = {
+    path: "/api/autonomy/cycle",
+    method: "POST",
+    body: {
+      source: "growth-loop",
+      force: due,
+      createPosts: true,
+      autoApprove: true,
+      publishQueue: true
+    }
+  };
+
+  const missions = [
+    growthMission({
+      id: "market_signal_ingest",
+      lane: "research",
+      title: "取得行銷廣告與 offer 訊號",
+      priority: signalCount > 0 ? "medium" : "high",
+      status: configuredSources > 0 ? signalCount > 0 ? "auto" : "waiting" : "needs_config",
+      automation: configuredSources > 0 ? "worker_ingest" : "config_required",
+      trigger: configuredSources > 0
+        ? `${configuredSources} configured source(s), ${connectedSources} connected`
+        : "No ad or offer feed is configured.",
+      expectedImpact: "把 built-in playbook 升級成市場證據驅動的 scoring。",
+      action: configuredSources > 0 ? "Next cycle ingests market signals." : "Set AD_INTELLIGENCE_FEED_URLS or AFFILIATE_OFFER_FEED_URLS.",
+      request: configuredSources > 0 ? {
+        path: "/api/autonomy/cycle",
+        method: "POST",
+        body: { source: "growth-loop.market", force: true, createPosts: false, publishQueue: false }
+      } : null
+    }),
+    growthMission({
+      id: "profit_model_research",
+      lane: "model",
+      title: "研究並選出下一個獲利模式",
+      priority: runCount > 0 ? "medium" : "high",
+      status: autonomyPolicy.canRunCycle ? due ? "auto" : "waiting" : "paused",
+      automation: workerWillRun ? "scheduled_worker" : autonomyPolicy.canRunCycle ? "manual_trigger_available" : "policy_guard",
+      trigger: runCount > 0 ? `Latest run: ${formatDateTime(latestRun?.createdAt || profitEngine.lastRunAt)}` : "No profit run has selected a model yet.",
+      expectedImpact: "自動比較 offer、廣告角度、EPC 與 conversion feedback，決定下一輪要推的模型。",
+      action: autonomyPolicy.canRunCycle ? due ? "Run next autonomy cycle." : "Wait until autonomy interval is due." : autonomyPolicy.nextAction,
+      request: autonomyPolicy.canRunCycle ? cycleRequest : null
+    }),
+    growthMission({
+      id: "natural_script_generation",
+      lane: "content",
+      title: "產生自然真實 Threads 腳本文案",
+      priority: scriptCount > 0 ? "medium" : "high",
+      status: autonomyPolicy.canCreatePosts ? "auto" : "paused",
+      automation: config.openaiApiKey ? "ai_script_agent" : "template_fallback",
+      trigger: config.openaiApiKey ? "OpenAI provider configured." : "Template fallback is active until OPENAI_API_KEY is set.",
+      expectedImpact: "把廣告承諾改寫成不誇大、有揭露、可驗證的 Threads 推薦文。",
+      action: autonomyPolicy.canCreatePosts ? "Create approved scripts for the publishing queue." : autonomyPolicy.nextAction,
+      request: autonomyPolicy.canCreatePosts ? {
+        path: "/api/profit-engine/run",
+        method: "POST",
+        body: { source: "growth-loop.scripts", force: true, createPosts: true, autoApprove: true }
+      } : null
+    }),
+    growthMission({
+      id: "guardrail_repair",
+      lane: "quality",
+      title: "自動修復被擋腳本",
+      priority: blockedScriptCount > 0 ? "high" : "low",
+      status: blockedScriptCount > 0 ? autonomyPolicy.canCreatePosts ? "auto" : "paused" : "waiting",
+      automation: blockedScriptCount > 0 ? "optimizer_repair" : "observe",
+      trigger: `${blockedScriptCount} blocked script(s) in recent runs.`,
+      expectedImpact: "降低合規風險，避免過度銷售、太多連結或缺少聯盟揭露。",
+      action: blockedScriptCount > 0 ? "Regenerate safer bridge copy." : "No repair needed.",
+      request: blockedScriptCount > 0 && autonomyPolicy.canCreatePosts ? {
+        path: "/api/profit-engine/run",
+        method: "POST",
+        body: { source: "growth-loop.repair", force: true, createPosts: true, autoApprove: true }
+      } : null
+    }),
+    growthMission({
+      id: "queue_publish",
+      lane: "distribution",
+      title: "發佈或 dry-run 佇列",
+      priority: queueDepth > 0 ? "high" : "medium",
+      status: queueDepth > 0 ? autonomyPolicy.canPublishQueue ? "auto" : "paused" : "waiting",
+      automation: queueDepth > 0 && workerWillRun ? "scheduled_worker" : "queue_runner",
+      trigger: `${queueDepth} queued post(s).`,
+      expectedImpact: "讓已通過 guardrail 的文案進入 Threads 發佈或 dry-run 驗證。",
+      action: queueDepth > 0 ? autonomyPolicy.canPublishQueue ? "Process queue." : autonomyPolicy.nextAction : "Wait for generated scripts.",
+      request: queueDepth > 0 && autonomyPolicy.canPublishQueue ? {
+        path: "/api/automation/run",
+        method: "POST",
+        body: { source: "growth-loop.queue" }
+      } : null
+    }),
+    growthMission({
+      id: "conversion_learning",
+      lane: "feedback",
+      title: "用轉換資料優化下一輪",
+      priority: hasRevenueSignal ? "medium" : clickCount > 0 ? "high" : "medium",
+      status: hasRevenueSignal ? "auto" : config.conversionWebhookSecret ? "waiting" : "needs_config",
+      automation: hasRevenueSignal ? "revenue_scoring" : config.conversionWebhookSecret ? "webhook_ready" : "config_required",
+      trigger: `${clickCount} click(s), ${conversionCount} conversion(s), ${formatMoney(metrics.revenue)} revenue.`,
+      expectedImpact: "把模型評分從點擊導向升級成 revenue-backed decision。",
+      action: hasRevenueSignal ? "Scale winning experiments." : config.conversionWebhookSecret ? "Wait for affiliate postback events." : "Set CONVERSION_WEBHOOK_SECRET and network postback.",
+      request: null
+    }),
+    growthMission({
+      id: "scale_winner",
+      lane: "scale",
+      title: "擴張勝出的 hook / offer 組合",
+      priority: hasRevenueSignal ? "high" : "low",
+      status: hasRevenueSignal && autonomyPolicy.canRunCycle ? "auto" : "waiting",
+      automation: hasRevenueSignal ? "optimizer_scale" : "observe",
+      trigger: profitEngine.experiments?.leaderName
+        ? `Leader: ${profitEngine.experiments.leaderName}`
+        : "No revenue-backed leader yet.",
+      expectedImpact: "把有轉換證據的角度延展成相近 hook，控制頻率並保留揭露。",
+      action: hasRevenueSignal ? "Allocate next scripts to the winning model." : "Collect click and conversion feedback first.",
+      request: hasRevenueSignal && autonomyPolicy.canRunCycle ? cycleRequest : null
+    })
+  ].sort((a, b) => {
+    const statusRank = { auto: 0, paused: 1, needs_config: 2, waiting: 3, manual: 4 };
+    return (statusRank[a.status] ?? 5) - (statusRank[b.status] ?? 5)
+      || priorityRank(a.priority) - priorityRank(b.priority);
+  });
+
+  const autoExecutable = missions.filter((mission) => mission.status === "auto" && mission.request).length;
+  const needsConfig = missions.filter((mission) => mission.status === "needs_config").length;
+  const paused = missions.filter((mission) => mission.status === "paused").length;
+  const waiting = missions.filter((mission) => mission.status === "waiting").length;
+  const nextMission = missions.find((mission) => mission.status === "auto" && mission.request)
+    || missions.find((mission) => mission.status === "paused")
+    || missions.find((mission) => mission.status === "needs_config")
+    || missions[0]
+    || null;
+  const automationScore = Math.max(0, Math.min(100, Math.round(
+    (autoExecutable / Math.max(1, missions.length)) * 60
+    + (workerWillRun ? 25 : 0)
+    + (autonomyPipeline.summary?.readyForUnattended ? 15 : config.threadsDryRun ? 8 : 0)
+    - (needsConfig * 8)
+    - (paused * 6)
+  )));
+  const nextRunAt = latestRun?.createdAt || profitEngine.lastRunAt
+    ? new Date(new Date(latestRun?.createdAt || profitEngine.lastRunAt).getTime() + config.autonomyIntervalMs).toISOString()
+    : nowIso();
+
+  return {
+    summary: {
+      mode: workerWillRun ? "self_running" : autonomyPolicy.mode === "paused" ? "policy_paused" : "operator_assisted",
+      automationScore,
+      workerWillRun,
+      autoExecutable,
+      needsConfig,
+      paused,
+      waiting,
+      nextMissionId: nextMission?.id || "",
+      nextMissionTitle: nextMission?.title || "Monitor growth loop",
+      nextAction: nextMission?.action || "Monitor growth loop",
+      cadence: config.autonomyMode ? `${Math.round(config.autonomyIntervalMs / 60000)} min` : "manual",
+      nextRunAt,
+      dryRun: config.threadsDryRun
+    },
+    missions,
+    controls: {
+      enableWorker: config.enableWorker,
+      autonomyMode: config.autonomyMode,
+      policyMode: autonomyPolicy.mode,
+      policyAction: autonomyPolicy.nextAction,
+      canRunCycle: autonomyPolicy.canRunCycle,
+      canCreatePosts: autonomyPolicy.canCreatePosts,
+      canPublishQueue: autonomyPolicy.canPublishQueue,
+      maxScriptsPerRun: config.autonomyMaxScriptsPerRun,
+      maxOffersPerRun: config.autonomyMaxOffersPerRun,
+      maxCyclesPerDay: config.autonomyMaxCyclesPerDay
+    }
+  };
+}
+
 function buildDashboard(state, config) {
   const posts = state.posts;
   const affiliateLinks = state.affiliateLinks;
@@ -460,6 +683,7 @@ function buildDashboard(state, config) {
   const autonomyPolicy = buildAutonomyPolicy(state, config);
   const autonomyPipeline = buildAutonomyPipeline(state, config, profitEngine, readiness, metrics);
   const operatingMap = buildOperatingMap(state, config, profitEngine, readiness, autonomyPolicy, autonomyPipeline, metrics);
+  const growthLoop = buildAutonomousGrowthLoop(state, config, profitEngine, readiness, autonomyPolicy, autonomyPipeline, metrics);
 
   return {
     generatedAt: nowIso(),
@@ -497,6 +721,7 @@ function buildDashboard(state, config) {
     autonomyPolicy,
     autonomyPipeline,
     operatingMap,
+    growthLoop,
     settings: state.settings
   };
 }
@@ -893,6 +1118,7 @@ module.exports = {
   buildDashboard,
   buildAutonomyPolicy,
   buildOperatingMap,
+  buildAutonomousGrowthLoop,
   createPost,
   generateDrafts,
   generateDraftsAsync,

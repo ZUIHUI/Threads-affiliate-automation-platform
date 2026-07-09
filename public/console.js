@@ -403,6 +403,155 @@ function renderOperatingMap(data) {
   `;
 }
 
+function buildGrowthLoopFallback(data) {
+  const runtime = data.runtime || {};
+  const engine = data.profitEngine || {};
+  const policy = data.autonomyPolicy || buildPolicyFallback(data);
+  const metrics = data.metrics || {};
+  const scriptCount = (engine.generatedScripts || []).length;
+  const signalCount = (engine.externalSignals || []).length;
+  const queueDepth = Number(metrics.queued || 0);
+  const blockedScriptCount = (engine.blockedScripts || []).length;
+  const workerWillRun = Boolean(runtime.workerEnabled && runtime.autonomyMode && policy.canRunCycle);
+  const missions = [
+    {
+      id: "market_signal_ingest",
+      lane: "research",
+      title: "取得行銷廣告與 offer 訊號",
+      priority: signalCount ? "medium" : "high",
+      status: signalCount ? "auto" : "needs_config",
+      automation: signalCount ? "worker_ingest" : "config_required",
+      trigger: `${signalCount} signal(s)`,
+      expectedImpact: "讓獲利模型從市場證據學習。",
+      action: signalCount ? "Next cycle will ingest sources." : "Connect ad or offer feeds.",
+      request: signalCount ? { path: "/api/autonomy/cycle", method: "POST", body: { source: "growth-loop.market", force: true, createPosts: false, publishQueue: false } } : null
+    },
+    {
+      id: "natural_script_generation",
+      lane: "content",
+      title: "產生自然真實 Threads 腳本文案",
+      priority: scriptCount ? "medium" : "high",
+      status: policy.canCreatePosts ? "auto" : "paused",
+      automation: runtime.hasOpenAIApiKey ? "ai_script_agent" : "template_fallback",
+      trigger: `${scriptCount} script(s)`,
+      expectedImpact: "產生有揭露、不誇大、可排程的推薦文。",
+      action: policy.canCreatePosts ? "Generate scripts." : policy.nextAction,
+      request: policy.canCreatePosts ? { path: "/api/profit-engine/run", method: "POST", body: { source: "growth-loop.scripts", force: true, createPosts: true, autoApprove: true } } : null
+    },
+    {
+      id: "queue_publish",
+      lane: "distribution",
+      title: "發佈或 dry-run 佇列",
+      priority: queueDepth ? "high" : "medium",
+      status: queueDepth ? policy.canPublishQueue ? "auto" : "paused" : "waiting",
+      automation: "queue_runner",
+      trigger: `${queueDepth} queued post(s)`,
+      expectedImpact: "把通過 guardrail 的內容送入發佈流程。",
+      action: queueDepth ? "Process queue." : "Wait for generated scripts.",
+      request: queueDepth && policy.canPublishQueue ? { path: "/api/automation/run", method: "POST", body: { source: "growth-loop.queue" } } : null
+    },
+    {
+      id: "guardrail_repair",
+      lane: "quality",
+      title: "自動修復被擋腳本",
+      priority: blockedScriptCount ? "high" : "low",
+      status: blockedScriptCount ? "auto" : "waiting",
+      automation: blockedScriptCount ? "optimizer_repair" : "observe",
+      trigger: `${blockedScriptCount} blocked script(s)`,
+      expectedImpact: "降低合規風險與重複發文。",
+      action: blockedScriptCount ? "Regenerate safer copy." : "No repair needed.",
+      request: blockedScriptCount ? { path: "/api/profit-engine/run", method: "POST", body: { source: "growth-loop.repair", force: true, createPosts: true, autoApprove: true } } : null
+    }
+  ];
+  const autoExecutable = missions.filter((mission) => mission.status === "auto" && mission.request).length;
+  const needsConfig = missions.filter((mission) => mission.status === "needs_config").length;
+  const paused = missions.filter((mission) => mission.status === "paused").length;
+  const waiting = missions.filter((mission) => mission.status === "waiting").length;
+  return {
+    summary: {
+      mode: workerWillRun ? "self_running" : policy.mode === "paused" ? "policy_paused" : "operator_assisted",
+      automationScore: Math.max(0, Math.min(100, Math.round(autoExecutable * 18 + (workerWillRun ? 25 : 0) - needsConfig * 8 - paused * 6))),
+      workerWillRun,
+      autoExecutable,
+      needsConfig,
+      paused,
+      waiting,
+      nextMissionTitle: missions.find((mission) => mission.status === "auto")?.title || missions[0]?.title || "Monitor growth loop",
+      nextAction: missions.find((mission) => mission.status === "auto")?.action || missions[0]?.action || "Monitor growth loop",
+      cadence: runtime.autonomyMode ? "scheduled" : "manual",
+      dryRun: runtime.dryRun
+    },
+    missions,
+    controls: {
+      enableWorker: runtime.workerEnabled,
+      autonomyMode: runtime.autonomyMode,
+      policyMode: policy.mode,
+      policyAction: policy.nextAction,
+      canRunCycle: policy.canRunCycle,
+      canCreatePosts: policy.canCreatePosts,
+      canPublishQueue: policy.canPublishQueue
+    }
+  };
+}
+
+function renderGrowthLoop(data) {
+  const loop = data.growthLoop || buildGrowthLoopFallback(data);
+  const summary = loop.summary || {};
+  const controls = loop.controls || {};
+  const missions = loop.missions || [];
+  const modeClass = summary.mode === "self_running" ? "active" : summary.mode === "policy_paused" ? "paused" : "watch";
+
+  $("#growthLoopMode").textContent = `${String(summary.mode || "manual").replaceAll("_", " ")} · ${Number(summary.automationScore || 0)}%`;
+  $("#growthLoopMode").className = `growth-mode status-${modeClass}`;
+  $("#growthLoopSummary").innerHTML = [
+    ["Auto missions", summary.autoExecutable || 0, "can run through API"],
+    ["Needs config", summary.needsConfig || 0, "environment or feed setup"],
+    ["Paused", summary.paused || 0, "policy guarded"],
+    ["Waiting", summary.waiting || 0, "needs data"],
+    ["Next", summary.nextMissionTitle || "Monitor", summary.nextAction || "No action"],
+    ["Cadence", summary.cadence || "manual", summary.workerWillRun ? "worker scheduled" : "operator assisted"]
+  ].map(([label, value, hint]) => `
+    <article>
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      <small>${escapeHtml(hint)}</small>
+    </article>
+  `).join("");
+
+  $("#growthLoopControls").innerHTML = [
+    ["Worker", controls.enableWorker ? "on" : "off", "ENABLE_WORKER"],
+    ["Autonomy", controls.autonomyMode ? "on" : "off", "AUTONOMY_MODE"],
+    ["Policy", controls.policyMode || "manual", controls.policyAction || "-"],
+    ["Cycle", controls.canRunCycle ? "ready" : "paused", "run research loop"],
+    ["Scripts", controls.canCreatePosts ? "ready" : "paused", "create content"],
+    ["Queue", controls.canPublishQueue ? "ready" : "paused", "publish queue"]
+  ].map(([label, value, hint]) => `
+    <article class="growth-control ${String(value).includes("off") || String(value).includes("paused") ? "is-warn" : "is-ready"}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      <small>${escapeHtml(hint)}</small>
+    </article>
+  `).join("");
+
+  $("#growthLoopMissions").innerHTML = missions.map((mission, index) => `
+    <article class="growth-mission status-${escapeHtml(mission.status)} priority-${escapeHtml(mission.priority)}">
+      <span>${escapeHtml(mission.priority)}</span>
+      <div>
+        <header>
+          <strong>${escapeHtml(mission.title)}</strong>
+          <small>${escapeHtml(mission.status)} · ${escapeHtml(mission.automation)}</small>
+        </header>
+        <p>${escapeHtml(mission.expectedImpact)}</p>
+        <small>${escapeHtml(mission.trigger)} · ${escapeHtml(mission.action)}</small>
+      </div>
+      <button class="button ${mission.request ? "" : "secondary"}" type="button" data-growth-mission="${index}" ${mission.request ? "" : "disabled"}>
+        ${mission.request ? "Run" : "Monitor"}
+      </button>
+    </article>
+  `).join("");
+  state.growthMissions = missions;
+}
+
 function renderAutonomyPipeline(data) {
   const pipeline = data.autonomyPipeline || buildPipelineFallback(data);
   const policy = data.autonomyPolicy || buildPolicyFallback(data);
@@ -1378,6 +1527,7 @@ function render(data) {
   state.dashboard = data;
   renderRuntime(data);
   renderOperatingMap(data);
+  renderGrowthLoop(data);
   renderAutonomyPipeline(data);
   renderReadiness(data);
   renderOpsTimeline(data);
@@ -1512,6 +1662,21 @@ async function handleNextAction(event) {
   showToast(`${action.title} completed`);
 }
 
+async function handleGrowthMission(event) {
+  const button = event.target.closest("button[data-growth-mission]");
+  if (!button) return;
+  const mission = state.growthMissions?.[Number(button.dataset.growthMission)];
+  if (!mission?.request) return;
+  button.disabled = true;
+  const result = await api(mission.request.path, {
+    method: mission.request.method || "POST",
+    body: mission.request.body || {}
+  });
+  if (result.dashboard) render(result.dashboard);
+  else await refresh();
+  showToast(`${mission.title} completed`);
+}
+
 function bindEvents() {
   $("#refreshBtn").addEventListener("click", refresh);
   $("#runBtn").addEventListener("click", runQueue);
@@ -1535,6 +1700,12 @@ function bindEvents() {
   });
   $("#nextActionList").addEventListener("click", (event) => {
     handleNextAction(event).catch((error) => {
+      showToast(error.message);
+      refresh();
+    });
+  });
+  $("#growthLoopMissions").addEventListener("click", (event) => {
+    handleGrowthMission(event).catch((error) => {
       showToast(error.message);
       refresh();
     });
