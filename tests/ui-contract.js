@@ -23,6 +23,7 @@ const requiredHtml = [
   'id="prompt"',
   'id="generateBtn"',
   'id="autoGenerateBtn"',
+  'id="cycleRunBtn"',
   'id="runBtn"',
   'id="profitRunBtn"',
   'id="postRows"',
@@ -62,8 +63,8 @@ const requiredHtml = [
   "內容工廠",
   "合規 / 風險審核",
   "聯盟收益管道",
-  '<link rel="stylesheet" href="/styles.css?v=20260709-control" />',
-  '<script src="/console.js?v=20260709-control"></script>'
+  '<link rel="stylesheet" href="/styles.css?v=20260709-cycle" />',
+  '<script src="/console.js?v=20260709-cycle"></script>'
 ];
 
 for (const marker of requiredHtml) {
@@ -74,6 +75,7 @@ const requiredJs = [
   "/api/dashboard",
   "/api/automation/generate",
   "/api/automation/run",
+  "/api/autonomy/cycle",
   "/api/profit-engine/run",
   "/api/posts/",
   "sourceStatuses",
@@ -84,6 +86,7 @@ const requiredJs = [
   "renderAutonomyPipeline",
   "buildPipelineFallback",
   "pipelineStatusScore",
+  "runAutonomyCycle",
   "renderOpsTimeline",
   "renderNextActions",
   "renderDecisionBrief",

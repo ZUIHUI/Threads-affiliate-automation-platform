@@ -170,6 +170,91 @@ async function buildProfitAiScripts(runOptions, requestOptions = {}) {
   }
 }
 
+async function runAutonomyCycle(options = {}) {
+  await configureRuntime();
+  const startedAt = new Date().toISOString();
+  const source = options.source || "cycle";
+  const shouldRunProfit = options.profit !== false;
+  const shouldRunQueue = options.publishQueue !== false;
+  let intelligence = null;
+  let aiDraft = { scripts: [], source: "template", error: "" };
+  let profitResult = null;
+  let automationResult = null;
+
+  if (shouldRunProfit) {
+    intelligence = options.ingest === false ? null : await collectAdIntelligence(config);
+    aiDraft = await buildProfitAiScripts({
+      source,
+      force: options.force !== false,
+      createPosts: options.createPosts !== false,
+      autoApprove: options.autoApprove !== false,
+      intelligence
+    }, options);
+    profitResult = await store.update((state) => runProfitEngine(state, config, {
+      source,
+      force: options.force !== false,
+      createPosts: options.createPosts !== false,
+      autoApprove: options.autoApprove !== false,
+      intelligence,
+      aiScripts: aiDraft.scripts,
+      aiScriptSource: aiDraft.source,
+      aiScriptError: aiDraft.error
+    }));
+  }
+
+  if (shouldRunQueue) {
+    automationResult = await runAutomation(store, config, { source });
+  }
+
+  const finishedAt = new Date().toISOString();
+  const cycle = {
+    id: `cycle_${Date.now()}`,
+    status: "completed",
+    source,
+    startedAt,
+    finishedAt,
+    profitSkipped: Boolean(profitResult?.skipped),
+    selectedModelId: profitResult?.run?.selectedModelId || "",
+    optimizerMode: profitResult?.run?.optimizerPolicy?.mode || "",
+    ingestedSignalCount: intelligence?.items?.length || 0,
+    aiScriptSource: aiDraft.source || "template",
+    aiScriptError: aiDraft.error || "",
+    createdPostCount: profitResult?.createdPosts?.length || 0,
+    blockedScriptCount: profitResult?.blockedScripts?.length || 0,
+    queueStatus: automationResult?.run?.status || "skipped",
+    processed: automationResult?.run?.processed || 0,
+    simulated: automationResult?.run?.simulated || 0,
+    published: automationResult?.run?.published || 0,
+    failed: automationResult?.run?.failed || 0
+  };
+
+  await store.update((state) => {
+    state.events.unshift({
+      id: `evt_${Date.now()}`,
+      type: "autonomy.cycle.completed",
+      cycleId: cycle.id,
+      status: cycle.status,
+      source: cycle.source,
+      selectedModelId: cycle.selectedModelId,
+      optimizerMode: cycle.optimizerMode,
+      createdPostCount: cycle.createdPostCount,
+      processed: cycle.processed,
+      published: cycle.published,
+      simulated: cycle.simulated,
+      failed: cycle.failed,
+      createdAt: cycle.finishedAt
+    });
+    return {};
+  });
+
+  return {
+    cycle,
+    result: profitResult,
+    automation: automationResult,
+    dashboard: buildDashboard(await readState(), config)
+  };
+}
+
 function findPost(state, postId) {
   const post = state.posts.find((item) => item.id === postId);
   if (!post) {
@@ -262,6 +347,22 @@ async function handleApi(req, res, url) {
   if (req.method === "POST" && route === "/api/automation/run") {
     const body = await parseBody(req);
     const result = await runAutomation(store, config, body);
+    sendJson(res, 200, result);
+    return;
+  }
+
+  if (req.method === "POST" && route === "/api/autonomy/cycle") {
+    const body = await parseBody(req);
+    const result = await runAutonomyCycle({
+      source: body.source || "dashboard_cycle",
+      force: body.force !== false,
+      ingest: body.ingest !== false,
+      ai: body.ai !== false,
+      createPosts: body.createPosts !== false,
+      autoApprove: body.autoApprove !== false,
+      publishQueue: body.publishQueue !== false,
+      profit: body.profit !== false
+    });
     sendJson(res, 200, result);
     return;
   }
@@ -392,25 +493,14 @@ async function startWorker() {
     if (workerActive) return;
     workerActive = true;
     try {
-      if (config.autonomyMode) {
-        const intelligence = await collectAdIntelligence(config);
-        const aiDraft = await buildProfitAiScripts({
-          source: "worker",
-          createPosts: true,
-          autoApprove: true,
-          intelligence
-        });
-        await store.update((state) => runProfitEngine(state, config, {
-          source: "worker",
-          createPosts: true,
-          autoApprove: true,
-          intelligence,
-          aiScripts: aiDraft.scripts,
-          aiScriptSource: aiDraft.source,
-          aiScriptError: aiDraft.error
-        }));
-      }
-      await runAutomation(store, config, { source: "worker" });
+      await runAutonomyCycle({
+        source: "worker",
+        force: false,
+        profit: config.autonomyMode,
+        createPosts: true,
+        autoApprove: true,
+        publishQueue: true
+      });
     } catch (error) {
       await store.update((state) => {
         state.automationRuns.unshift({
@@ -465,5 +555,6 @@ if (require.main === module) {
 module.exports = {
   configureRuntime,
   requestHandler,
+  runAutonomyCycle,
   startServer
 };

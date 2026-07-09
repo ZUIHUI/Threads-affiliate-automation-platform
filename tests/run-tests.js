@@ -438,6 +438,25 @@ async function main() {
   assert.equal(profitPayload.dashboard.profitEngine.sourceStatuses.length > 0, true);
   assert.equal(profitPayload.dashboard.profitEngine.generatedScripts.length > 0, true);
   assert.equal(profitPayload.dashboard.autonomyPipeline.steps.some((step) => step.id === "profit_optimizer"), true);
+  const cycleResponse = await fetch(`http://127.0.0.1:${address.port}/api/autonomy/cycle`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      source: "test-cycle",
+      force: true,
+      ingest: false,
+      ai: false,
+      createPosts: true,
+      autoApprove: true,
+      publishQueue: true
+    })
+  });
+  const cyclePayload = await cycleResponse.json();
+  assert.equal(cycleResponse.status, 200);
+  assert.equal(cyclePayload.cycle.status, "completed");
+  assert.equal(cyclePayload.cycle.source, "test-cycle");
+  assert.equal(cyclePayload.dashboard.autonomyPipeline.latestCycle.source, "test-cycle");
+  assert.equal(cyclePayload.dashboard.recentEvents.some((event) => event.type === "autonomy.cycle.completed"), true);
   await new Promise((resolve, reject) => {
     server.close((error) => error ? reject(error) : resolve());
   });

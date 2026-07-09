@@ -175,13 +175,15 @@ function renderAutonomyPipeline(data) {
   const pipeline = data.autonomyPipeline || buildPipelineFallback(data);
   const summary = pipeline.summary || {};
   const steps = pipeline.steps || [];
+  const latestCycle = pipeline.latestCycle || null;
   $("#pipelineMode").textContent = `${summary.mode || "manual"} · ${summary.score || 0}%`;
   $("#pipelineMode").className = `pipeline-mode status-${summary.readyForUnattended ? "active" : summary.blocked ? "blocked" : "watch"}`;
   $("#pipelineSummary").innerHTML = [
     ["Score", `${summary.score || 0}%`, "autonomy pipeline"],
     ["Active", summary.active || 0, "running stages"],
     ["Blocked", summary.blocked || 0, "must fix"],
-    ["Next gate", summary.nextGate || "Monitor", summary.nextAction || "No action"]
+    ["Next gate", summary.nextGate || "Monitor", summary.nextAction || "No action"],
+    ["Last cycle", latestCycle ? `${latestCycle.createdPostCount || 0} posts` : "none", latestCycle ? `${latestCycle.source || "cycle"} · ${formatDate(latestCycle.createdAt)}` : "not run yet"]
   ].map(([label, value, hint]) => `
     <article>
       <span>${escapeHtml(label)}</span>
@@ -1190,6 +1192,22 @@ async function runProfitEngine() {
   showToast(`自主獲利引擎完成，建立 ${created} 則排程文案`);
 }
 
+async function runAutonomyCycle() {
+  const result = await api("/api/autonomy/cycle", {
+    method: "POST",
+    body: {
+      source: "dashboard_cycle",
+      force: true,
+      createPosts: true,
+      autoApprove: true,
+      publishQueue: true
+    }
+  });
+  render(result.dashboard);
+  const cycle = result.cycle || {};
+  showToast(`自主循環完成：${Number(cycle.createdPostCount || 0)} 則文案，處理 ${Number(cycle.processed || 0)} 則佇列`);
+}
+
 async function handlePostAction(event) {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
@@ -1254,6 +1272,9 @@ function bindEvents() {
   $("#runBtn").addEventListener("click", runQueue);
   $("#profitRunBtn").addEventListener("click", () => {
     runProfitEngine().catch((error) => showToast(error.message));
+  });
+  $("#cycleRunBtn").addEventListener("click", () => {
+    runAutonomyCycle().catch((error) => showToast(error.message));
   });
   $("#generateBtn").addEventListener("click", () => generateDrafts(false));
   $("#autoGenerateBtn").addEventListener("click", () => generateDrafts(true));

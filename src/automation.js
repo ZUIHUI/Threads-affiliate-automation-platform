@@ -59,6 +59,7 @@ function buildAutonomyPipeline(state, config, profitEngine, readiness, metrics) 
   const conversionCount = metrics.conversions || 0;
   const hasConversionWebhook = Boolean(config.conversionWebhookSecret);
   const readinessBlocked = readiness.summary?.blocked || 0;
+  const latestCycleEvent = (state.events || []).find((event) => event.type === "autonomy.cycle.completed") || null;
 
   const steps = [
     {
@@ -141,6 +142,18 @@ function buildAutonomyPipeline(state, config, profitEngine, readiness, metrics) 
       nextGate: nextGate?.label || "Monitor",
       nextAction: nextGate?.nextAction || "Monitor autonomous loop"
     },
+    latestCycle: latestCycleEvent ? {
+      id: latestCycleEvent.cycleId,
+      source: latestCycleEvent.source,
+      status: latestCycleEvent.status,
+      optimizerMode: latestCycleEvent.optimizerMode,
+      createdPostCount: latestCycleEvent.createdPostCount || 0,
+      processed: latestCycleEvent.processed || 0,
+      published: latestCycleEvent.published || 0,
+      simulated: latestCycleEvent.simulated || 0,
+      failed: latestCycleEvent.failed || 0,
+      createdAt: latestCycleEvent.createdAt
+    } : null,
     steps
   };
 }
