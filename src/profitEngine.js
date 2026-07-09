@@ -146,6 +146,7 @@ function ensureProfitState(state) {
   if (!Array.isArray(state.profitEngine.generatedScripts)) state.profitEngine.generatedScripts = [];
   if (!Array.isArray(state.profitEngine.externalSignals)) state.profitEngine.externalSignals = [];
   if (!Array.isArray(state.profitEngine.sourceStatuses)) state.profitEngine.sourceStatuses = [];
+  if (!state.profitEngine.sourceHealth || typeof state.profitEngine.sourceHealth !== "object") state.profitEngine.sourceHealth = {};
   if (!Array.isArray(state.profitEngine.optimizerPolicies)) state.profitEngine.optimizerPolicies = [];
   return state.profitEngine;
 }
@@ -337,11 +338,103 @@ function mergeExternalSignals(existing, incoming, limit = 24) {
   return merged;
 }
 
-function updateIngestState(engine, intelligence) {
+function updateSourceHealth(engine, statuses, config) {
+  const health = { ...(engine.sourceHealth || {}) };
+  const now = Date.now();
+  for (const status of statuses || []) {
+    const id = status.id || status.name;
+    if (!id) continue;
+    const existing = health[id] || {};
+    if (status.status === "connected") {
+      health[id] = {
+        ...existing,
+        status: "connected",
+        failureCount: 0,
+        lastSuccessAt: nowIso(),
+        lastError: "",
+        nextRetryAt: "",
+        backoffMs: 0
+      };
+      continue;
+    }
+    if (status.status === "error") {
+      const failureCount = Number(existing.failureCount || 0) + 1;
+      const backoffMs = Math.min(
+        Number(config.adIntelligenceRetryMaxMs || 60 * 60_000),
+        Number(config.adIntelligenceRetryBaseMs || 5 * 60_000) * (2 ** Math.max(0, failureCount - 1))
+      );
+      health[id] = {
+        ...existing,
+        status: "error",
+        failureCount,
+        lastError: status.message || "Source failed.",
+        lastErrorAt: nowIso(),
+        nextRetryAt: new Date(now + backoffMs).toISOString(),
+        backoffMs
+      };
+      continue;
+    }
+    if (status.status === "backoff") {
+      health[id] = {
+        ...existing,
+        status: "backoff",
+        nextRetryAt: status.nextRetryAt || existing.nextRetryAt || "",
+        lastError: status.lastError || existing.lastError || status.message || "",
+        failureCount: Number(status.failureCount || existing.failureCount || 0),
+        backoffMs: Number(existing.backoffMs || 0)
+      };
+      continue;
+    }
+    health[id] = {
+      ...existing,
+      status: status.status,
+      lastObservedAt: nowIso()
+    };
+  }
+  engine.sourceHealth = health;
+  return health;
+}
+
+function mergeStatusHealth(statuses, sourceHealth) {
+  return (statuses || []).map((status) => {
+    const health = sourceHealth?.[status.id] || {};
+    return {
+      ...status,
+      failureCount: Number(health.failureCount || status.failureCount || 0),
+      nextRetryAt: health.nextRetryAt || status.nextRetryAt || "",
+      lastSuccessAt: health.lastSuccessAt || "",
+      lastErrorAt: health.lastErrorAt || "",
+      backoffMs: Number(health.backoffMs || 0)
+    };
+  });
+}
+
+function buildSourceRecovery(sourceStatuses, sourceHealth) {
+  const statuses = sourceStatuses || [];
+  const connected = statuses.filter((source) => source.status === "connected").length;
+  const backoff = statuses.filter((source) => source.status === "backoff").length;
+  const errors = statuses.filter((source) => source.status === "error").length;
+  const nextRetryAt = statuses
+    .map((source) => source.nextRetryAt || sourceHealth?.[source.id]?.nextRetryAt || "")
+    .filter(Boolean)
+    .sort()[0] || "";
+  const mode = errors > 0 ? "degraded" : backoff > 0 ? "cooling_down" : connected > 0 ? "healthy" : "setup";
+  return {
+    mode,
+    connected,
+    backoff,
+    errors,
+    nextRetryAt,
+    total: statuses.length
+  };
+}
+
+function updateIngestState(engine, intelligence, config) {
   if (!intelligence) return engine.externalSignals || [];
   const incoming = Array.isArray(intelligence.items) ? intelligence.items : [];
   engine.externalSignals = mergeExternalSignals(engine.externalSignals || [], incoming);
-  engine.sourceStatuses = Array.isArray(intelligence.sourceStatuses) ? intelligence.sourceStatuses : [];
+  const sourceHealth = updateSourceHealth(engine, intelligence.sourceStatuses || [], config);
+  engine.sourceStatuses = mergeStatusHealth(Array.isArray(intelligence.sourceStatuses) ? intelligence.sourceStatuses : [], sourceHealth);
   engine.lastIngestAt = intelligence.collectedAt || nowIso();
   return engine.externalSignals;
 }
@@ -845,7 +938,7 @@ function applyOptimizerPolicy(scores, policy) {
 function buildProfitRunPreview(state, config, options = {}) {
   const previewState = JSON.parse(JSON.stringify(state));
   const engine = ensureProfitState(previewState);
-  const signals = updateIngestState(engine, options.intelligence);
+  const signals = updateIngestState(engine, options.intelligence, config);
   if (shouldSkipRun(engine, config, options.force)) {
     return {
       skipped: true,
@@ -881,7 +974,7 @@ function buildProfitRunPreview(state, config, options = {}) {
 
 function runProfitEngine(state, config, options = {}) {
   const engine = ensureProfitState(state);
-  const signals = updateIngestState(engine, options.intelligence);
+  const signals = updateIngestState(engine, options.intelligence, config);
   const offerSync = syncOffersFromSignals(state, config, signals);
   if (shouldSkipRun(engine, config, options.force)) {
     return {
@@ -1008,13 +1101,19 @@ function buildProfitDashboard(state, config) {
   const statusById = new Map((engine.sourceStatuses || []).map((status) => [status.id, status]));
   const sources = AD_SOURCES.map((source) => {
     const status = statusById.get(source.id);
+    const health = engine.sourceHealth?.[source.id] || {};
     return {
       ...source,
       runtimeStatus: status?.status || source.status,
       message: status?.message || "",
-      count: status?.count || 0
+      count: status?.count || 0,
+      failureCount: Number(health.failureCount || status?.failureCount || 0),
+      nextRetryAt: health.nextRetryAt || status?.nextRetryAt || "",
+      lastSuccessAt: health.lastSuccessAt || "",
+      lastError: health.lastError || ""
     };
   });
+  const sourceStatuses = mergeStatusHealth(engine.sourceStatuses || [], engine.sourceHealth || {});
 
   return {
     autonomyEnabled: Boolean(config.autonomyMode),
@@ -1023,7 +1122,9 @@ function buildProfitDashboard(state, config) {
     lastIngestAt: engine.lastIngestAt,
     nextRunHint: config.autonomyMode ? `${Math.round((config.autonomyIntervalMs || 0) / 60000)} 分鐘循環` : "手動",
     sources,
-    sourceStatuses: engine.sourceStatuses || [],
+    sourceStatuses,
+    sourceHealth: engine.sourceHealth || {},
+    sourceRecovery: buildSourceRecovery(sourceStatuses, engine.sourceHealth || {}),
     externalSignals: signals.slice(0, 8),
     experiments: buildExperimentLoop(state, config, engine, scores),
     optimizer: {

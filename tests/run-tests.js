@@ -151,6 +151,33 @@ async function main() {
   assert.equal(intelligence.sourceStatuses.filter((source) => source.status === "connected").length, 3);
   assert.equal(intelligence.items.some((item) => item.kind === "offer" && item.commissionValue === 25), true);
   assert.equal(intelligence.items.some((item) => String(item.adSnapshotUrl).includes("access_token")), false);
+  const failingSourceConfig = getRuntimeConfig({
+    PUBLIC_BASE_URL: "http://localhost:4173",
+    THREADS_DRY_RUN: "true",
+    AD_INTELLIGENCE_FEED_URLS: "https://feeds.test/down.json",
+    AD_INTELLIGENCE_RETRY_BASE_MS: "60000",
+    AD_INTELLIGENCE_RETRY_MAX_MS: "60000"
+  });
+  const failingIntelligence = await collectAdIntelligence(failingSourceConfig, {
+    fetchImpl: async () => ({ ok: false, status: 503, async json() { return {}; } })
+  });
+  assert.equal(failingIntelligence.sourceStatuses.find((source) => source.id === "custom_ad_feed").status, "error");
+  const sourceHealthStore = createStore(path.join(tempDir, "source-health-store.json"));
+  sourceHealthStore.update((state) => runProfitEngine(state, failingSourceConfig, {
+    source: "source-health-test",
+    force: true,
+    createPosts: false,
+    intelligence: failingIntelligence
+  }));
+  const sourceHealthState = sourceHealthStore.read();
+  assert.equal(Boolean(sourceHealthState.profitEngine.sourceHealth.custom_ad_feed.nextRetryAt), true);
+  const backoffIntelligence = await collectAdIntelligence(failingSourceConfig, {
+    sourceHealth: sourceHealthState.profitEngine.sourceHealth,
+    fetchImpl: async () => {
+      throw new Error("backoff should skip fetch");
+    }
+  });
+  assert.equal(backoffIntelligence.sourceStatuses.find((source) => source.id === "custom_ad_feed").status, "backoff");
 
   const result = await runAutomation(store, config, { source: "test" });
   assert.equal(result.run.status, "completed");
@@ -507,6 +534,7 @@ async function main() {
   assert.equal(profitPayload.result.skipped, false);
   assert.equal(profitPayload.result.run.ingestedSignalCount, 0);
   assert.equal(profitPayload.dashboard.profitEngine.sourceStatuses.length > 0, true);
+  assert.equal(Boolean(profitPayload.dashboard.profitEngine.sourceRecovery.mode), true);
   assert.equal(profitPayload.dashboard.profitEngine.generatedScripts.length > 0, true);
   assert.equal(profitPayload.dashboard.autonomyPipeline.steps.some((step) => step.id === "profit_optimizer"), true);
   assert.equal(profitPayload.dashboard.operatingMap.summary.objective.includes("聯盟成交"), true);

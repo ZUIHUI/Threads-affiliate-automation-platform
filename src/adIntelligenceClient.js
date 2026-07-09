@@ -80,6 +80,29 @@ function sourceNameFromUrl(url) {
   }
 }
 
+function healthFor(sourceHealth, id) {
+  return sourceHealth?.[id] || {};
+}
+
+function backoffStatus(id, name, message, health) {
+  return {
+    id,
+    name,
+    status: "backoff",
+    count: 0,
+    message,
+    failureCount: Number(health.failureCount || 0),
+    nextRetryAt: health.nextRetryAt || "",
+    lastError: health.lastError || ""
+  };
+}
+
+function isInBackoff(health) {
+  if (!health?.nextRetryAt) return false;
+  const retryAt = new Date(health.nextRetryAt).getTime();
+  return Number.isFinite(retryAt) && retryAt > Date.now();
+}
+
 function normalizeFeedItem(item, source, kind) {
   const title = firstValue(
     item.title,
@@ -184,7 +207,22 @@ async function fetchJson(url, fetchImpl, timeoutMs) {
   }
 }
 
-async function collectFeed(url, kind, fetchImpl, config) {
+async function collectFeed(url, kind, fetchImpl, config, sourceHealth = {}) {
+  const id = kind === "offer" ? "affiliate_offer_feed" : "custom_ad_feed";
+  const name = kind === "offer" ? "Affiliate offer feed" : "Custom ad feed";
+  const health = healthFor(sourceHealth, id);
+  if (isInBackoff(health)) {
+    return {
+      items: [],
+      status: backoffStatus(
+        id,
+        name,
+        `${sourceNameFromUrl(url)} is cooling down until ${health.nextRetryAt}.`,
+        health
+      )
+    };
+  }
+
   try {
     const payload = await fetchJson(url, fetchImpl, config.adIntelligenceTimeoutMs);
     const source = sourceNameFromUrl(url);
@@ -192,8 +230,8 @@ async function collectFeed(url, kind, fetchImpl, config) {
     return {
       items,
       status: {
-        id: kind === "offer" ? "affiliate_offer_feed" : "custom_ad_feed",
-        name: kind === "offer" ? "Affiliate offer feed" : "Custom ad feed",
+        id,
+        name,
         status: "connected",
         count: items.length,
         message: `${items.length} item(s) ingested from ${source}`
@@ -203,8 +241,8 @@ async function collectFeed(url, kind, fetchImpl, config) {
     return {
       items: [],
       status: {
-        id: kind === "offer" ? "affiliate_offer_feed" : "custom_ad_feed",
-        name: kind === "offer" ? "Affiliate offer feed" : "Custom ad feed",
+        id,
+        name,
         status: "error",
         count: 0,
         message: `${sourceNameFromUrl(url)}: ${error.message}`
@@ -225,7 +263,7 @@ function buildMetaAdLibraryUrl(config) {
   return url;
 }
 
-async function collectMetaAdLibrary(config, fetchImpl) {
+async function collectMetaAdLibrary(config, fetchImpl, sourceHealth = {}) {
   if (!config.metaAdLibraryAccessToken || !config.metaAdLibraryQuery) {
     return {
       items: [],
@@ -236,6 +274,19 @@ async function collectMetaAdLibrary(config, fetchImpl) {
         count: 0,
         message: "Set META_AD_LIBRARY_ACCESS_TOKEN and META_AD_LIBRARY_QUERY to ingest live ads."
       }
+    };
+  }
+
+  const health = healthFor(sourceHealth, "meta_ad_library");
+  if (isInBackoff(health)) {
+    return {
+      items: [],
+      status: backoffStatus(
+        "meta_ad_library",
+        "Meta Ad Library",
+        `Meta Ad Library is cooling down until ${health.nextRetryAt}.`,
+        health
+      )
     };
   }
 
@@ -282,18 +333,19 @@ function dedupeItems(items, maxItems) {
 
 async function collectAdIntelligence(config, options = {}) {
   const fetchImpl = options.fetchImpl || global.fetch;
+  const sourceHealth = options.sourceHealth || {};
   const adFeedUrls = config.adIntelligenceFeedUrls || [];
   const offerFeedUrls = config.affiliateOfferFeedUrls || [];
   const maxItems = Math.max(1, Math.min(Number(config.adIntelligenceMaxItems || 24), 100));
 
   const results = [];
   for (const url of adFeedUrls) {
-    results.push(await collectFeed(url, "ad", fetchImpl, config));
+    results.push(await collectFeed(url, "ad", fetchImpl, config, sourceHealth));
   }
   for (const url of offerFeedUrls) {
-    results.push(await collectFeed(url, "offer", fetchImpl, config));
+    results.push(await collectFeed(url, "offer", fetchImpl, config, sourceHealth));
   }
-  results.push(await collectMetaAdLibrary(config, fetchImpl));
+  results.push(await collectMetaAdLibrary(config, fetchImpl, sourceHealth));
 
   const sourceStatuses = results.map((result) => result.status);
   if (!adFeedUrls.length) {

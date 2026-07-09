@@ -144,6 +144,11 @@ async function readState() {
   return store.read();
 }
 
+async function sourceHealthSnapshot() {
+  const state = await readState();
+  return state.profitEngine?.sourceHealth || {};
+}
+
 async function buildProfitAiScripts(runOptions, requestOptions = {}) {
   const state = await readState();
   const preview = buildProfitRunPreview(state, config, runOptions);
@@ -175,7 +180,7 @@ async function buildProfitAiScripts(runOptions, requestOptions = {}) {
 async function runProfitEngineRequest(body = {}) {
   const intelligence = body.ingest === false
     ? null
-    : await collectAdIntelligence(config);
+    : await collectAdIntelligence(config, { sourceHealth: await sourceHealthSnapshot() });
   const aiDraft = await buildProfitAiScripts({
     source: body.source || "growth-loop",
     force: body.force !== false,
@@ -256,7 +261,7 @@ async function runAutonomyCycle(options = {}) {
   }
 
   if (shouldRunProfit) {
-    intelligence = options.ingest === false ? null : await collectAdIntelligence(config);
+    intelligence = options.ingest === false ? null : await collectAdIntelligence(config, { sourceHealth: await sourceHealthSnapshot() });
     aiDraft = await buildProfitAiScripts({
       source,
       force: options.force !== false,

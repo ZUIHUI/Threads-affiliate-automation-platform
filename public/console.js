@@ -1254,9 +1254,11 @@ function renderProfitEngine(data) {
   `).join("");
 
   const offer = engine.offerAutopilot || {};
+  const recovery = engine.sourceRecovery || {};
   $("#autopilotSummary").innerHTML = [
     ["Sources", (engine.sourceStatuses || []).length, "API / feed checks"],
     ["Signals", (engine.externalSignals || []).length, "Ad + offer inputs"],
+    ["Recovery", recovery.mode || "setup", recovery.nextRetryAt ? `next retry ${formatDate(recovery.nextRetryAt)}` : `${recovery.errors || 0} error(s)`],
     ["Offers", offer.activeSyncedProductCount || 0, `max ${offer.maxOffersPerRun || 0}/run`],
     ["Queued", engine.scheduledAutonomyPosts || 0, "autonomous posts"],
     ["Blocked", (engine.blockedScripts || []).length, "guardrail catches"]
@@ -1272,7 +1274,7 @@ function renderProfitEngine(data) {
     <article class="connector-item">
       <span>${escapeHtml(source.runtimeStatus || source.status)}</span>
       <strong>${escapeHtml(source.name)}</strong>
-      <p>${escapeHtml(source.message || source.role)}</p>
+      <p>${escapeHtml(source.nextRetryAt ? `${source.message || source.role} Next retry ${formatDate(source.nextRetryAt)}.` : source.message || source.role)}</p>
     </article>
   `).join("");
 
@@ -1305,9 +1307,9 @@ function renderProfitEngine(data) {
       </span>
       <div>
         <strong>${escapeHtml(source.name || source.id)}</strong>
-        <p>${escapeHtml(source.message || "")}</p>
+        <p>${escapeHtml(source.nextRetryAt ? `${source.message || ""} Next retry ${formatDate(source.nextRetryAt)}.` : source.message || "")}</p>
       </div>
-      <small>${Number(source.count || 0).toLocaleString()}</small>
+      <small>${Number(source.count || 0).toLocaleString()}${source.failureCount ? ` · ${Number(source.failureCount)} fail` : ""}</small>
     </article>
   `).join("") || `<div class="empty-state">No live source check yet</div>`;
 

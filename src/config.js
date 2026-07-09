@@ -51,6 +51,8 @@ function getRuntimeConfig(env) {
     affiliateOfferFeedUrls: asList(env.AFFILIATE_OFFER_FEED_URLS),
     adIntelligenceMaxItems: Math.max(1, Math.min(asNumber(env.AD_INTELLIGENCE_MAX_ITEMS, 24), 100)),
     adIntelligenceTimeoutMs: Math.max(1000, asNumber(env.AD_INTELLIGENCE_TIMEOUT_MS, 8000)),
+    adIntelligenceRetryBaseMs: Math.max(60_000, asNumber(env.AD_INTELLIGENCE_RETRY_BASE_MS, 5 * 60_000)),
+    adIntelligenceRetryMaxMs: Math.max(5 * 60_000, asNumber(env.AD_INTELLIGENCE_RETRY_MAX_MS, 60 * 60_000)),
     metaGraphBase: env.META_GRAPH_BASE || "https://graph.facebook.com/v25.0",
     metaAdLibraryAccessToken: env.META_AD_LIBRARY_ACCESS_TOKEN || "",
     metaAdLibraryQuery: env.META_AD_LIBRARY_QUERY || "",
