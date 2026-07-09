@@ -40,8 +40,10 @@ AUTOMATION_INTERVAL_MS=60000
 AUTONOMY_MODE=true
 AUTONOMY_INTERVAL_MS=21600000
 AUTONOMY_MAX_SCRIPTS_PER_RUN=3
+AUTONOMY_MAX_OFFERS_PER_RUN=3
 AD_INTELLIGENCE_MAX_ITEMS=24
 AD_INTELLIGENCE_TIMEOUT_MS=8000
+CONVERSION_WEBHOOK_SECRET=your_random_webhook_secret
 DEFAULT_DISCLOSURE_TEXT=含聯盟連結
 AI_DRAFT_PROVIDER=openai
 ```
@@ -75,6 +77,29 @@ comma-separated JSON endpoints. Each endpoint can return an array or an object
 with `items`, `offers`, `ads`, `data`, or `results`. The profit engine
 normalizes titles, hooks, landing URLs, offer text, commission values, and EPC
 style scores into `profitEngine.externalSignals`.
+
+Conversion webhook:
+
+```http
+POST /api/conversions
+x-webhook-secret: your_random_webhook_secret
+content-type: application/json
+```
+
+```json
+{
+  "slug": "ai-affiliate-prompt-pack",
+  "networkEventId": "network-order-123",
+  "commissionValue": 8,
+  "orderValue": 49,
+  "currency": "USD",
+  "status": "approved"
+}
+```
+
+The webhook updates the matching affiliate link's conversions and revenue, then
+the next profit-engine run uses those revenue signals in scoring. `networkEventId`
+is idempotent per affiliate link.
 
 ## Database
 

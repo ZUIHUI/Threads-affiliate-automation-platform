@@ -6,7 +6,7 @@ const path = require("node:path");
 const { getRuntimeConfig } = require("../src/config");
 const { createStore } = require("../src/store");
 const { extractUniqueUrls, validatePost } = require("../src/validators");
-const { generateDrafts, generateDraftsAsync, runAutomation } = require("../src/automation");
+const { generateDrafts, generateDraftsAsync, recordConversion, runAutomation } = require("../src/automation");
 const { runProfitEngine } = require("../src/profitEngine");
 const { buildMetaAdLibraryUrl, collectAdIntelligence } = require("../src/adIntelligenceClient");
 const { generateOpenAIDrafts, normalizeDrafts } = require("../src/openaiClient");
@@ -138,9 +138,32 @@ async function main() {
   const signalState = signalStore.read();
   assert.equal(signalResult.skipped, false);
   assert.equal(signalResult.run.ingestedSignalCount, 3);
+  assert.equal(signalResult.run.syncedProductIds.length, 1);
   assert.equal(signalState.profitEngine.externalSignals.length, 3);
   assert.equal(signalState.profitEngine.sourceStatuses[0].status, "connected");
+  assert.equal(signalState.products.some((product) => product.sourceSignalId && product.name === "Automation Toolkit"), true);
+  assert.equal(signalState.affiliateLinks.some((link) => link.targetUrl.includes("offer.example/toolkit")), true);
   assert.equal(signalResult.scripts.some((script) => script.post.includes("這輪參考")), true);
+
+  const syncedLink = signalState.affiliateLinks.find((link) => link.targetUrl.includes("offer.example/toolkit"));
+  const conversionResult = signalStore.update((state) => recordConversion(state, {
+    affiliateLinkId: syncedLink.id,
+    networkEventId: "network-order-1",
+    commissionValue: 25,
+    orderValue: 99,
+    status: "approved"
+  }));
+  assert.equal(conversionResult.duplicate, false);
+  const duplicateConversion = signalStore.update((state) => recordConversion(state, {
+    affiliateLinkId: syncedLink.id,
+    networkEventId: "network-order-1",
+    commissionValue: 25
+  }));
+  assert.equal(duplicateConversion.duplicate, true);
+  const conversionState = signalStore.read();
+  const updatedSyncedLink = conversionState.affiliateLinks.find((link) => link.id === syncedLink.id);
+  assert.equal(updatedSyncedLink.conversions, 1);
+  assert.equal(updatedSyncedLink.revenue, 25);
 
   const normalized = normalizeDrafts({
     drafts: Array.from({ length: 5 }, (_, index) => ({
@@ -271,6 +294,20 @@ async function main() {
   const dashboard = await dashboardResponse.json();
   assert.equal(dashboard.promptTemplate.includes("Threads 短文內容企劃"), true);
   assert.equal(dashboard.profitEngine.models.length > 0, true);
+  const conversionResponse = await fetch(`http://127.0.0.1:${address.port}/api/conversions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      slug: "ai-affiliate-prompt-pack",
+      networkEventId: "server-order-1",
+      commissionValue: 8,
+      orderValue: 49,
+      status: "approved"
+    })
+  });
+  const conversionPayload = await conversionResponse.json();
+  assert.equal(conversionResponse.status, 201);
+  assert.equal(conversionPayload.duplicate, false);
   const profitResponse = await fetch(`http://127.0.0.1:${address.port}/api/profit-engine/run`, {
     method: "POST",
     headers: { "content-type": "application/json" },

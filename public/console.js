@@ -279,6 +279,23 @@ function renderRevenue(data) {
       <span>${formatMoney(link.revenue)}</span>
     </div>
   `).join("");
+
+  $("#conversionEvents").innerHTML = `
+    <strong>Recent conversions</strong>
+    ${(data.conversionEvents || []).map((event) => {
+      const link = linkById(data, event.affiliateLinkId);
+      return `
+        <article class="conversion-row">
+          <span class="badge ${event.status === "approved" || event.status === "paid" ? "good" : "warn"}">${escapeHtml(event.status)}</span>
+          <div>
+            <strong>${escapeHtml(link ? link.slug : event.affiliateLinkId)}</strong>
+            <p>${escapeHtml(event.networkEventId || event.id)} · ${formatDate(event.occurredAt)}</p>
+          </div>
+          <small>${formatMoney(event.commissionValue)}</small>
+        </article>
+      `;
+    }).join("") || `<div class="empty-state">No conversion webhook events yet</div>`}
+  `;
 }
 
 function renderCampaigns(data) {

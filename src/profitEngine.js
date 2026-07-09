@@ -93,6 +93,11 @@ function makeId(prefix) {
   return `${prefix}_${crypto.randomBytes(6).toString("hex")}`;
 }
 
+function stableId(prefix, value) {
+  const digest = crypto.createHash("sha1").update(String(value || prefix)).digest("hex").slice(0, 14);
+  return `${prefix}_${digest}`;
+}
+
 function trackingUrl(config, slug) {
   return `${config.publicBaseUrl.replace(/\/$/, "")}/r/${slug}`;
 }
@@ -181,9 +186,17 @@ function scoreProfitModel(model, state, signals = []) {
   ));
 }
 
-function pickActiveContext(state) {
-  const campaign = (state.campaigns || []).find((item) => item.status === "active") || state.campaigns?.[0];
-  const product = (state.products || []).find((item) => item.campaignId === campaign?.id && item.status === "active")
+function pickActiveContext(state, preferredSignal, syncedProducts = []) {
+  const preferredProduct = preferredSignal
+    ? (state.products || []).find((item) => item.sourceSignalId === preferredSignal.id)
+    : null;
+  const syncedProduct = syncedProducts.find((item) => item.status === "active");
+  const campaign = (state.campaigns || []).find((item) =>
+    item.id === preferredProduct?.campaignId || item.id === syncedProduct?.campaignId
+  ) || (state.campaigns || []).find((item) => item.status === "active") || state.campaigns?.[0];
+  const product = preferredProduct
+    || syncedProduct
+    || (state.products || []).find((item) => item.campaignId === campaign?.id && item.status === "active")
     || (state.products || []).find((item) => item.status === "active")
     || state.products?.[0];
   if (!campaign || !product) {
@@ -220,6 +233,68 @@ function ensureAffiliateLink(state, campaign, product, config) {
   };
   state.affiliateLinks.push(link);
   return link;
+}
+
+function pickCampaignForSignal(state, signal) {
+  const campaigns = state.campaigns || [];
+  const text = signalText(signal);
+  return campaigns.find((campaign) => {
+    const campaignText = [campaign.name, campaign.niche, campaign.targetPersona].filter(Boolean).join(" ").toLowerCase();
+    return campaignText && text.includes(campaign.niche?.toLowerCase?.() || campaignText);
+  }) || campaigns.find((campaign) => campaign.status === "active") || campaigns[0];
+}
+
+function productIdForSignal(signal) {
+  return stableId("prd", signal.id || `${signal.source}:${signal.title}:${signal.landingUrl}`);
+}
+
+function upsertProductFromSignal(state, signal, campaign, config) {
+  if (!campaign || signal.kind !== "offer" || !signal.landingUrl) return null;
+  const productId = productIdForSignal(signal);
+  const existing = (state.products || []).find((product) =>
+    product.id === productId || product.sourceSignalId === signal.id
+  );
+  const now = nowIso();
+  const product = existing || {
+    id: productId,
+    campaignId: campaign.id,
+    createdAt: now
+  };
+  Object.assign(product, {
+    campaignId: campaign.id,
+    name: signal.productName || signal.title || "Autonomous affiliate offer",
+    offer: signal.offer || signal.angle || "External affiliate offer",
+    network: signal.source || "ExternalFeed",
+    sourceSignalId: signal.id,
+    sourceKind: signal.kind,
+    commissionModel: signal.commissionModel || (Number(signal.commissionValue || 0) > 0 ? "CPA" : "CPS"),
+    commissionValue: Number(signal.commissionValue || 0),
+    currency: signal.currency || "USD",
+    landingUrl: signal.landingUrl,
+    status: "active",
+    updatedAt: now
+  });
+  if (!existing) state.products.push(product);
+  const link = ensureAffiliateLink(state, campaign, product, config);
+  return { product, link, created: !existing };
+}
+
+function syncOffersFromSignals(state, config, signals) {
+  const maxOffers = Number(config.autonomyMaxOffersPerRun || 0);
+  if (!maxOffers) return { syncedProducts: [], createdProductIds: [], updatedProductIds: [] };
+  const syncedProducts = [];
+  const createdProductIds = [];
+  const updatedProductIds = [];
+  for (const signal of signals.filter((item) => item.kind === "offer" && item.landingUrl)) {
+    if (syncedProducts.length >= maxOffers) break;
+    const campaign = pickCampaignForSignal(state, signal);
+    const result = upsertProductFromSignal(state, signal, campaign, config);
+    if (!result) continue;
+    syncedProducts.push(result.product);
+    if (result.created) createdProductIds.push(result.product.id);
+    else updatedProductIds.push(result.product.id);
+  }
+  return { syncedProducts, createdProductIds, updatedProductIds };
 }
 
 function mergeExternalSignals(existing, incoming, limit = 24) {
@@ -340,6 +415,7 @@ function shouldSkipRun(engine, config, force) {
 function runProfitEngine(state, config, options = {}) {
   const engine = ensureProfitState(state);
   const signals = updateIngestState(engine, options.intelligence);
+  const offerSync = syncOffersFromSignals(state, config, signals);
   if (shouldSkipRun(engine, config, options.force)) {
     return {
       skipped: true,
@@ -359,10 +435,10 @@ function runProfitEngine(state, config, options = {}) {
     })
     .sort((a, b) => b.score - a.score);
   const selected = scores[0];
-  const { campaign, product } = pickActiveContext(state);
+  const selectedSignal = pickSignalForModel(selected, signals);
+  const { campaign, product } = pickActiveContext(state, selectedSignal, offerSync.syncedProducts);
   const link = ensureAffiliateLink(state, campaign, product, config);
   const count = Math.max(1, Math.min(Number(config.autonomyMaxScriptsPerRun || 3), 5));
-  const selectedSignal = pickSignalForModel(selected, signals);
   const scripts = buildNaturalScripts(selected, campaign, product, link, config, count, selectedSignal);
   const createdPosts = options.createPosts === false
     ? []
@@ -391,6 +467,9 @@ function runProfitEngine(state, config, options = {}) {
     createdPostIds: createdPosts.map((post) => post.id),
     createdInsightId: insight.id,
     ingestedSignalCount: options.intelligence?.items?.length || 0,
+    syncedProductIds: offerSync.syncedProducts.map((product) => product.id),
+    createdProductIds: offerSync.createdProductIds,
+    updatedProductIds: offerSync.updatedProductIds,
     sourceStatuses: engine.sourceStatuses,
     status: "completed",
     createdAt: nowIso()
@@ -443,6 +522,7 @@ function buildProfitDashboard(state, config) {
   const scheduledAutonomyPosts = (state.posts || []).filter((post) =>
     post.contentType === "自然推薦腳本" && ["draft", "scheduled"].includes(post.status)
   ).length;
+  const syncedOfferProducts = (state.products || []).filter((product) => product.sourceSignalId);
   const statusById = new Map((engine.sourceStatuses || []).map((status) => [status.id, status]));
   const sources = AD_SOURCES.map((source) => {
     const status = statusById.get(source.id);
@@ -463,6 +543,11 @@ function buildProfitDashboard(state, config) {
     sources,
     sourceStatuses: engine.sourceStatuses || [],
     externalSignals: signals.slice(0, 8),
+    offerAutopilot: {
+      maxOffersPerRun: Number(config.autonomyMaxOffersPerRun || 0),
+      syncedProductCount: syncedOfferProducts.length,
+      activeSyncedProductCount: syncedOfferProducts.filter((product) => product.status === "active").length
+    },
     models: scores.slice(0, 4),
     adInsights: engine.adInsights.slice(0, 6),
     generatedScripts: engine.generatedScripts.slice(0, 4),

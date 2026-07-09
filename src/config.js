@@ -37,6 +37,7 @@ function getRuntimeConfig(env) {
     autonomyMode: asBoolean(env.AUTONOMY_MODE, false),
     autonomyIntervalMs: Math.max(15 * 60_000, asNumber(env.AUTONOMY_INTERVAL_MS, 6 * 60 * 60_000)),
     autonomyMaxScriptsPerRun: Math.max(1, Math.min(asNumber(env.AUTONOMY_MAX_SCRIPTS_PER_RUN, 3), 5)),
+    autonomyMaxOffersPerRun: Math.max(0, Math.min(asNumber(env.AUTONOMY_MAX_OFFERS_PER_RUN, 3), 10)),
     adIntelligenceFeedUrls: asList(env.AD_INTELLIGENCE_FEED_URLS),
     affiliateOfferFeedUrls: asList(env.AFFILIATE_OFFER_FEED_URLS),
     adIntelligenceMaxItems: Math.max(1, Math.min(asNumber(env.AD_INTELLIGENCE_MAX_ITEMS, 24), 100)),
@@ -48,6 +49,7 @@ function getRuntimeConfig(env) {
     metaAdLibraryAdType: env.META_AD_LIBRARY_AD_TYPE || "ALL",
     metaAdLibraryFields: env.META_AD_LIBRARY_FIELDS || "",
     metaAdLibraryLimit: Math.max(1, Math.min(asNumber(env.META_AD_LIBRARY_LIMIT, 10), 50)),
+    conversionWebhookSecret: env.CONVERSION_WEBHOOK_SECRET || "",
     defaultDisclosureText: env.DEFAULT_DISCLOSURE_TEXT || "含聯盟連結",
     defaultUtmSource: env.DEFAULT_UTM_SOURCE || "threads",
     defaultUtmMedium: env.DEFAULT_UTM_MEDIUM || "affiliate_social"

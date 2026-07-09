@@ -60,6 +60,19 @@ and the selected `adInsights` in the dashboard state. Secrets are read only from
 environment variables; access tokens and common API-key query params are stripped
 from URLs before they are shown in the admin UI.
 
+Offer signals with a landing URL are also promoted into active products and
+affiliate tracking links. `AUTONOMY_MAX_OFFERS_PER_RUN` caps how many new offers
+can enter the product pool per run, so the engine can keep discovering offers
+without flooding the queue.
+
+## Revenue Feedback Loop
+
+Affiliate networks or no-code routers can call `POST /api/conversions` with a
+link slug or `affiliateLinkId`, a `networkEventId`, and commission values. The
+endpoint is idempotent by `networkEventId`, updates link-level conversions and
+revenue, and writes a conversion event for the dashboard. The next profit-engine
+cycle uses those updated revenue signals when ranking models and offers.
+
 ## Compliance Rules
 
 The FTC says social endorsements need clear disclosure when there is a financial
@@ -82,11 +95,13 @@ Set these variables on the cloud service:
 AUTONOMY_MODE=true
 AUTONOMY_INTERVAL_MS=21600000
 AUTONOMY_MAX_SCRIPTS_PER_RUN=3
+AUTONOMY_MAX_OFFERS_PER_RUN=3
 THREADS_DRY_RUN=true
 AD_INTELLIGENCE_FEED_URLS=https://example.com/ad-signals.json
 AFFILIATE_OFFER_FEED_URLS=https://example.com/offers.json
 META_AD_LIBRARY_QUERY=ai automation
 META_AD_LIBRARY_ACCESS_TOKEN=...
+CONVERSION_WEBHOOK_SECRET=...
 ```
 
 `THREADS_DRY_RUN=true` keeps the engine self-running without making live Threads

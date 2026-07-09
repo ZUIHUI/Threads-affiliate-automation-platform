@@ -87,6 +87,7 @@ function buildDashboard(state, config) {
     automationRuns: state.automationRuns.slice(0, 10),
     recentEvents: state.events.slice(0, 12),
     clickEvents: state.clickEvents.slice(0, 8),
+    conversionEvents: state.conversionEvents.slice(0, 8),
     promptTemplate: buildPrompt("AI 自動化聯盟行銷"),
     profitEngine: buildProfitDashboard(state, config),
     settings: state.settings
@@ -299,6 +300,80 @@ function upsertAffiliateLink(state, input, config) {
   return { link, trackingUrl: trackingUrl(config, link.slug) };
 }
 
+function findLinkForConversion(state, input) {
+  const links = state.affiliateLinks || [];
+  const link = input.affiliateLinkId
+    ? links.find((item) => item.id === input.affiliateLinkId)
+    : links.find((item) => item.slug === input.slug || item.slug === input.affiliateSlug);
+  if (!link) {
+    const error = new Error("A valid affiliateLinkId or slug is required.");
+    error.statusCode = 404;
+    throw error;
+  }
+  return link;
+}
+
+function numberFrom(...values) {
+  for (const value of values) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function recordConversion(state, input) {
+  const link = findLinkForConversion(state, input);
+  const networkEventId = String(input.networkEventId || input.eventId || input.orderId || "").trim();
+  const duplicate = networkEventId
+    ? (state.conversionEvents || []).find((event) =>
+        event.affiliateLinkId === link.id && event.networkEventId === networkEventId
+      )
+    : null;
+  if (duplicate) {
+    return { conversion: duplicate, link, duplicate: true };
+  }
+
+  const commissionValue = numberFrom(input.commissionValue, input.commission, input.payout, input.amount);
+  const orderValue = numberFrom(input.orderValue, input.order_value, input.saleAmount);
+  if (commissionValue < 0 || orderValue < 0) {
+    const error = new Error("Conversion values cannot be negative.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const status = String(input.status || "approved").toLowerCase();
+  const conversion = {
+    id: makeId("conv"),
+    affiliateLinkId: link.id,
+    clickEventId: input.clickEventId || "",
+    networkEventId,
+    orderValue,
+    commissionValue,
+    currency: input.currency || link.currency || "USD",
+    status,
+    occurredAt: input.occurredAt || input.occurred_at || nowIso(),
+    createdAt: nowIso()
+  };
+
+  state.conversionEvents.unshift(conversion);
+  const countsTowardRevenue = !["rejected", "refunded", "void", "cancelled"].includes(status);
+  if (countsTowardRevenue) {
+    link.conversions = Number(link.conversions || 0) + 1;
+    link.revenue = Number(link.revenue || 0) + commissionValue;
+    link.currency = conversion.currency;
+    link.updatedAt = conversion.createdAt;
+  }
+  state.events.unshift({
+    id: makeId("evt"),
+    type: "conversion.recorded",
+    affiliateLinkId: link.id,
+    conversionId: conversion.id,
+    revenueDelta: countsTowardRevenue ? commissionValue : 0,
+    createdAt: conversion.createdAt
+  });
+  return { conversion, link, duplicate: false };
+}
+
 function capacityRemaining(state) {
   const cutoff = Date.now() - 24 * 60 * 60 * 1000;
   const recentlyPublished = state.posts.filter((post) => {
@@ -412,6 +487,7 @@ module.exports = {
   createPost,
   generateDrafts,
   generateDraftsAsync,
+  recordConversion,
   runAutomation,
   upsertAffiliateLink,
   trackingUrl

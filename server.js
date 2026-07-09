@@ -10,6 +10,7 @@ const {
   createPost,
   generateDraftsAsync,
   generateDrafts,
+  recordConversion,
   runAutomation,
   upsertAffiliateLink
 } = require("./src/automation");
@@ -97,6 +98,17 @@ function parseBody(req) {
     });
     req.on("error", reject);
   });
+}
+
+function authorizeConversionWebhook(req) {
+  if (!config.conversionWebhookSecret) return;
+  const bearer = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+  const provided = req.headers["x-webhook-secret"] || bearer;
+  if (provided !== config.conversionWebhookSecret) {
+    const error = new Error("Invalid conversion webhook secret.");
+    error.statusCode = 401;
+    throw error;
+  }
 }
 
 async function serveStatic(req, res, pathname) {
@@ -238,6 +250,14 @@ async function handleApi(req, res, url) {
     const body = await parseBody(req);
     const result = await store.update((state) => upsertAffiliateLink(state, body, config));
     sendJson(res, 201, result);
+    return;
+  }
+
+  if (req.method === "POST" && route === "/api/conversions") {
+    authorizeConversionWebhook(req);
+    const body = await parseBody(req);
+    const result = await store.update((state) => recordConversion(state, body));
+    sendJson(res, result.duplicate ? 200 : 201, result);
     return;
   }
 

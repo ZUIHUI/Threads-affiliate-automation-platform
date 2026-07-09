@@ -1261,6 +1261,37 @@ body {
   overflow-wrap: anywhere;
 }
 
+.conversion-feed {
+  display: grid;
+  gap: 8px;
+  padding: 0 14px 16px;
+}
+
+.conversion-feed > strong {
+  font-size: 13px;
+}
+
+.conversion-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 44px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.conversion-row p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.conversion-row small {
+  color: var(--green-dark);
+  font-weight: 900;
+}
+
 .lower-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(360px, 0.8fr);
@@ -1379,7 +1410,8 @@ body {
   .risk-distribution,
   .prompt-controls,
   .link-table-head,
-  .link-row {
+  .link-row,
+  .conversion-row {
     grid-template-columns: 1fr;
   }
 

@@ -26,6 +26,8 @@ services:
         value: "21600000"
       - key: AUTONOMY_MAX_SCRIPTS_PER_RUN
         value: "3"
+      - key: AUTONOMY_MAX_OFFERS_PER_RUN
+        value: "3"
       - key: AD_INTELLIGENCE_FEED_URLS
         sync: false
       - key: AFFILIATE_OFFER_FEED_URLS
@@ -46,6 +48,8 @@ services:
         value: ALL
       - key: META_AD_LIBRARY_LIMIT
         value: "10"
+      - key: CONVERSION_WEBHOOK_SECRET
+        sync: false
       - key: THREADS_GRAPH_BASE
         value: https://graph.threads.net/v1.0
       - key: THREADS_DRY_RUN
