@@ -17,8 +17,9 @@ const {
 const { getRuntimeConfig } = require("./src/config");
 const { validatePost } = require("./src/validators");
 const { getPublishingLimit } = require("./src/threadsClient");
-const { runProfitEngine } = require("./src/profitEngine");
+const { buildProfitRunPreview, runProfitEngine } = require("./src/profitEngine");
 const { collectAdIntelligence } = require("./src/adIntelligenceClient");
+const { generateProfitScripts } = require("./src/profitScriptGenerator");
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
@@ -139,6 +140,34 @@ async function readState() {
   return store.read();
 }
 
+async function buildProfitAiScripts(runOptions, requestOptions = {}) {
+  const state = await readState();
+  const preview = buildProfitRunPreview(state, config, runOptions);
+  if (preview.skipped || requestOptions.ai === false) {
+    return { preview, scripts: [], source: "template", error: "" };
+  }
+  try {
+    const generated = await generateProfitScripts({
+      preview,
+      config,
+      disabled: requestOptions.ai === false
+    });
+    return {
+      preview,
+      scripts: generated.scripts,
+      source: generated.source,
+      error: ""
+    };
+  } catch (error) {
+    return {
+      preview,
+      scripts: [],
+      source: "template",
+      error: error.message || "AI script generation failed."
+    };
+  }
+}
+
 function findPost(state, postId) {
   const post = state.posts.find((item) => item.id === postId);
   if (!post) {
@@ -235,12 +264,22 @@ async function handleApi(req, res, url) {
     const intelligence = body.ingest === false
       ? null
       : await collectAdIntelligence(config);
-    const result = await store.update((state) => runProfitEngine(state, config, {
+    const aiDraft = await buildProfitAiScripts({
       source: body.source || "dashboard",
       force: body.force !== false,
       createPosts: body.createPosts !== false,
       autoApprove: body.autoApprove !== false,
       intelligence
+    }, body);
+    const result = await store.update((state) => runProfitEngine(state, config, {
+      source: body.source || "dashboard",
+      force: body.force !== false,
+      createPosts: body.createPosts !== false,
+      autoApprove: body.autoApprove !== false,
+      intelligence,
+      aiScripts: aiDraft.scripts,
+      aiScriptSource: aiDraft.source,
+      aiScriptError: aiDraft.error
     }));
     sendJson(res, 200, { result, dashboard: buildDashboard(await readState(), config) });
     return;
@@ -348,11 +387,20 @@ async function startWorker() {
     try {
       if (config.autonomyMode) {
         const intelligence = await collectAdIntelligence(config);
-        await store.update((state) => runProfitEngine(state, config, {
+        const aiDraft = await buildProfitAiScripts({
           source: "worker",
           createPosts: true,
           autoApprove: true,
           intelligence
+        });
+        await store.update((state) => runProfitEngine(state, config, {
+          source: "worker",
+          createPosts: true,
+          autoApprove: true,
+          intelligence,
+          aiScripts: aiDraft.scripts,
+          aiScriptSource: aiDraft.source,
+          aiScriptError: aiDraft.error
         }));
       }
       await runAutomation(store, config, { source: "worker" });

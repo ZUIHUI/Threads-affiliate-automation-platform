@@ -62,6 +62,8 @@ services:
         value: "30000"
       - key: AI_DRAFT_PROVIDER
         value: openai
+      - key: PROFIT_SCRIPT_PROVIDER
+        value: openai
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL

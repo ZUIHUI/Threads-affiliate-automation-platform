@@ -46,18 +46,21 @@ AD_INTELLIGENCE_TIMEOUT_MS=8000
 CONVERSION_WEBHOOK_SECRET=your_random_webhook_secret
 DEFAULT_DISCLOSURE_TEXT=含聯盟連結
 AI_DRAFT_PROVIDER=openai
+PROFIT_SCRIPT_PROVIDER=openai
 ```
 
 OpenAI draft generation:
 
 ```env
 AI_DRAFT_PROVIDER=openai
+PROFIT_SCRIPT_PROVIDER=openai
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_MODEL=gpt-5.2
 OPENAI_BASE_URL=https://api.openai.com/v1
 ```
 
-For offline demos, set `AI_DRAFT_PROVIDER=template`.
+For offline demos, set `AI_DRAFT_PROVIDER=template` and
+`PROFIT_SCRIPT_PROVIDER=template`.
 
 Ad and offer intelligence:
 

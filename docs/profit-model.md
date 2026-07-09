@@ -73,6 +73,19 @@ endpoint is idempotent by `networkEventId`, updates link-level conversions and
 revenue, and writes a conversion event for the dashboard. The next profit-engine
 cycle uses those updated revenue signals when ranking models and offers.
 
+## AI Script Generation
+
+When `PROFIT_SCRIPT_PROVIDER=openai` and `OPENAI_API_KEY` are set, the autonomous
+profit engine previews the selected model, offer, ad signal, tracking link, and
+disclosure rule, then asks the OpenAI Responses API for natural Threads scripts
+using a strict JSON schema. The engine still applies local guardrails before
+scheduling: disclosure is inserted if missing, the tracking link is appended if
+missing, and the script source is stored as `openai` in the dashboard.
+
+If OpenAI is not configured or the request fails, the same run falls back to the
+local deterministic script template and stores `scriptSource=template`, so the
+worker can keep running without manual recovery.
+
 ## Compliance Rules
 
 The FTC says social endorsements need clear disclosure when there is a financial
@@ -97,6 +110,7 @@ AUTONOMY_INTERVAL_MS=21600000
 AUTONOMY_MAX_SCRIPTS_PER_RUN=3
 AUTONOMY_MAX_OFFERS_PER_RUN=3
 THREADS_DRY_RUN=true
+PROFIT_SCRIPT_PROVIDER=openai
 AD_INTELLIGENCE_FEED_URLS=https://example.com/ad-signals.json
 AFFILIATE_OFFER_FEED_URLS=https://example.com/offers.json
 META_AD_LIBRARY_QUERY=ai automation

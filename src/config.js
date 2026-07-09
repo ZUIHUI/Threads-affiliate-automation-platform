@@ -28,6 +28,7 @@ function getRuntimeConfig(env) {
     threadsDryRun: asBoolean(env.THREADS_DRY_RUN, true),
     threadsPublishDelayMs: Math.max(0, asNumber(env.THREADS_PUBLISH_DELAY_MS, 30_000)),
     aiDraftProvider: env.AI_DRAFT_PROVIDER || "openai",
+    profitScriptProvider: env.PROFIT_SCRIPT_PROVIDER || env.AI_DRAFT_PROVIDER || "openai",
     openaiBaseUrl: env.OPENAI_BASE_URL || "https://api.openai.com/v1",
     openaiApiKey: env.OPENAI_API_KEY || "",
     openaiModel: env.OPENAI_MODEL || "gpt-5.2",

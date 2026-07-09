@@ -109,6 +109,7 @@ function renderProfitEngine(data) {
     const body = String(script.post || "");
     return `
       <article class="script-card">
+        <span>${escapeHtml(script.source || "template")}</span>
         <strong>${escapeHtml(script.hook)}</strong>
         <p>${escapeHtml(body).slice(0, 220)}${body.length > 220 ? "..." : ""}</p>
       </article>

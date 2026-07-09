@@ -45,6 +45,7 @@ const requiredJs = [
   "/api/posts/",
   "sourceStatuses",
   "externalSignals",
+  "script.source",
   "已產生 5 則草稿"
 ];
 

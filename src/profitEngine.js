@@ -375,6 +375,28 @@ function buildNaturalScripts(model, campaign, product, link, config, count, sign
   return scripts.slice(0, count);
 }
 
+function normalizeScriptOverrides(scripts, config, cta, count) {
+  if (!Array.isArray(scripts)) return [];
+  const disclosure = config.defaultDisclosureText || "含聯盟連結";
+  return scripts.slice(0, count).map((script, index) => {
+    let post = String(script.post || "").trim();
+    if (!post) return null;
+    if (!post.includes(disclosure) && !/#ad\b/i.test(post)) {
+      post = `${disclosure}：${post}`;
+    }
+    if (cta && !post.includes(cta)) {
+      post = `${post}\n\n延伸資源：${cta}`;
+    }
+    return {
+      type: script.type || `ai_script_${index + 1}`,
+      hook: String(script.hook || post.split(/\r?\n/)[0] || "自然推薦").trim(),
+      post,
+      cta: String(script.cta || "延伸資源").trim(),
+      risk_note: String(script.risk_note || script.riskNote || "AI generated with disclosure, no guaranteed-profit claim.").trim()
+    };
+  }).filter(Boolean);
+}
+
 function createAutonomousPosts(state, config, model, campaign, product, link, scripts, autoApprove) {
   const created = [];
   const baseTime = Date.now();
@@ -390,7 +412,7 @@ function createAutonomousPosts(state, config, model, campaign, product, link, sc
       funnelRatio: model.id,
       hook: script.hook,
       cta: trackingUrl(config, link.slug),
-      riskNote: "自動獲利引擎：有揭露聯盟關係，未承諾收益，使用問題式互動結尾。",
+      riskNote: script.risk_note || "自動獲利引擎：有揭露聯盟關係，未承諾收益，使用問題式互動結尾。",
       topicTag: campaign.name.replace(/[.#&]/g, "").slice(0, 50),
       text: script.post,
       status: autoApprove ? "scheduled" : "draft",
@@ -410,6 +432,48 @@ function shouldSkipRun(engine, config, force) {
   if (force || !engine.lastRunAt) return false;
   const interval = config.autonomyIntervalMs || 6 * 60 * 60 * 1000;
   return Date.now() - new Date(engine.lastRunAt).getTime() < interval;
+}
+
+function buildProfitRunPreview(state, config, options = {}) {
+  const previewState = JSON.parse(JSON.stringify(state));
+  const engine = ensureProfitState(previewState);
+  const signals = updateIngestState(engine, options.intelligence);
+  if (shouldSkipRun(engine, config, options.force)) {
+    return {
+      skipped: true,
+      reason: "Autonomy interval has not elapsed.",
+      lastRunAt: engine.lastRunAt
+    };
+  }
+  const offerSync = syncOffersFromSignals(previewState, config, signals);
+  const scores = PROFIT_MODELS
+    .map((model) => {
+      const score = scoreProfitModel(model, previewState, signals);
+      return {
+        ...model,
+        score,
+        recommendation: score >= 82 ? "primary" : "watch"
+      };
+    })
+    .sort((a, b) => b.score - a.score);
+  const selected = scores[0];
+  const selectedSignal = pickSignalForModel(selected, signals);
+  const { campaign, product } = pickActiveContext(previewState, selectedSignal, offerSync.syncedProducts);
+  const link = ensureAffiliateLink(previewState, campaign, product, config);
+  const count = Math.max(1, Math.min(Number(config.autonomyMaxScriptsPerRun || 3), 5));
+  return {
+    skipped: false,
+    selectedModel: selected,
+    selectedSignal,
+    campaign,
+    product,
+    link,
+    count,
+    trackingUrl: trackingUrl(config, link.slug),
+    sourceStatuses: engine.sourceStatuses || [],
+    externalSignalCount: signals.length,
+    syncedProductIds: offerSync.syncedProducts.map((item) => item.id)
+  };
 }
 
 function runProfitEngine(state, config, options = {}) {
@@ -439,7 +503,12 @@ function runProfitEngine(state, config, options = {}) {
   const { campaign, product } = pickActiveContext(state, selectedSignal, offerSync.syncedProducts);
   const link = ensureAffiliateLink(state, campaign, product, config);
   const count = Math.max(1, Math.min(Number(config.autonomyMaxScriptsPerRun || 3), 5));
-  const scripts = buildNaturalScripts(selected, campaign, product, link, config, count, selectedSignal);
+  const cta = trackingUrl(config, link.slug);
+  const aiScripts = normalizeScriptOverrides(options.aiScripts, config, cta, count);
+  const scripts = aiScripts.length
+    ? aiScripts
+    : buildNaturalScripts(selected, campaign, product, link, config, count, selectedSignal);
+  const scriptSource = aiScripts.length ? (options.aiScriptSource || "openai") : "template";
   const createdPosts = options.createPosts === false
     ? []
     : createAutonomousPosts(state, config, selected, campaign, product, link, scripts, options.autoApprove !== false);
@@ -470,6 +539,8 @@ function runProfitEngine(state, config, options = {}) {
     syncedProductIds: offerSync.syncedProducts.map((product) => product.id),
     createdProductIds: offerSync.createdProductIds,
     updatedProductIds: offerSync.updatedProductIds,
+    scriptSource,
+    aiScriptError: options.aiScriptError || "",
     sourceStatuses: engine.sourceStatuses,
     status: "completed",
     createdAt: nowIso()
@@ -485,6 +556,8 @@ function runProfitEngine(state, config, options = {}) {
     type: script.type,
     hook: script.hook,
     post: script.post,
+    source: scriptSource,
+    aiScriptError: options.aiScriptError || "",
     createdAt: run.createdAt
   })));
   engine.runs.unshift(run);
@@ -565,6 +638,7 @@ function buildProfitDashboard(state, config) {
 module.exports = {
   AD_SOURCES,
   PROFIT_MODELS,
+  buildProfitRunPreview,
   buildProfitDashboard,
   ensureProfitState,
   runProfitEngine

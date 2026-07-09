@@ -7,8 +7,9 @@ const { getRuntimeConfig } = require("../src/config");
 const { createStore } = require("../src/store");
 const { extractUniqueUrls, validatePost } = require("../src/validators");
 const { generateDrafts, generateDraftsAsync, recordConversion, runAutomation } = require("../src/automation");
-const { runProfitEngine } = require("../src/profitEngine");
+const { buildProfitRunPreview, runProfitEngine } = require("../src/profitEngine");
 const { buildMetaAdLibraryUrl, collectAdIntelligence } = require("../src/adIntelligenceClient");
+const { generateProfitScripts } = require("../src/profitScriptGenerator");
 const { generateOpenAIDrafts, normalizeDrafts } = require("../src/openaiClient");
 const { createTextContainer, publishContainer, getPublishingLimit } = require("../src/threadsClient");
 
@@ -164,6 +165,61 @@ async function main() {
   const updatedSyncedLink = conversionState.affiliateLinks.find((link) => link.id === syncedLink.id);
   assert.equal(updatedSyncedLink.conversions, 1);
   assert.equal(updatedSyncedLink.revenue, 25);
+
+  const aiProfitConfig = getRuntimeConfig({
+    PUBLIC_BASE_URL: "http://localhost:4173",
+    THREADS_DRY_RUN: "true",
+    AI_DRAFT_PROVIDER: "openai",
+    PROFIT_SCRIPT_PROVIDER: "openai",
+    OPENAI_API_KEY: "profit-key",
+    OPENAI_BASE_URL: "https://api.openai.test/v1",
+    OPENAI_MODEL: "gpt-5.2"
+  });
+  const aiPreview = buildProfitRunPreview(signalStore.read(), aiProfitConfig, {
+    source: "test",
+    force: true,
+    intelligence
+  });
+  const aiProfitScripts = await generateProfitScripts({
+    preview: aiPreview,
+    config: aiProfitConfig,
+    fetchImpl: async (url, options) => {
+      assert.equal(url, "https://api.openai.test/v1/responses");
+      const body = JSON.parse(options.body);
+      assert.equal(body.model, "gpt-5.2");
+      assert.equal(body.text.format.name, "threads_profit_scripts");
+      assert.equal(options.headers.authorization, "Bearer profit-key");
+      return {
+        ok: true,
+        async json() {
+          return {
+            output_text: JSON.stringify({
+              scripts: Array.from({ length: aiPreview.count }, (_, index) => ({
+                type: "ai_profit",
+                hook: `AI profit hook ${index + 1}`,
+                post: `含聯盟連結：AI generated truthful script ${index + 1}. ${aiPreview.trackingUrl}\n\n你會先測哪一步？`,
+                cta: "看延伸資源",
+                risk_note: "truthful affiliate disclosure"
+              }))
+            })
+          };
+        }
+      };
+    }
+  });
+  assert.equal(aiProfitScripts.source, "openai");
+  assert.equal(aiProfitScripts.scripts.length, aiPreview.count);
+  const aiProfitResult = signalStore.update((state) => runProfitEngine(state, aiProfitConfig, {
+    source: "test",
+    force: true,
+    createPosts: false,
+    intelligence,
+    aiScripts: aiProfitScripts.scripts,
+    aiScriptSource: aiProfitScripts.source
+  }));
+  assert.equal(aiProfitResult.run.scriptSource, "openai");
+  assert.equal(aiProfitResult.scripts[0].hook, "AI profit hook 1");
+  assert.equal(aiProfitResult.profitEngine.generatedScripts[0].source, "openai");
 
   const normalized = normalizeDrafts({
     drafts: Array.from({ length: 5 }, (_, index) => ({
