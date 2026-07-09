@@ -126,6 +126,7 @@ function ensureProfitState(state) {
       generatedScripts: [],
       externalSignals: [],
       sourceStatuses: [],
+      optimizerPolicies: [],
       lastIngestAt: null
     };
   }
@@ -135,6 +136,7 @@ function ensureProfitState(state) {
   if (!Array.isArray(state.profitEngine.generatedScripts)) state.profitEngine.generatedScripts = [];
   if (!Array.isArray(state.profitEngine.externalSignals)) state.profitEngine.externalSignals = [];
   if (!Array.isArray(state.profitEngine.sourceStatuses)) state.profitEngine.sourceStatuses = [];
+  if (!Array.isArray(state.profitEngine.optimizerPolicies)) state.profitEngine.optimizerPolicies = [];
   return state.profitEngine;
 }
 
@@ -347,7 +349,16 @@ function signalSummary(signal) {
   };
 }
 
-function buildNaturalScripts(model, campaign, product, link, config, count, signal) {
+function optimizerGuidance(policy) {
+  const mode = policy?.mode || "baseline";
+  if (mode === "scale") return "這輪系統判斷這個角度已有成效，會延展相近 hook，但保留同一個 offer 證據。";
+  if (mode === "bridge_rewrite") return "這輪系統偵測到有點擊但轉換不足，因此會把 CTA 與 offer bridge 寫得更清楚。";
+  if (mode === "repair_guardrails") return "這輪系統會用更保守的合規寫法重生腳本，先修掉前一輪被擋的風險。";
+  if (mode === "explore") return "這輪系統會補齊尚未測過的獲利模式，先取得第一批流量訊號。";
+  return "";
+}
+
+function buildNaturalScripts(model, campaign, product, link, config, count, signal, policy = {}) {
   const cta = trackingUrl(config, link.slug);
   const disclosure = config.defaultDisclosureText;
   const market = signalSummary(signal);
@@ -357,11 +368,13 @@ function buildNaturalScripts(model, campaign, product, link, config, count, sign
   const sourceLine = signal
     ? `這輪參考 ${market.source} 看到的角度，但不照抄原廣告。`
     : "這輪先使用內建獲利 playbook，等外部 feed 接上後會自動改用市場訊號。";
+  const optimizerLine = optimizerGuidance(policy);
+  const strategyLine = optimizerLine ? `${sourceLine}\n\n${optimizerLine}` : sourceLine;
   const scripts = [
     {
       type: "pain_point",
       hook: `很多人做 ${campaign.name} 會先卡在工具太多，不知道從哪個開始。`,
-      post: `${disclosure}：很多人做 ${campaign.name} 會先卡在工具太多，不知道從哪個開始。\n\n${sourceLine}\n\n我會先看一個小問題：這個工具能不能讓你今天少做一個重複步驟。\n\n${product.name} 的價值是「${observedOffer}」。先用小任務驗證，不要一開始就把整套流程買滿。\n\n延伸資源：${cta}\n\n你現在最想自動化的是內容、名單，還是成交追蹤？`
+      post: `${disclosure}：很多人做 ${campaign.name} 會先卡在工具太多，不知道從哪個開始。\n\n${strategyLine}\n\n我會先看一個小問題：這個工具能不能讓你今天少做一個重複步驟。\n\n${product.name} 的價值是「${observedOffer}」。先用小任務驗證，不要一開始就把整套流程買滿。\n\n延伸資源：${cta}\n\n你現在最想自動化的是內容、名單，還是成交追蹤？`
     },
     {
       type: "decision_filter",
@@ -487,6 +500,21 @@ function shouldSkipRun(engine, config, force) {
   if (force || !engine.lastRunAt) return false;
   const interval = config.autonomyIntervalMs || 6 * 60 * 60 * 1000;
   return Date.now() - new Date(engine.lastRunAt).getTime() < interval;
+}
+
+function scoreModels(state, signals) {
+  return PROFIT_MODELS
+    .map((model) => {
+      const score = scoreProfitModel(model, state, signals);
+      return {
+        ...model,
+        rawScore: score,
+        score,
+        optimizerAdjustment: 0,
+        recommendation: score >= 82 ? "primary" : "watch"
+      };
+    })
+    .sort((a, b) => b.score - a.score);
 }
 
 function buildOptimizationQueue(experiments, signals) {
@@ -640,6 +668,72 @@ function buildExperimentLoop(state, config, engine, scores) {
   };
 }
 
+function buildOptimizerPolicy(experimentLoop, scores, signals, config) {
+  const queue = experimentLoop.optimizationQueue || [];
+  const actionable = queue.find((item) => item.modelId !== "market_signals" && item.title !== "Wait for publish data")
+    || queue.find((item) => item.modelId !== "market_signals")
+    || null;
+  const targetModelId = actionable?.modelId || scores[0]?.id || "";
+  const scoreAdjustments = {};
+  let mode = "baseline";
+  let scriptCountDelta = 0;
+  let guardrailMode = "standard";
+  const reasons = [];
+
+  if (!signals.length) {
+    reasons.push("No external market signals are connected yet, so the optimizer keeps a market-evidence task open.");
+  }
+
+  if (actionable) {
+    reasons.push(actionable.action);
+    if (actionable.title === "Scale winning angle") {
+      mode = "scale";
+      scoreAdjustments[targetModelId] = 8;
+      scriptCountDelta = 1;
+    } else if (actionable.title === "Rewrite offer bridge") {
+      mode = "bridge_rewrite";
+      scoreAdjustments[targetModelId] = 7;
+    } else if (actionable.title === "Repair blocked scripts") {
+      mode = "repair_guardrails";
+      scoreAdjustments[targetModelId] = 4;
+      guardrailMode = "strict";
+      scriptCountDelta = -1;
+    } else if (actionable.title === "Seed first experiment") {
+      mode = "explore";
+      scoreAdjustments[targetModelId] = 6;
+    }
+  } else {
+    reasons.push("No urgent experiment action is pending; continue with the highest scoring model.");
+  }
+
+  return {
+    id: makeId("optimizer"),
+    mode,
+    targetModelId,
+    targetAction: actionable?.title || "Continue leader",
+    scoreAdjustments,
+    scriptCountDelta,
+    guardrailMode,
+    marketSignalGap: !signals.length,
+    reasons,
+    createdAt: nowIso()
+  };
+}
+
+function applyOptimizerPolicy(scores, policy) {
+  const adjusted = scores.map((model) => {
+    const adjustment = Number(policy.scoreAdjustments?.[model.id] || 0);
+    const score = Math.max(0, Math.min(100, Number(model.rawScore ?? model.score ?? 0) + adjustment));
+    return {
+      ...model,
+      score,
+      optimizerAdjustment: adjustment,
+      recommendation: score >= 82 ? "primary" : "watch"
+    };
+  });
+  return adjusted.sort((a, b) => b.score - a.score);
+}
+
 function buildProfitRunPreview(state, config, options = {}) {
   const previewState = JSON.parse(JSON.stringify(state));
   const engine = ensureProfitState(previewState);
@@ -652,21 +746,15 @@ function buildProfitRunPreview(state, config, options = {}) {
     };
   }
   const offerSync = syncOffersFromSignals(previewState, config, signals);
-  const scores = PROFIT_MODELS
-    .map((model) => {
-      const score = scoreProfitModel(model, previewState, signals);
-      return {
-        ...model,
-        score,
-        recommendation: score >= 82 ? "primary" : "watch"
-      };
-    })
-    .sort((a, b) => b.score - a.score);
+  const rawScores = scoreModels(previewState, signals);
+  const rawExperimentLoop = buildExperimentLoop(previewState, config, engine, rawScores);
+  const optimizerPolicy = buildOptimizerPolicy(rawExperimentLoop, rawScores, signals, config);
+  const scores = applyOptimizerPolicy(rawScores, optimizerPolicy);
   const selected = scores[0];
   const selectedSignal = pickSignalForModel(selected, signals);
   const { campaign, product } = pickActiveContext(previewState, selectedSignal, offerSync.syncedProducts);
   const link = ensureAffiliateLink(previewState, campaign, product, config);
-  const count = Math.max(1, Math.min(Number(config.autonomyMaxScriptsPerRun || 3), 5));
+  const count = Math.max(1, Math.min(Number(config.autonomyMaxScriptsPerRun || 3) + Number(optimizerPolicy.scriptCountDelta || 0), 5));
   return {
     skipped: false,
     selectedModel: selected,
@@ -677,6 +765,7 @@ function buildProfitRunPreview(state, config, options = {}) {
     count,
     trackingUrl: trackingUrl(config, link.slug),
     sourceStatuses: engine.sourceStatuses || [],
+    optimizerPolicy,
     externalSignalCount: signals.length,
     syncedProductIds: offerSync.syncedProducts.map((item) => item.id)
   };
@@ -694,26 +783,20 @@ function runProfitEngine(state, config, options = {}) {
     };
   }
 
-  const scores = PROFIT_MODELS
-    .map((model) => {
-      const score = scoreProfitModel(model, state, signals);
-      return {
-        ...model,
-        score,
-        recommendation: score >= 82 ? "primary" : "watch"
-      };
-    })
-    .sort((a, b) => b.score - a.score);
+  const rawScores = scoreModels(state, signals);
+  const rawExperimentLoop = buildExperimentLoop(state, config, engine, rawScores);
+  const optimizerPolicy = buildOptimizerPolicy(rawExperimentLoop, rawScores, signals, config);
+  const scores = applyOptimizerPolicy(rawScores, optimizerPolicy);
   const selected = scores[0];
   const selectedSignal = pickSignalForModel(selected, signals);
   const { campaign, product } = pickActiveContext(state, selectedSignal, offerSync.syncedProducts);
   const link = ensureAffiliateLink(state, campaign, product, config);
-  const count = Math.max(1, Math.min(Number(config.autonomyMaxScriptsPerRun || 3), 5));
+  const count = Math.max(1, Math.min(Number(config.autonomyMaxScriptsPerRun || 3) + Number(optimizerPolicy.scriptCountDelta || 0), 5));
   const cta = trackingUrl(config, link.slug);
   const aiScripts = normalizeScriptOverrides(options.aiScripts, config, cta, count);
   const scripts = aiScripts.length
     ? aiScripts
-    : buildNaturalScripts(selected, campaign, product, link, config, count, selectedSignal);
+    : buildNaturalScripts(selected, campaign, product, link, config, count, selectedSignal, optimizerPolicy);
   const scriptSource = aiScripts.length ? (options.aiScriptSource || "openai") : "template";
   const postPlan = options.createPosts === false
     ? { created: [], blocked: [] }
@@ -752,6 +835,7 @@ function runProfitEngine(state, config, options = {}) {
     blockedScriptCount: blockedScripts.length,
     blockedScripts,
     sourceStatuses: engine.sourceStatuses,
+    optimizerPolicy,
     status: "completed",
     createdAt: nowIso()
   };
@@ -775,11 +859,15 @@ function runProfitEngine(state, config, options = {}) {
   run.experimentSnapshot = {
     leaderModelId: selected.id,
     activeExperimentCount: experimentLoop.activeExperimentCount,
-    optimizationActionCount: experimentLoop.optimizationQueue.length
+    optimizationActionCount: experimentLoop.optimizationQueue.length,
+    optimizerMode: optimizerPolicy.mode,
+    optimizerTargetModelId: optimizerPolicy.targetModelId
   };
+  engine.optimizerPolicies.unshift(optimizerPolicy);
   engine.adInsights = engine.adInsights.slice(0, 12);
   engine.generatedScripts = engine.generatedScripts.slice(0, 12);
   engine.runs = engine.runs.slice(0, 12);
+  engine.optimizerPolicies = engine.optimizerPolicies.slice(0, 12);
   state.events.unshift({
     id: makeId("evt"),
     type: "profit_engine.run",
@@ -804,11 +892,7 @@ function buildProfitDashboard(state, config) {
   const signals = engine.externalSignals || [];
   const scores = engine.modelScores.length
     ? engine.modelScores
-    : PROFIT_MODELS.map((model) => {
-      const score = scoreProfitModel(model, state, signals);
-      return { ...model, score, recommendation: score >= 82 ? "primary" : "watch" };
-    })
-      .sort((a, b) => b.score - a.score);
+    : scoreModels(state, signals);
   const scheduledAutonomyPosts = (state.posts || []).filter((post) =>
     post.contentType === "自然推薦腳本" && ["draft", "scheduled"].includes(post.status)
   ).length;
@@ -834,6 +918,11 @@ function buildProfitDashboard(state, config) {
     sourceStatuses: engine.sourceStatuses || [],
     externalSignals: signals.slice(0, 8),
     experiments: buildExperimentLoop(state, config, engine, scores),
+    optimizer: {
+      latestPolicy: engine.optimizerPolicies[0] || engine.runs.find((run) => run.optimizerPolicy)?.optimizerPolicy || null,
+      policyHistory: engine.optimizerPolicies.slice(0, 5),
+      adjustedModelCount: scores.filter((model) => Number(model.optimizerAdjustment || 0) !== 0).length
+    },
     offerAutopilot: {
       maxOffersPerRun: Number(config.autonomyMaxOffersPerRun || 0),
       syncedProductCount: syncedOfferProducts.length,

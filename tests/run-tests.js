@@ -152,8 +152,12 @@ async function main() {
   assert.equal(profitResult.createdPosts.length > 0, true);
   assert.equal(store.read().profitEngine.runs.length > 0, true);
   assert.equal(profitResult.run.experimentSnapshot.leaderModelId, profitResult.run.selectedModelId);
+  assert.equal(profitResult.run.experimentSnapshot.optimizerMode, profitResult.run.optimizerPolicy.mode);
+  assert.equal(profitResult.run.optimizerPolicy.mode, "explore");
+  assert.equal(profitResult.profitEngine.optimizer.latestPolicy.targetModelId, profitResult.run.optimizerPolicy.targetModelId);
   assert.equal(profitResult.profitEngine.experiments.experiments.length, 4);
   assert.equal(profitResult.profitEngine.experiments.optimizationQueue.length > 0, true);
+  assert.equal(profitResult.scripts[0].post.includes("這輪系統會補齊尚未測過的獲利模式"), true);
 
   const signalStore = createStore(path.join(tempDir, "signal-store.json"));
   const signalResult = signalStore.update((state) => runProfitEngine(state, intelligenceConfig, {
@@ -206,6 +210,7 @@ async function main() {
     force: true,
     intelligence
   });
+  assert.equal(Boolean(aiPreview.optimizerPolicy.targetModelId), true);
   const aiProfitScripts = await generateProfitScripts({
     preview: aiPreview,
     config: aiProfitConfig,
@@ -398,6 +403,7 @@ async function main() {
   assert.equal(dashboard.profitEngine.models.length > 0, true);
   assert.equal(dashboard.profitEngine.experiments.experiments.length > 0, true);
   assert.equal(Array.isArray(dashboard.profitEngine.experiments.optimizationQueue), true);
+  assert.equal(Boolean(dashboard.profitEngine.optimizer.latestPolicy), true);
   assert.equal(dashboard.readiness.checks.some((check) => check.id === "worker"), true);
   const readinessResponse = await fetch(`http://127.0.0.1:${address.port}/api/readiness`);
   const readinessPayload = await readinessResponse.json();

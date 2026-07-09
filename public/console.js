@@ -621,12 +621,37 @@ function buildExperimentLoopFallback(data) {
   };
 }
 
+function buildOptimizerDecisionFallback(loop) {
+  const action = (loop.optimizationQueue || []).find((item) => item.modelId !== "market_signals")
+    || (loop.optimizationQueue || [])[0]
+    || null;
+  const modeMap = {
+    "Scale winning angle": "scale",
+    "Rewrite offer bridge": "bridge_rewrite",
+    "Repair blocked scripts": "repair_guardrails",
+    "Seed first experiment": "explore"
+  };
+  return {
+    mode: modeMap[action?.title] || "baseline",
+    targetModelId: action?.modelId || loop.leaderModelId || "",
+    targetAction: action?.title || "Continue leader",
+    scriptCountDelta: action?.title === "Scale winning angle" ? 1 : action?.title === "Repair blocked scripts" ? -1 : 0,
+    guardrailMode: action?.title === "Repair blocked scripts" ? "strict" : "standard",
+    marketSignalGap: (loop.learningVelocity || "").includes("0 signal"),
+    reasons: [
+      action?.action || "No urgent optimizer action is pending.",
+      (loop.learningVelocity || "").includes("0 signal") ? "No external market signal is connected yet." : ""
+    ].filter(Boolean)
+  };
+}
+
 function renderExperimentLoop(data) {
   const loop = data.profitEngine?.experiments?.experiments?.length
     ? data.profitEngine.experiments
     : buildExperimentLoopFallback(data);
   const experiments = loop.experiments || [];
   const queue = loop.optimizationQueue || [];
+  const optimizer = data.profitEngine?.optimizer?.latestPolicy || buildOptimizerDecisionFallback(loop);
   $("#experimentMode").textContent = `${loop.loopState || "manual"} · ${loop.confidence || "setup"}`;
   $("#experimentMode").className = `experiment-mode confidence-${escapeHtml(loop.confidence || "setup")}`;
   $("#experimentSummary").innerHTML = [
@@ -642,6 +667,25 @@ function renderExperimentLoop(data) {
       <small>${escapeHtml(hint)}</small>
     </article>
   `).join("");
+
+  $("#optimizerDecision").innerHTML = `
+    <article class="optimizer-card">
+      <span>Optimizer mode</span>
+      <strong>${escapeHtml(optimizer.mode || "baseline")}</strong>
+      <p>${escapeHtml(optimizer.targetAction || "Continue leader")}</p>
+    </article>
+    <article class="optimizer-card">
+      <span>Target model</span>
+      <strong>${escapeHtml(optimizer.targetModelId || "leader")}</strong>
+      <p>${escapeHtml(`scripts ${Number(optimizer.scriptCountDelta || 0) >= 0 ? "+" : ""}${Number(optimizer.scriptCountDelta || 0)} · ${optimizer.guardrailMode || "standard"} guardrails`)}</p>
+    </article>
+    <article class="optimizer-card wide">
+      <span>Decision reasons</span>
+      <div class="optimizer-reasons">
+        ${(optimizer.reasons || ["No optimizer reason recorded."]).map((reason) => `<p>${escapeHtml(reason)}</p>`).join("")}
+      </div>
+    </article>
+  `;
 
   $("#experimentCards").innerHTML = experiments.map((experiment) => `
     <article class="experiment-card status-${escapeHtml(experiment.status)}" data-profit-experiment="${escapeHtml(experiment.modelId)}">

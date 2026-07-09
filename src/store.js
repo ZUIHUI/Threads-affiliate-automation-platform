@@ -200,6 +200,7 @@ function defaultState() {
       generatedScripts: [],
       externalSignals: [],
       sourceStatuses: [],
+      optimizerPolicies: [],
       lastIngestAt: null
     },
     version: 1

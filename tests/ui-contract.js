@@ -51,14 +51,15 @@ const requiredHtml = [
   'id="workerHealthNotes"',
   'id="experimentMode"',
   'id="experimentSummary"',
+  'id="optimizerDecision"',
   'id="experimentCards"',
   'id="optimizationQueue"',
   'id="conversionEvents"',
   "內容工廠",
   "合規 / 風險審核",
   "聯盟收益管道",
-  '<link rel="stylesheet" href="/styles.css?v=20260709-experiments" />',
-  '<script src="/console.js?v=20260709-experiments"></script>'
+  '<link rel="stylesheet" href="/styles.css?v=20260709-optimizer" />',
+  '<script src="/console.js?v=20260709-optimizer"></script>'
 ];
 
 for (const marker of requiredHtml) {
@@ -84,7 +85,9 @@ const requiredJs = [
   "buildWorkerHealth",
   "renderExperimentLoop",
   "buildExperimentLoopFallback",
+  "buildOptimizerDecisionFallback",
   "optimizationQueue",
+  "optimizerDecision",
   "data-profit-experiment",
   "workerEnabled",
   "nextRunHint",
@@ -135,6 +138,8 @@ const requiredCss = [
   ".worker-mode",
   ".experiment-panel",
   ".experiment-summary",
+  ".optimizer-decision",
+  ".optimizer-card",
   ".experiment-card",
   ".optimization-queue",
   ".blocked-script-feed",

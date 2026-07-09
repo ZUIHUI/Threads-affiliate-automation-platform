@@ -2125,6 +2125,48 @@ body {
   font-size: 12px;
 }
 
+.optimizer-decision {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.35fr) minmax(190px, 0.35fr) minmax(320px, 1fr);
+  gap: 10px;
+  padding: 0 18px 12px;
+}
+
+.optimizer-card {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  padding: 14px;
+  border: 1px solid rgba(17, 168, 181, 0.25);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(17, 168, 181, 0.08), #fbfcfa 72%);
+}
+
+.optimizer-card span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.optimizer-card strong {
+  font-size: 18px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.optimizer-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.optimizer-reasons {
+  display: grid;
+  gap: 6px;
+}
+
 .experiment-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 0.38fr);
@@ -2285,7 +2327,8 @@ body {
   }
 
   .experiment-layout,
-  .experiment-cards {
+  .experiment-cards,
+  .optimizer-decision {
     grid-template-columns: 1fr;
   }
 
