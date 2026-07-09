@@ -2058,6 +2058,131 @@ body {
   line-height: 1.45;
 }
 
+.control-panel {
+  margin-bottom: 14px;
+}
+
+.pipeline-mode {
+  display: inline-grid;
+  min-width: 154px;
+  place-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.pipeline-mode.status-active {
+  color: var(--green-dark);
+  border-color: rgba(11, 143, 115, 0.3);
+  background: rgba(11, 143, 115, 0.12);
+}
+
+.pipeline-mode.status-watch {
+  color: #8b5d0b;
+  border-color: rgba(201, 139, 33, 0.28);
+  background: rgba(201, 139, 33, 0.12);
+}
+
+.pipeline-mode.status-blocked {
+  color: var(--danger);
+  border-color: rgba(183, 53, 53, 0.28);
+  background: rgba(183, 53, 53, 0.1);
+}
+
+.pipeline-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px 18px 10px;
+}
+
+.pipeline-summary article {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.pipeline-summary span,
+.pipeline-step > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.pipeline-summary strong {
+  font-size: 18px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.pipeline-summary small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.pipeline-steps {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 18px 18px;
+}
+
+.pipeline-step {
+  min-height: 156px;
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.pipeline-step.status-active {
+  border-color: rgba(11, 143, 115, 0.28);
+}
+
+.pipeline-step.status-dry_run,
+.pipeline-step.status-watch {
+  border-color: rgba(201, 139, 33, 0.28);
+}
+
+.pipeline-step.status-blocked {
+  border-color: rgba(183, 53, 53, 0.32);
+}
+
+.pipeline-step strong {
+  display: block;
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.pipeline-step p,
+.pipeline-step small,
+.pipeline-step b {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.pipeline-step b {
+  justify-self: start;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(37, 48, 45, 0.07);
+  color: var(--ink);
+}
+
 .experiment-panel {
   margin-bottom: 14px;
 }
@@ -2309,6 +2434,8 @@ body {
   .command-strip,
   .readiness-summary,
   .worker-health-grid,
+  .pipeline-summary,
+  .pipeline-steps,
   .experiment-summary,
   .autopilot-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2372,6 +2499,8 @@ body {
   .action-summary,
   .decision-grid,
   .worker-health-grid,
+  .pipeline-summary,
+  .pipeline-steps,
   .experiment-summary,
   .autopilot-summary,
   .workflow-strip,

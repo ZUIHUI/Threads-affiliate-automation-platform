@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Threads 聯盟自動化</title>
-    <link rel="stylesheet" href="/styles.css?v=20260709-optimizer" />
+    <link rel="stylesheet" href="/styles.css?v=20260709-control" />
   </head>
   <body>
     <div class="app-shell">
@@ -18,6 +18,7 @@
         </div>
 
         <nav class="nav-list">
+          <a href="#control-tower" class="nav-item">Control</a>
           <a href="#readiness" class="nav-item">Readiness</a>
           <a href="#timeline" class="nav-item">Timeline</a>
           <a href="#next-actions" class="nav-item">Actions</a>
@@ -87,6 +88,18 @@
             <span>Guardrails</span>
             <strong id="cmdGuardrails">0</strong>
           </div>
+        </section>
+
+        <section class="panel control-panel" id="control-tower">
+          <div class="panel-header compact">
+            <div>
+              <p class="eyebrow">Autonomy Control Tower</p>
+              <h3>全自動獲利流水線</h3>
+            </div>
+            <span class="pipeline-mode" id="pipelineMode">Loading</span>
+          </div>
+          <div class="pipeline-summary" id="pipelineSummary"></div>
+          <div class="pipeline-steps" id="pipelineSteps"></div>
         </section>
 
         <section class="panel readiness-panel" id="readiness">
@@ -348,6 +361,6 @@
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="/console.js?v=20260709-optimizer"></script>
+    <script src="/console.js?v=20260709-control"></script>
   </body>
 </html>

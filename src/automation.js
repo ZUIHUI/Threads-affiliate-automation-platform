@@ -37,6 +37,114 @@ function findById(items, id) {
   return items.find((item) => item.id === id);
 }
 
+function pipelineStatusScore(status) {
+  const scores = {
+    active: 100,
+    dry_run: 78,
+    watch: 64,
+    manual: 48,
+    blocked: 18
+  };
+  return scores[status] || 0;
+}
+
+function buildAutonomyPipeline(state, config, profitEngine, readiness, metrics) {
+  const connectedSources = (profitEngine.sourceStatuses || []).filter((source) => source.status === "connected").length;
+  const configuredSources = config.adIntelligenceFeedUrls.length
+    + config.affiliateOfferFeedUrls.length
+    + (config.metaAdLibraryAccessToken && config.metaAdLibraryQuery ? 1 : 0);
+  const signalCount = (profitEngine.externalSignals || []).length;
+  const scriptCount = (profitEngine.generatedScripts || []).length;
+  const hasThreadsCredentials = Boolean(config.threadsUserId && config.threadsAccessToken);
+  const conversionCount = metrics.conversions || 0;
+  const hasConversionWebhook = Boolean(config.conversionWebhookSecret);
+  const readinessBlocked = readiness.summary?.blocked || 0;
+
+  const steps = [
+    {
+      id: "api_intake",
+      label: "API / Ad Intake",
+      status: connectedSources > 0 ? "active" : configuredSources > 0 ? "watch" : "blocked",
+      value: `${signalCount} signals`,
+      detail: connectedSources > 0
+        ? `${connectedSources} live source(s) connected`
+        : configuredSources > 0
+          ? "Feeds are configured; waiting for the next ingest."
+          : "Connect ad or affiliate offer feeds.",
+      nextAction: connectedSources > 0 ? "Monitor signal freshness" : "Set AD_INTELLIGENCE_FEED_URLS or AFFILIATE_OFFER_FEED_URLS"
+    },
+    {
+      id: "ai_scripts",
+      label: "AI Script Engine",
+      status: config.openaiApiKey ? "active" : scriptCount > 0 ? "watch" : "manual",
+      value: `${scriptCount} scripts`,
+      detail: config.openaiApiKey
+        ? `${config.profitScriptProvider} provider ready`
+        : "Template fallback is available; OpenAI key improves autonomous copy.",
+      nextAction: config.openaiApiKey ? "Keep generating natural scripts" : "Set OPENAI_API_KEY for AI-written variants"
+    },
+    {
+      id: "profit_optimizer",
+      label: "Profit Optimizer",
+      status: profitEngine.optimizer?.latestPolicy ? "active" : profitEngine.runs?.length ? "watch" : "manual",
+      value: profitEngine.optimizer?.latestPolicy?.mode || "baseline",
+      detail: profitEngine.optimizer?.latestPolicy?.targetAction || "Run the profit engine to create the first optimizer policy.",
+      nextAction: profitEngine.optimizer?.latestPolicy ? "Let policy tune the next cycle" : "Run profit engine"
+    },
+    {
+      id: "worker_loop",
+      label: "Worker Loop",
+      status: config.enableWorker && config.autonomyMode ? "active" : config.enableWorker ? "watch" : "blocked",
+      value: config.autonomyMode ? `${Math.round(config.autonomyIntervalMs / 60000)} min` : "manual",
+      detail: config.enableWorker
+        ? config.autonomyMode ? "Worker can run profit research and queue processing." : "Worker is enabled but autonomy mode is off."
+        : "Worker is disabled; scheduled autonomy needs ENABLE_WORKER.",
+      nextAction: config.enableWorker && config.autonomyMode ? "Watch next heartbeat" : "Enable ENABLE_WORKER and AUTONOMY_MODE"
+    },
+    {
+      id: "threads_publish",
+      label: "Threads Publishing",
+      status: config.threadsDryRun ? "dry_run" : hasThreadsCredentials ? "active" : "blocked",
+      value: config.threadsDryRun ? "dry-run" : "live",
+      detail: config.threadsDryRun
+        ? "Publishing is simulated until live credentials are ready."
+        : hasThreadsCredentials ? "Threads credentials are present." : "Missing Threads user id or access token.",
+      nextAction: config.threadsDryRun ? "Switch THREADS_DRY_RUN=false after validation" : "Monitor publish quota"
+    },
+    {
+      id: "feedback_loop",
+      label: "Conversion Feedback",
+      status: conversionCount > 0 ? "active" : hasConversionWebhook ? "watch" : "blocked",
+      value: `${conversionCount} conversions`,
+      detail: conversionCount > 0
+        ? "Revenue feedback is flowing into model scoring."
+        : hasConversionWebhook ? "Webhook secret is set; waiting for conversion events." : "Conversion webhook is not protected/configured.",
+      nextAction: conversionCount > 0 ? "Scale revenue-backed experiments" : "Configure CONVERSION_WEBHOOK_SECRET and network postback"
+    }
+  ];
+
+  const active = steps.filter((step) => step.status === "active").length;
+  const blocked = steps.filter((step) => step.status === "blocked").length + readinessBlocked;
+  const score = Math.round(steps.reduce((total, step) => total + pipelineStatusScore(step.status), 0) / steps.length);
+  const nextGate = steps.find((step) => step.status === "blocked")
+    || steps.find((step) => step.status === "watch")
+    || steps.find((step) => step.status === "dry_run")
+    || steps[0];
+
+  return {
+    summary: {
+      mode: config.autonomyMode ? "autonomous" : "manual",
+      score,
+      active,
+      blocked,
+      readyForUnattended: blocked === 0 && config.enableWorker && config.autonomyMode && !config.threadsDryRun,
+      nextGate: nextGate?.label || "Monitor",
+      nextAction: nextGate?.nextAction || "Monitor autonomous loop"
+    },
+    steps
+  };
+}
+
 function buildDashboard(state, config) {
   const posts = state.posts;
   const affiliateLinks = state.affiliateLinks;
@@ -48,6 +156,19 @@ function buildDashboard(state, config) {
     const text = post.text || "";
     return text.includes(config.defaultDisclosureText) || /#ad\b/i.test(text);
   }).length;
+  const metrics = {
+    drafts: posts.filter((post) => post.status === "draft").length,
+    queued: queued.length,
+    published: published.length,
+    simulated: simulated.length,
+    blocked: blocked.length,
+    clicks: sum(affiliateLinks, (link) => link.clicks),
+    conversions: sum(affiliateLinks, (link) => link.conversions),
+    revenue: sum(affiliateLinks, (link) => link.revenue),
+    disclosureCoverage: posts.length ? Math.round((disclosureCovered / posts.length) * 100) : 100
+  };
+  const profitEngine = buildProfitDashboard(state, config);
+  const readiness = buildAutonomyReadiness(state, config);
 
   return {
     generatedAt: nowIso(),
@@ -61,17 +182,7 @@ function buildDashboard(state, config) {
       hasOpenAIApiKey: Boolean(config.openaiApiKey),
       autonomyMode: config.autonomyMode
     },
-    metrics: {
-      drafts: posts.filter((post) => post.status === "draft").length,
-      queued: queued.length,
-      published: published.length,
-      simulated: simulated.length,
-      blocked: blocked.length,
-      clicks: sum(affiliateLinks, (link) => link.clicks),
-      conversions: sum(affiliateLinks, (link) => link.conversions),
-      revenue: sum(affiliateLinks, (link) => link.revenue),
-      disclosureCoverage: posts.length ? Math.round((disclosureCovered / posts.length) * 100) : 100
-    },
+    metrics,
     campaigns: state.campaigns,
     products: state.products,
     affiliateLinks: state.affiliateLinks.map((link) => ({
@@ -90,8 +201,9 @@ function buildDashboard(state, config) {
     clickEvents: state.clickEvents.slice(0, 8),
     conversionEvents: state.conversionEvents.slice(0, 8),
     promptTemplate: buildPrompt("AI 自動化聯盟行銷"),
-    profitEngine: buildProfitDashboard(state, config),
-    readiness: buildAutonomyReadiness(state, config),
+    profitEngine,
+    readiness,
+    autonomyPipeline: buildAutonomyPipeline(state, config, profitEngine, readiness, metrics),
     settings: state.settings
   };
 }

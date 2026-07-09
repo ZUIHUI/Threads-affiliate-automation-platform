@@ -404,6 +404,9 @@ async function main() {
   assert.equal(dashboard.profitEngine.experiments.experiments.length > 0, true);
   assert.equal(Array.isArray(dashboard.profitEngine.experiments.optimizationQueue), true);
   assert.equal(Boolean(dashboard.profitEngine.optimizer.latestPolicy), true);
+  assert.equal(dashboard.autonomyPipeline.steps.length, 6);
+  assert.equal(dashboard.autonomyPipeline.steps.some((step) => step.id === "worker_loop"), true);
+  assert.equal(Boolean(dashboard.autonomyPipeline.summary.nextGate), true);
   assert.equal(dashboard.readiness.checks.some((check) => check.id === "worker"), true);
   const readinessResponse = await fetch(`http://127.0.0.1:${address.port}/api/readiness`);
   const readinessPayload = await readinessResponse.json();
@@ -434,6 +437,7 @@ async function main() {
   assert.equal(profitPayload.result.run.ingestedSignalCount, 0);
   assert.equal(profitPayload.dashboard.profitEngine.sourceStatuses.length > 0, true);
   assert.equal(profitPayload.dashboard.profitEngine.generatedScripts.length > 0, true);
+  assert.equal(profitPayload.dashboard.autonomyPipeline.steps.some((step) => step.id === "profit_optimizer"), true);
   await new Promise((resolve, reject) => {
     server.close((error) => error ? reject(error) : resolve());
   });

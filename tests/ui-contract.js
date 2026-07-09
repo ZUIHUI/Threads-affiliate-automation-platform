@@ -9,6 +9,7 @@ const css = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 
 const requiredHtml = [
   "Threads 聯盟自動化",
+  'id="control-tower"',
   'id="profit-engine"',
   'id="readiness"',
   'id="timeline"',
@@ -35,6 +36,9 @@ const requiredHtml = [
   'id="profitBlockedScripts"',
   'id="sideConnectorList"',
   'id="commandStats"',
+  'id="pipelineMode"',
+  'id="pipelineSummary"',
+  'id="pipelineSteps"',
   'id="autopilotSummary"',
   'id="readinessMode"',
   'id="readinessSummary"',
@@ -58,8 +62,8 @@ const requiredHtml = [
   "內容工廠",
   "合規 / 風險審核",
   "聯盟收益管道",
-  '<link rel="stylesheet" href="/styles.css?v=20260709-optimizer" />',
-  '<script src="/console.js?v=20260709-optimizer"></script>'
+  '<link rel="stylesheet" href="/styles.css?v=20260709-control" />',
+  '<script src="/console.js?v=20260709-control"></script>'
 ];
 
 for (const marker of requiredHtml) {
@@ -77,6 +81,9 @@ const requiredJs = [
   "script.source",
   "blockedScripts",
   "renderReadiness",
+  "renderAutonomyPipeline",
+  "buildPipelineFallback",
+  "pipelineStatusScore",
   "renderOpsTimeline",
   "renderNextActions",
   "renderDecisionBrief",
@@ -116,6 +123,11 @@ const requiredCss = [
   ".signal-row",
   ".command-strip",
   ".sidebar-connectors",
+  ".control-panel",
+  ".pipeline-summary",
+  ".pipeline-steps",
+  ".pipeline-step",
+  ".pipeline-mode",
   ".autopilot-summary",
   ".readiness-panel",
   ".readiness-summary",

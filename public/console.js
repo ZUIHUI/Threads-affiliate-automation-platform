@@ -91,6 +91,117 @@ function renderRuntime(data) {
   $("#cmdGuardrails").textContent = data.profitEngine?.blockedScripts?.length || 0;
 }
 
+function pipelineStatusScore(status) {
+  const scores = { active: 100, dry_run: 78, watch: 64, manual: 48, blocked: 18 };
+  return scores[status] || 0;
+}
+
+function buildPipelineFallback(data) {
+  const runtime = data.runtime || {};
+  const engine = data.profitEngine || {};
+  const metrics = data.metrics || {};
+  const connectedSources = (engine.sourceStatuses || []).filter((source) => source.status === "connected").length;
+  const signalCount = (engine.externalSignals || []).length;
+  const scriptCount = (engine.generatedScripts || []).length;
+  const hasOptimizer = Boolean(engine.optimizer?.latestPolicy) || (engine.runs || []).some((run) => run.optimizerPolicy);
+  const steps = [
+    {
+      id: "api_intake",
+      label: "API / Ad Intake",
+      status: connectedSources > 0 ? "active" : signalCount > 0 ? "watch" : "blocked",
+      value: `${signalCount} signals`,
+      detail: connectedSources > 0 ? `${connectedSources} source(s) connected` : "No live ad or offer feed is connected yet.",
+      nextAction: connectedSources > 0 ? "Monitor signal freshness" : "Connect ad or offer feeds"
+    },
+    {
+      id: "ai_scripts",
+      label: "AI Script Engine",
+      status: runtime.hasOpenAIApiKey ? "active" : scriptCount > 0 ? "watch" : "manual",
+      value: `${scriptCount} scripts`,
+      detail: runtime.hasOpenAIApiKey ? "AI provider ready" : "Template fallback is active.",
+      nextAction: runtime.hasOpenAIApiKey ? "Generate variants" : "Set OPENAI_API_KEY"
+    },
+    {
+      id: "profit_optimizer",
+      label: "Profit Optimizer",
+      status: hasOptimizer ? "active" : (engine.runs || []).length ? "watch" : "manual",
+      value: engine.optimizer?.latestPolicy?.mode || "baseline",
+      detail: engine.optimizer?.latestPolicy?.targetAction || "Optimizer will appear after a profit run.",
+      nextAction: hasOptimizer ? "Let policy tune the next cycle" : "Run profit engine"
+    },
+    {
+      id: "worker_loop",
+      label: "Worker Loop",
+      status: runtime.workerEnabled && runtime.autonomyMode ? "active" : runtime.workerEnabled ? "watch" : "blocked",
+      value: runtime.autonomyMode ? "autonomous" : "manual",
+      detail: runtime.workerEnabled ? "Worker process is enabled." : "Worker is disabled.",
+      nextAction: runtime.workerEnabled && runtime.autonomyMode ? "Watch next heartbeat" : "Enable worker and autonomy mode"
+    },
+    {
+      id: "threads_publish",
+      label: "Threads Publishing",
+      status: runtime.dryRun ? "dry_run" : runtime.hasThreadsCredentials ? "active" : "blocked",
+      value: runtime.dryRun ? "dry-run" : "live",
+      detail: runtime.dryRun ? "Publishing is simulated." : runtime.hasThreadsCredentials ? "Credentials ready" : "Missing Threads credentials.",
+      nextAction: runtime.dryRun ? "Switch live after validation" : "Monitor publishing"
+    },
+    {
+      id: "feedback_loop",
+      label: "Conversion Feedback",
+      status: Number(metrics.conversions || 0) > 0 ? "active" : "blocked",
+      value: `${Number(metrics.conversions || 0)} conversions`,
+      detail: Number(metrics.conversions || 0) > 0 ? "Revenue is feeding model scores." : "No conversion feedback yet.",
+      nextAction: Number(metrics.conversions || 0) > 0 ? "Scale revenue-backed experiments" : "Connect conversion webhook"
+    }
+  ];
+  const score = Math.round(steps.reduce((total, step) => total + pipelineStatusScore(step.status), 0) / steps.length);
+  const blocked = steps.filter((step) => step.status === "blocked").length;
+  const nextGate = steps.find((step) => step.status === "blocked") || steps.find((step) => step.status === "watch") || steps[0];
+  return {
+    summary: {
+      mode: runtime.autonomyMode ? "autonomous" : "manual",
+      score,
+      active: steps.filter((step) => step.status === "active").length,
+      blocked,
+      readyForUnattended: blocked === 0 && runtime.workerEnabled && runtime.autonomyMode && !runtime.dryRun,
+      nextGate: nextGate.label,
+      nextAction: nextGate.nextAction
+    },
+    steps
+  };
+}
+
+function renderAutonomyPipeline(data) {
+  const pipeline = data.autonomyPipeline || buildPipelineFallback(data);
+  const summary = pipeline.summary || {};
+  const steps = pipeline.steps || [];
+  $("#pipelineMode").textContent = `${summary.mode || "manual"} · ${summary.score || 0}%`;
+  $("#pipelineMode").className = `pipeline-mode status-${summary.readyForUnattended ? "active" : summary.blocked ? "blocked" : "watch"}`;
+  $("#pipelineSummary").innerHTML = [
+    ["Score", `${summary.score || 0}%`, "autonomy pipeline"],
+    ["Active", summary.active || 0, "running stages"],
+    ["Blocked", summary.blocked || 0, "must fix"],
+    ["Next gate", summary.nextGate || "Monitor", summary.nextAction || "No action"]
+  ].map(([label, value, hint]) => `
+    <article>
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      <small>${escapeHtml(hint)}</small>
+    </article>
+  `).join("");
+  $("#pipelineSteps").innerHTML = steps.map((step, index) => `
+    <article class="pipeline-step status-${escapeHtml(step.status)}">
+      <span>${String(index + 1).padStart(2, "0")}</span>
+      <div>
+        <strong>${escapeHtml(step.label)}</strong>
+        <p>${escapeHtml(step.detail)}</p>
+        <small>${escapeHtml(step.nextAction)}</small>
+      </div>
+      <b>${escapeHtml(step.value)}</b>
+    </article>
+  `).join("");
+}
+
 function renderReadiness(data) {
   const readiness = data.readiness || {};
   const summary = readiness.summary || {};
@@ -1020,6 +1131,7 @@ function populateForm(data) {
 function render(data) {
   state.dashboard = data;
   renderRuntime(data);
+  renderAutonomyPipeline(data);
   renderReadiness(data);
   renderOpsTimeline(data);
   renderNextActions(data);
