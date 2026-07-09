@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Threads 聯盟自動化</title>
-    <link rel="stylesheet" href="/styles.css?v=20260709-readiness" />
+    <link rel="stylesheet" href="/styles.css?v=20260709-timeline" />
   </head>
   <body>
     <div class="app-shell">
@@ -19,6 +19,7 @@
 
         <nav class="nav-list">
           <a href="#readiness" class="nav-item">Readiness</a>
+          <a href="#timeline" class="nav-item">Timeline</a>
           <a href="#overview" class="nav-item is-active">總覽</a>
           <a href="#profit-engine" class="nav-item">自主獲利</a>
           <a href="#factory" class="nav-item">內容工廠</a>
@@ -94,6 +95,17 @@
           </div>
           <div class="readiness-summary" id="readinessSummary"></div>
           <div class="readiness-checks" id="readinessChecks"></div>
+        </section>
+
+        <section class="panel timeline-panel" id="timeline">
+          <div class="panel-header compact">
+            <div>
+              <p class="eyebrow">Autonomy Timeline</p>
+              <h3>自主營運紀錄</h3>
+            </div>
+            <span class="timeline-count" id="timelineCount">0 events</span>
+          </div>
+          <div class="timeline-list" id="opTimeline"></div>
         </section>
 
         <section class="ops-grid">
@@ -281,6 +293,6 @@
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="/console.js?v=20260709-readiness"></script>
+    <script src="/console.js?v=20260709-timeline"></script>
   </body>
 </html>

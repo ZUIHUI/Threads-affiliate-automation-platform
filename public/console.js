@@ -129,6 +129,72 @@ function renderReadiness(data) {
   `).join("");
 }
 
+function timelineBadge(label, tone = "info") {
+  return `<span class="timeline-badge ${tone}">${escapeHtml(label)}</span>`;
+}
+
+function buildTimelineItems(data) {
+  const profitRuns = (data.profitEngine?.runs || []).map((run) => ({
+    type: "profit",
+    tone: run.blockedScriptCount ? "warn" : "good",
+    at: run.createdAt,
+    title: `Profit engine selected ${run.selectedModelName || run.selectedModelId || "model"}`,
+    detail: `${run.source || "manual"} run · score ${Number(run.score || 0)} · ${run.scriptSource || "template"} scripts`,
+    badges: [
+      timelineBadge(`${(run.createdPostIds || []).length} posts`, "info"),
+      timelineBadge(`${run.blockedScriptCount || 0} blocked`, run.blockedScriptCount ? "warn" : "good"),
+      timelineBadge(`${(run.syncedProductIds || []).length} offers`, "info")
+    ]
+  }));
+
+  const automationRuns = (data.automationRuns || []).map((run) => ({
+    type: "publish",
+    tone: run.failed ? "warn" : "good",
+    at: run.finishedAt || run.startedAt,
+    title: `Publishing queue ${run.status || "run"}`,
+    detail: `${run.source || "manual"} · processed ${Number(run.processed || 0)} · simulated ${Number(run.simulated || 0)} · published ${Number(run.published || 0)}`,
+    badges: [
+      timelineBadge(`${run.failed || 0} failed`, run.failed ? "warn" : "good"),
+      timelineBadge(`${run.messages?.length || 0} messages`, "info")
+    ]
+  }));
+
+  const events = (data.recentEvents || []).map((event) => ({
+    type: "event",
+    tone: "info",
+    at: event.createdAt,
+    title: String(event.type || "event").replaceAll("_", " "),
+    detail: [event.runId, event.postId, event.affiliateLinkId, event.conversionId].filter(Boolean).join(" · ") || event.id,
+    badges: [
+      event.createdPostCount != null ? timelineBadge(`${event.createdPostCount} created`, "info") : "",
+      event.revenueDelta != null ? timelineBadge(formatMoney(event.revenueDelta), "good") : ""
+    ].filter(Boolean)
+  }));
+
+  return [...profitRuns, ...automationRuns, ...events]
+    .filter((item) => item.at)
+    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+    .slice(0, 10);
+}
+
+function renderOpsTimeline(data) {
+  const items = buildTimelineItems(data);
+  $("#timelineCount").textContent = `${items.length} events`;
+  $("#opTimeline").innerHTML = items.map((item) => `
+    <article class="timeline-item tone-${escapeHtml(item.tone)}">
+      <div class="timeline-dot" aria-hidden="true"></div>
+      <div>
+        <div class="timeline-head">
+          <strong>${escapeHtml(item.title)}</strong>
+          <time>${escapeHtml(formatDate(item.at))}</time>
+        </div>
+        <p>${escapeHtml(item.detail)}</p>
+        <div class="timeline-badges">${item.badges.join("")}</div>
+      </div>
+    </article>
+  `).join("") || `<div class="empty-state">No autonomous operations recorded yet</div>`;
+}
+
 function renderProfitEngine(data) {
   const engine = data.profitEngine || {};
   $("#sideConnectorCount").textContent = (engine.sources || []).length;
@@ -427,6 +493,7 @@ function render(data) {
   state.dashboard = data;
   renderRuntime(data);
   renderReadiness(data);
+  renderOpsTimeline(data);
   renderProfitEngine(data);
   renderFactoryMetrics(data);
   renderPosts(data);

@@ -1696,6 +1696,102 @@ body {
   background: var(--danger);
 }
 
+.timeline-panel {
+  margin-bottom: 14px;
+}
+
+.timeline-count {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.timeline-list {
+  display: grid;
+  gap: 10px;
+  padding: 14px 18px 18px;
+}
+
+.timeline-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.timeline-dot {
+  width: 11px;
+  height: 11px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: var(--blue);
+  box-shadow: 0 0 0 5px rgba(19, 127, 159, 0.12);
+}
+
+.timeline-item.tone-good .timeline-dot {
+  background: var(--green);
+  box-shadow: 0 0 0 5px rgba(11, 143, 115, 0.12);
+}
+
+.timeline-item.tone-warn .timeline-dot {
+  background: var(--amber);
+  box-shadow: 0 0 0 5px rgba(201, 139, 33, 0.14);
+}
+
+.timeline-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.timeline-head strong {
+  font-size: 15px;
+}
+
+.timeline-head time,
+.timeline-item p {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.timeline-item p {
+  margin: 5px 0 9px;
+}
+
+.timeline-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.timeline-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--blue);
+  background: rgba(19, 127, 159, 0.1);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.timeline-badge.good {
+  color: var(--green-dark);
+  background: rgba(11, 143, 115, 0.12);
+}
+
+.timeline-badge.warn {
+  color: #8b5d0b;
+  background: rgba(201, 139, 33, 0.14);
+}
+
 @media (max-width: 1400px) {
   .ops-grid {
     grid-template-columns: 1fr;
@@ -1767,6 +1863,11 @@ body {
 
   .readiness-check {
     grid-template-columns: 1fr;
+  }
+
+  .timeline-head {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .risk-distribution,

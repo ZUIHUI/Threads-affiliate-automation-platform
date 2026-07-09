@@ -11,6 +11,7 @@ const requiredHtml = [
   "Threads 聯盟自動化",
   'id="profit-engine"',
   'id="readiness"',
+  'id="timeline"',
   'id="factory"',
   'id="risk"',
   'id="affiliate"',
@@ -34,11 +35,13 @@ const requiredHtml = [
   'id="readinessMode"',
   'id="readinessSummary"',
   'id="readinessChecks"',
+  'id="timelineCount"',
+  'id="opTimeline"',
   'id="conversionEvents"',
   "內容工廠",
   "合規 / 風險審核",
   "聯盟收益管道",
-  '<script src="/console.js?v=20260709-readiness"></script>'
+  '<script src="/console.js?v=20260709-timeline"></script>'
 ];
 
 for (const marker of requiredHtml) {
@@ -56,6 +59,11 @@ const requiredJs = [
   "script.source",
   "blockedScripts",
   "renderReadiness",
+  "renderOpsTimeline",
+  "buildTimelineItems",
+  "data.profitEngine?.runs",
+  "data.automationRuns",
+  "data.recentEvents",
   "readiness.summary",
   "status-${escapeHtml(check.status)}",
   "已產生 5 則草稿"
@@ -78,6 +86,10 @@ const requiredCss = [
   ".readiness-summary",
   ".readiness-checks",
   ".readiness-mode",
+  ".timeline-panel",
+  ".timeline-list",
+  ".timeline-item",
+  ".timeline-badge",
   ".blocked-script-feed",
   ".conversion-feed",
   ".content-factory",
