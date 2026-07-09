@@ -27,6 +27,7 @@ const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 const DATA_FILE = process.env.DATA_FILE || path.join(ROOT, "data", "store.json");
 const SCHEMA_FILE = path.join(ROOT, "db", "schema.sql");
+const WORKER_INSTANCE_ID = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let store = null;
 let config = null;
 let storeReady = null;
@@ -349,6 +350,82 @@ async function recordGrowthLoopEvent(type, mission, status, source, metadata = {
       ...metadata
     });
     return {};
+  });
+}
+
+async function acquireWorkerLease(source = "worker") {
+  await configureRuntime();
+  const now = new Date();
+  const leaseMs = Number(config.workerLeaseMs || 180_000);
+  return store.update((state) => {
+    state.runtime = state.runtime || {};
+    const existing = state.runtime.workerLease || null;
+    const existingExpiresAt = existing?.expiresAt ? new Date(existing.expiresAt).getTime() : 0;
+    const heldByOther = existing
+      && existing.ownerId
+      && existing.ownerId !== WORKER_INSTANCE_ID
+      && Number.isFinite(existingExpiresAt)
+      && existingExpiresAt > now.getTime();
+    if (heldByOther) {
+      return { acquired: false, lease: existing };
+    }
+
+    const lease = {
+      ownerId: WORKER_INSTANCE_ID,
+      source,
+      status: "running",
+      acquiredAt: existing?.ownerId === WORKER_INSTANCE_ID ? existing.acquiredAt || now.toISOString() : now.toISOString(),
+      heartbeatAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + leaseMs).toISOString(),
+      lastMissionId: existing?.lastMissionId || "",
+      lastMissionTitle: existing?.lastMissionTitle || "",
+      lastError: ""
+    };
+    state.runtime.workerLease = lease;
+    state.events.unshift({
+      id: `evt_${Date.now()}`,
+      type: "worker.lease_acquired",
+      ownerId: lease.ownerId,
+      source,
+      expiresAt: lease.expiresAt,
+      createdAt: lease.heartbeatAt
+    });
+    return { acquired: true, lease };
+  });
+}
+
+async function heartbeatWorkerLease(status, metadata = {}) {
+  await configureRuntime();
+  const now = new Date();
+  const leaseMs = Number(config.workerLeaseMs || 180_000);
+  return store.update((state) => {
+    state.runtime = state.runtime || {};
+    const existing = state.runtime.workerLease || {};
+    if (existing.ownerId && existing.ownerId !== WORKER_INSTANCE_ID) {
+      return { updated: false, lease: existing };
+    }
+    const lease = {
+      ...existing,
+      ownerId: WORKER_INSTANCE_ID,
+      source: existing.source || metadata.source || "worker",
+      status,
+      heartbeatAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + leaseMs).toISOString(),
+      lastMissionId: metadata.missionId || existing.lastMissionId || "",
+      lastMissionTitle: metadata.missionTitle || existing.lastMissionTitle || "",
+      lastError: metadata.error || ""
+    };
+    state.runtime.workerLease = lease;
+    state.events.unshift({
+      id: `evt_${Date.now()}`,
+      type: "worker.heartbeat",
+      ownerId: WORKER_INSTANCE_ID,
+      status,
+      missionId: lease.lastMissionId,
+      missionTitle: lease.lastMissionTitle,
+      createdAt: lease.heartbeatAt
+    });
+    return { updated: true, lease };
   });
 }
 
@@ -711,6 +788,58 @@ async function requestHandler(req, res) {
 
 let workerActive = false;
 let workerStarted = false;
+async function runWorkerTick(source = "worker") {
+  await configureRuntime();
+  if (!config.enableWorker) {
+    return {
+      status: "disabled",
+      source,
+      dashboard: buildDashboard(await readState(), config)
+    };
+  }
+
+  const lease = await acquireWorkerLease(source);
+  if (!lease.acquired) {
+    return {
+      status: "skipped_lease",
+      source,
+      lease: lease.lease,
+      dashboard: buildDashboard(await readState(), config)
+    };
+  }
+
+  try {
+    const result = config.autonomyMode
+      ? await runGrowthAutopilot({ source, force: false })
+      : await runAutonomyCycle({
+          source,
+          force: false,
+          profit: false,
+          createPosts: true,
+          autoApprove: true,
+          publishQueue: true
+        });
+    await heartbeatWorkerLease("completed", {
+      source,
+      missionId: result?.mission?.id || "",
+      missionTitle: result?.mission?.title || ""
+    });
+    return {
+      status: "completed",
+      source,
+      lease: lease.lease,
+      result,
+      dashboard: buildDashboard(await readState(), config)
+    };
+  } catch (error) {
+    await heartbeatWorkerLease("failed", {
+      source,
+      error: error.message || "Worker tick failed."
+    });
+    throw error;
+  }
+}
+
 async function startWorker() {
   await configureRuntime();
   if (!config.enableWorker || workerStarted) return;
@@ -719,21 +848,7 @@ async function startWorker() {
     if (workerActive) return;
     workerActive = true;
     try {
-      if (config.autonomyMode) {
-        await runGrowthAutopilot({
-          source: "worker",
-          force: false
-        });
-      } else {
-        await runAutonomyCycle({
-          source: "worker",
-          force: false,
-          profit: false,
-          createPosts: true,
-          autoApprove: true,
-          publishQueue: true
-        });
-      }
+      await runWorkerTick("worker");
     } catch (error) {
       await store.update((state) => {
         state.automationRuns.unshift({
@@ -790,5 +905,6 @@ module.exports = {
   requestHandler,
   runAutonomyCycle,
   runGrowthAutopilot,
+  runWorkerTick,
   startServer
 };

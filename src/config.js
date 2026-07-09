@@ -22,6 +22,7 @@ function getRuntimeConfig(env) {
     publicBaseUrl: env.PUBLIC_BASE_URL || "http://localhost:4173",
     enableWorker: asBoolean(env.ENABLE_WORKER, false),
     automationIntervalMs: Math.max(10_000, asNumber(env.AUTOMATION_INTERVAL_MS, 60_000)),
+    workerLeaseMs: Math.max(30_000, asNumber(env.WORKER_LEASE_MS, 180_000)),
     threadsGraphBase: env.THREADS_GRAPH_BASE || "https://graph.threads.net/v1.0",
     threadsUserId: env.THREADS_USER_ID || "",
     threadsAccessToken: env.THREADS_ACCESS_TOKEN || "",

@@ -938,10 +938,12 @@ function buildWorkerHealth(data) {
   const engine = data.profitEngine || {};
   const metrics = data.metrics || {};
   const readiness = data.readiness?.summary || {};
+  const lease = data.workerLease || {};
   const automationRun = (data.automationRuns || [])[0] || {};
   const profitRun = (engine.runs || [])[0] || {};
   const recentEvent = (data.recentEvents || [])[0] || {};
-  const heartbeatAt = automationRun.finishedAt
+  const heartbeatAt = lease.heartbeatAt
+    || automationRun.finishedAt
     || automationRun.startedAt
     || profitRun.createdAt
     || engine.lastRunAt
@@ -965,6 +967,7 @@ function buildWorkerHealth(data) {
   const healthScore = Math.max(0, Math.min(100,
     (runtime.workerEnabled ? 25 : 0)
     + (runtime.autonomyMode ? 20 : 0)
+    + (lease.active ? 10 : 0)
     + ((profitRun.createdAt || engine.lastRunAt) ? 15 : 0)
     + ((automationRun.finishedAt || automationRun.startedAt) ? 15 : 0)
     + (Number(readiness.blocked || 0) === 0 ? 10 : 0)
@@ -975,6 +978,8 @@ function buildWorkerHealth(data) {
     runtime.workerEnabled && !runtime.autonomyMode ? "Enable AUTONOMY_MODE=true when you want research, scripts, and queue processing to run by schedule." : "",
     runtime.workerEnabled && runtime.autonomyMode && runtime.dryRun ? "Dry-run is protecting the system: it will simulate publishing until Threads credentials are ready." : "",
     !runtime.dryRun && !runtime.hasThreadsCredentials ? "Live mode needs valid Threads credentials before publishing can succeed." : "",
+    runtime.workerEnabled && !lease.active ? "No active worker lease is present; another replica may be stale or the worker has not ticked yet." : "",
+    lease.active ? `Worker lease is active for ${lease.ownerId || "current owner"}.` : "",
     !heartbeatAt ? "No worker heartbeat has been recorded yet; run the profit engine or queue once to seed history." : "",
     Number(readiness.blocked || 0) > 0 ? `${readiness.blocked} readiness blocker(s) remain before unattended live mode.` : "",
     queuePressure > 0 ? `${queuePressure} post(s) are waiting in autonomous or queue pressure.` : ""
@@ -990,6 +995,10 @@ function buildWorkerHealth(data) {
     healthScore,
     heartbeatAt,
     heartbeatAge: ageLabel(heartbeatAt, data.generatedAt),
+    leaseStatus: lease.active ? "active" : lease.stale ? "stale" : "none",
+    leaseOwner: lease.ownerId || "-",
+    leaseExpiresAt: lease.expiresAt || "",
+    leaseTtlSeconds: Number(lease.ttlSeconds || 0),
     nextRunHint: engine.nextRunHint || (runtime.workerEnabled ? "Configured interval" : "手動"),
     latestAutomationStatus: automationRun.status || "No automation run",
     latestProfitSource: profitRun.source || (engine.lastRunAt ? "profit engine" : "No profit run"),
@@ -1009,6 +1018,7 @@ function renderWorkerHealth(data) {
   $("#workerHealthGrid").innerHTML = [
     ["Health score", `${health.healthScore}%`, "scheduler readiness"],
     ["Last heartbeat", health.heartbeatAge, health.heartbeatAt ? formatDate(health.heartbeatAt) : "no run recorded"],
+    ["Lease", health.leaseStatus, health.leaseExpiresAt ? `${health.leaseTtlSeconds}s ttl · ${health.leaseOwner}` : "no lease owner"],
     ["Next cycle", health.nextRunHint, "from profit engine config"],
     ["Queue pressure", health.queuePressure, `${health.queuedPosts} queued · ${health.scheduledAutonomyPosts} autonomous`],
     ["Automation run", health.latestAutomationStatus, "latest queue worker result"],

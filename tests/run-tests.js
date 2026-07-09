@@ -419,7 +419,7 @@ async function main() {
   const dryLimit = await getPublishingLimit(config);
   assert.equal(dryLimit.dryRun, true);
 
-  const { startServer } = require("../server");
+  const { configureRuntime, runWorkerTick, startServer } = require("../server");
   const server = await startServer(0, { store, config });
   const address = server.address();
   const healthResponse = await fetch(`http://127.0.0.1:${address.port}/health`);
@@ -446,6 +446,7 @@ async function main() {
   assert.equal(dashboard.growthLoop.missions.some((mission) => mission.id === "natural_script_generation"), true);
   assert.equal(Number.isFinite(dashboard.growthLoop.summary.automationScore), true);
   assert.equal(typeof dashboard.growthLoop.controls.canRunCycle, "boolean");
+  assert.equal(typeof dashboard.workerLease.active, "boolean");
   assert.equal(dashboard.attribution.summary.attributedConversions >= 1, true);
   const trackedPost = dashboard.posts.find((post) => String(post.linkAttachment || "").includes("post="));
   assert.equal(Boolean(trackedPost), true);
@@ -530,6 +531,41 @@ async function main() {
   await new Promise((resolve, reject) => {
     server.close((error) => error ? reject(error) : resolve());
   });
+
+  const workerStore = createStore(path.join(tempDir, "worker-store.json"));
+  const workerConfig = getRuntimeConfig({
+    PUBLIC_BASE_URL: "http://localhost:4173",
+    THREADS_DRY_RUN: "true",
+    ENABLE_WORKER: "true",
+    AUTONOMY_MODE: "true",
+    WORKER_LEASE_MS: "120000"
+  });
+  await configureRuntime({ store: workerStore, config: workerConfig });
+  const future = new Date(Date.now() + 120_000).toISOString();
+  workerStore.update((state) => {
+    state.runtime = state.runtime || {};
+    state.runtime.workerLease = {
+      ownerId: "other-worker",
+      source: "test",
+      status: "running",
+      acquiredAt: new Date().toISOString(),
+      heartbeatAt: new Date().toISOString(),
+      expiresAt: future
+    };
+    return {};
+  });
+  const skippedTick = await runWorkerTick("test-worker");
+  assert.equal(skippedTick.status, "skipped_lease");
+  assert.equal(skippedTick.lease.ownerId, "other-worker");
+  workerStore.update((state) => {
+    state.runtime.workerLease.expiresAt = new Date(Date.now() - 1000).toISOString();
+    return {};
+  });
+  const workerTick = await runWorkerTick("test-worker");
+  assert.equal(workerTick.status, "completed");
+  assert.equal(workerTick.dashboard.workerLease.active, true);
+  assert.equal(workerTick.dashboard.workerLease.status, "completed");
+  assert.equal(workerTick.dashboard.recentEvents.some((event) => event.type === "worker.heartbeat"), true);
 
   fs.rmSync(tempDir, { recursive: true, force: true });
   console.log("All tests passed.");

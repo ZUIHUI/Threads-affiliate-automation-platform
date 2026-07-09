@@ -124,6 +124,8 @@ const requiredJs = [
   "buildDecisionBrief",
   "renderWorkerHealth",
   "buildWorkerHealth",
+  "workerLease",
+  "leaseStatus",
   "renderExperimentLoop",
   "buildExperimentLoopFallback",
   "buildOptimizerDecisionFallback",

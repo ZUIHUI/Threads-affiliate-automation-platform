@@ -780,6 +780,42 @@ function buildAttributionDashboard(state) {
   };
 }
 
+function buildWorkerLeaseStatus(state, config) {
+  const lease = state.runtime?.workerLease || null;
+  if (!lease) {
+    return {
+      active: false,
+      stale: false,
+      ownerId: "",
+      source: "",
+      status: "none",
+      heartbeatAt: "",
+      acquiredAt: "",
+      expiresAt: "",
+      ttlSeconds: 0,
+      leaseMs: config.workerLeaseMs || 0
+    };
+  }
+  const expiresAt = new Date(lease.expiresAt || 0).getTime();
+  const now = Date.now();
+  const active = Number.isFinite(expiresAt) && expiresAt > now;
+  return {
+    active,
+    stale: Boolean(lease.expiresAt) && !active,
+    ownerId: lease.ownerId || "",
+    source: lease.source || "",
+    status: lease.status || (active ? "active" : "stale"),
+    heartbeatAt: lease.heartbeatAt || "",
+    acquiredAt: lease.acquiredAt || "",
+    expiresAt: lease.expiresAt || "",
+    ttlSeconds: active ? Math.max(0, Math.round((expiresAt - now) / 1000)) : 0,
+    leaseMs: config.workerLeaseMs || 0,
+    lastMissionId: lease.lastMissionId || "",
+    lastMissionTitle: lease.lastMissionTitle || "",
+    lastError: lease.lastError || ""
+  };
+}
+
 function buildDashboard(state, config) {
   const posts = state.posts;
   const affiliateLinks = state.affiliateLinks;
@@ -809,6 +845,7 @@ function buildDashboard(state, config) {
   const operatingMap = buildOperatingMap(state, config, profitEngine, readiness, autonomyPolicy, autonomyPipeline, metrics);
   const growthLoop = buildAutonomousGrowthLoop(state, config, profitEngine, readiness, autonomyPolicy, autonomyPipeline, metrics);
   const attribution = buildAttributionDashboard(state);
+  const workerLease = buildWorkerLeaseStatus(state, config);
 
   return {
     generatedAt: nowIso(),
@@ -848,6 +885,7 @@ function buildDashboard(state, config) {
     operatingMap,
     growthLoop,
     attribution,
+    workerLease,
     settings: state.settings
   };
 }
