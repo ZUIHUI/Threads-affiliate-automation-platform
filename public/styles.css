@@ -528,6 +528,70 @@ th:nth-child(5) {
   align-self: end;
 }
 
+.auth-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(16, 23, 19, 0.55);
+}
+
+.auth-gate.is-hidden {
+  display: none;
+}
+
+.auth-gate-card {
+  width: min(460px, calc(100% - 32px));
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 10px;
+}
+
+.auth-gate-card h3 {
+  margin: 0;
+}
+
+.auth-gate-card p,
+.auth-message {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.auth-gate-card label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.auth-gate-card input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #ffffff;
+  color: var(--ink);
+}
+
+.auth-gate-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.auth-gate-actions .button {
+  min-height: 40px;
+}
+
 .toast {
   position: fixed;
   right: 20px;

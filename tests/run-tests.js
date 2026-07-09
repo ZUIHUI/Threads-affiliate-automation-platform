@@ -63,6 +63,7 @@ async function main() {
 
   const liveReadyConfig = getRuntimeConfig({
     PUBLIC_BASE_URL: "https://threads-affiliate.example",
+    ADMIN_TOKEN: "admin-token",
     ENABLE_WORKER: "true",
     AUTONOMY_MODE: "true",
     THREADS_DRY_RUN: "false",

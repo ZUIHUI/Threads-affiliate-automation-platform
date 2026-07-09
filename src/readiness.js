@@ -68,6 +68,7 @@ function connectorCenter(state, config) {
   const metaReady = hasValue(config.metaAdLibraryAccessToken) && hasValue(config.metaAdLibraryQuery);
   const customFeedReady = (config.adIntelligenceFeedUrls || []).length > 0;
   const offerFeedReady = (config.affiliateOfferFeedUrls || []).length > 0;
+  const adminReady = hasValue(config.adminToken) || hasValue(config.adminPassword);
   const metaHealth = sourceHealth(state, "meta_ad_library");
   const customHealth = sourceHealth(state, "custom_ad_feed");
   const offerHealth = sourceHealth(state, "affiliate_offer_feed");
@@ -90,6 +91,19 @@ function connectorCenter(state, config) {
       {
         configured: hasValue(config.databaseUrl),
         signal: hasValue(config.databaseUrl) ? "postgres" : "local json"
+      }
+    ),
+    connector(
+      "admin_access",
+      "Security",
+      "Admin access gate",
+      "Protects dashboard and automation APIs behind login/token for human-owned operations.",
+      adminReady ? "ready" : "warning",
+      ["ADMIN_TOKEN", "ADMIN_PASSWORD", "ADMIN_SESSION_SECRET", "ADMIN_SESSION_TTL_MS"],
+      adminReady ? "Keep admin credentials rotated and session TTL set." : "Set ADMIN_TOKEN or ADMIN_PASSWORD before exposing admin routes.",
+      {
+        configured: adminReady,
+        signal: adminReady ? "protected" : "open"
       }
     ),
     connector(
@@ -259,6 +273,7 @@ function buildAutonomyReadiness(state, config) {
   const links = state.affiliateLinks || [];
   const marketSources = sourceCount(config);
   const localBaseUrl = isLocalPublicBaseUrl(config.publicBaseUrl);
+  const adminReady = hasValue(config.adminToken) || hasValue(config.adminPassword);
   const checks = [
     makeCheck(
       "database",
@@ -268,6 +283,13 @@ function buildAutonomyReadiness(state, config) {
         ? "DATABASE_URL is configured; startup can run the idempotent Postgres schema."
         : "Using the local JSON store. Good for development, but cloud autonomy needs persistent Postgres.",
       "Set DATABASE_URL on Render or Railway and keep DATABASE_AUTO_MIGRATE=true."
+    ),
+    makeCheck(
+      "admin_auth",
+      "Admin access gate",
+      config.threadsDryRun ? "warning" : (adminReady ? "ready" : "blocked"),
+      adminReady ? "Admin access control is configured for dashboard and API actions." : "Set ADMIN_TOKEN or ADMIN_PASSWORD so control APIs are not public.",
+      "Set ADMIN_TOKEN or ADMIN_PASSWORD, then use /api/admin/login to open the dashboard."
     ),
     makeCheck(
       "public_base_url",

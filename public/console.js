@@ -1,5 +1,10 @@
 const state = {
-  dashboard: null
+  dashboard: null,
+  auth: {
+    authRequired: false,
+    authenticated: false,
+    methods: { token: false, password: false }
+  }
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -39,6 +44,7 @@ function showToast(message) {
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
+    credentials: "same-origin",
     headers: {
       "content-type": "application/json",
       ...(options.headers || {})
@@ -46,9 +52,77 @@ async function api(path, options = {}) {
     ...options,
     body: options.body ? JSON.stringify(options.body) : undefined
   });
-  const payload = response.status === 204 ? {} : await response.json();
-  if (!response.ok) throw new Error(payload.error || "Request failed");
+  const payload = response.status === 204 ? {} : await response.json().catch(() => ({ error: "Invalid server response." }));
+  if (!response.ok) {
+    const error = new Error(payload.error || "Request failed");
+    error.statusCode = response.status;
+    if (response.status === 401 && options.skipAuth !== true) {
+      setAuthGateVisible(true, error.message);
+    }
+    throw error;
+  }
   return payload;
+}
+
+function setAuthGateVisible(visible, message = "") {
+  const gate = $("#authGate");
+  if (!gate) return;
+  gate.classList.toggle("is-hidden", !visible);
+  const messageNode = $("#authMessage");
+  if (messageNode) {
+    messageNode.textContent = message || "Enter ADMIN_TOKEN or ADMIN_PASSWORD";
+  }
+}
+
+async function refreshAdminSession() {
+  try {
+    const session = await api("/api/admin/session", { skipAuth: true });
+    state.auth = session;
+    const logoutBtn = $("#adminLogoutBtn");
+    if (logoutBtn) {
+      logoutBtn.classList.toggle("is-hidden", !session.authRequired || !session.authenticated);
+    }
+    setAuthGateVisible(session.authRequired && !session.authenticated, "Admin access required.");
+    return session;
+  } catch (error) {
+    state.auth = { authRequired: false, authenticated: true, methods: { token: false, password: false } };
+    const logoutBtn = $("#adminLogoutBtn");
+    if (logoutBtn) logoutBtn.classList.add("is-hidden");
+    setAuthGateVisible(false);
+    return state.auth;
+  }
+}
+
+async function adminLogin(event) {
+  event.preventDefault();
+  const input = $("#adminSecretInput");
+  const credential = input ? input.value.trim() : "";
+  if (!credential) return;
+  try {
+    await api("/api/admin/login", {
+      method: "POST",
+      skipAuth: true,
+      body: {
+        token: credential,
+        password: credential
+      }
+    });
+    setAuthGateVisible(false);
+    if (input) input.value = "";
+    await refresh();
+  } catch (error) {
+    setAuthGateVisible(true, error.message || "Admin login failed.");
+    if (input) input.focus();
+  }
+}
+
+async function adminLogout() {
+  try {
+    await api("/api/admin/logout", { method: "POST", skipAuth: true });
+  } catch {
+    // ignore
+  }
+  await refreshAdminSession();
 }
 
 function statusBadge(status) {
@@ -1652,6 +1726,8 @@ function render(data) {
 }
 
 async function refresh() {
+  const auth = await refreshAdminSession();
+  if (auth.authRequired && !auth.authenticated) return;
   render(await api("/api/dashboard"));
 }
 
@@ -1809,6 +1885,22 @@ function bindEvents() {
   $("#composeForm").addEventListener("submit", (event) => {
     submitCompose(event).catch((error) => showToast(error.message));
   });
+  const adminLoginForm = $("#adminLoginForm");
+  if (adminLoginForm) {
+    adminLoginForm.addEventListener("submit", (event) => {
+      adminLogin(event).catch((error) => {
+        setAuthGateVisible(true, error.message || "Admin login failed.");
+      });
+    });
+  }
+  const adminLogoutBtn = $("#adminLogoutBtn");
+  if (adminLogoutBtn) {
+    adminLogoutBtn.addEventListener("click", () => {
+      adminLogout().catch((error) => {
+        showToast(error.message);
+      });
+    });
+  }
   $("#nextActionList").addEventListener("click", (event) => {
     handleNextAction(event).catch((error) => {
       showToast(error.message);
@@ -1825,4 +1917,4 @@ function bindEvents() {
 }
 
 bindEvents();
-refresh().catch((error) => showToast(error.message));
+refreshAdminSession().then(() => refresh()).catch((error) => showToast(error.message));

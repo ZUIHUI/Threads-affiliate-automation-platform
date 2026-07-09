@@ -63,6 +63,7 @@
           </div>
           <div class="topbar-actions">
             <span class="runtime-pill" id="runtimePill">Loading</span>
+            <button class="button secondary" id="adminLogoutBtn" type="button">Logout</button>
             <button class="button secondary" id="generateBtn" type="button">AI 產草稿</button>
             <button class="button secondary" id="autoGenerateBtn" type="button">產生並排程</button>
             <button class="button secondary" id="cycleRunBtn" type="button">自主循環</button>
@@ -413,6 +414,21 @@
           <div class="campaign-list" id="campaignList"></div>
         </section>
       </main>
+    </div>
+
+    <div class="auth-gate is-hidden" id="authGate">
+      <form class="auth-gate-card" id="adminLoginForm">
+        <h3>Admin access required</h3>
+        <p>Enter ADMIN_TOKEN or ADMIN_PASSWORD to open dashboard features.</p>
+        <label>
+          <span>Admin credential</span>
+          <input id="adminSecretInput" type="password" placeholder="ADMIN_TOKEN / ADMIN_PASSWORD" />
+        </label>
+        <div class="auth-gate-actions">
+          <button class="button" type="submit">Unlock</button>
+          <small id="authMessage" class="auth-message"></small>
+        </div>
+      </form>
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>

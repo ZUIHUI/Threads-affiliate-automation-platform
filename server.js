@@ -1,6 +1,7 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const { URL } = require("node:url");
 
 const { createStore } = require("./src/store");
@@ -28,6 +29,7 @@ const PUBLIC_DIR = path.join(ROOT, "public");
 const DATA_FILE = process.env.DATA_FILE || path.join(ROOT, "data", "store.json");
 const SCHEMA_FILE = path.join(ROOT, "db", "schema.sql");
 const WORKER_INSTANCE_ID = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const ADMIN_SESSION_COOKIE_NAME = "threads_affiliate_admin";
 let store = null;
 let config = null;
 let storeReady = null;
@@ -40,11 +42,12 @@ const CONTENT_TYPES = {
   ".svg": "image/svg+xml; charset=utf-8"
 };
 
-function sendJson(res, status, payload) {
+function sendJson(res, status, payload, extraHeaders = {}) {
   const body = JSON.stringify(payload, null, 2);
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
-    "cache-control": "no-store"
+    "cache-control": "no-store",
+    ...extraHeaders
   });
   res.end(body);
 }
@@ -102,6 +105,118 @@ function parseBody(req) {
     });
     req.on("error", reject);
   });
+}
+
+function getAdminSecret() {
+  if (!config) return "";
+  return String(config.adminSessionSecret || config.adminToken || config.adminPassword || "");
+}
+
+function hasAdminCredential(value) {
+  return String(value || "").trim().length > 0;
+}
+
+function isAdminAuthConfigured() {
+  if (!config) return false;
+  return hasAdminCredential(config.adminToken) || hasAdminCredential(config.adminPassword);
+}
+
+function safeEqual(left, right) {
+  const a = Buffer.from(String(left || ""));
+  const b = Buffer.from(String(right || ""));
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+function isAdminCredentialMatch(value) {
+  if (!isAdminAuthConfigured()) return true;
+  if (!hasAdminCredential(value)) return false;
+  const candidate = String(value);
+  if (hasAdminCredential(config.adminToken) && safeEqual(candidate, config.adminToken)) return true;
+  if (hasAdminCredential(config.adminPassword) && safeEqual(candidate, config.adminPassword)) return true;
+  return false;
+}
+
+function parseCookies(req) {
+  const header = req.headers.cookie || "";
+  const pairs = header.split(";");
+  const output = {};
+  for (const pair of pairs) {
+    const index = pair.indexOf("=");
+    if (index < 0) continue;
+    const key = pair.slice(0, index).trim();
+    if (!key) continue;
+    output[key] = decodeURIComponent((pair.slice(index + 1) || "").trim());
+  }
+  return output;
+}
+
+function isSecureRequest(req) {
+  return String(req.headers["x-forwarded-proto"] || "").toLowerCase() === "https" || req.socket.encrypted === true;
+}
+
+function adminSessionCookieValue(req, expireAt) {
+  const secret = getAdminSecret();
+  const now = Date.now();
+  const sessionId = crypto.randomBytes(12).toString("base64url");
+  const payload = `${sessionId}.${expireAt}`;
+  const signature = crypto.createHmac("sha256", secret || "threads-affiliate-admin").update(payload).digest("base64url");
+  const cookieAttributes = [
+    `${ADMIN_SESSION_COOKIE_NAME}=${payload}.${signature}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax"
+  ];
+  if (isSecureRequest(req)) cookieAttributes.push("Secure");
+  cookieAttributes.push(`Max-Age=${Math.max(30, Math.floor((expireAt - now) / 1000))}`);
+  return cookieAttributes.join("; ");
+}
+
+function clearAdminCookie(req) {
+  const cookieAttributes = [
+    `${ADMIN_SESSION_COOKIE_NAME}=`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    "Max-Age=0",
+    "Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+  ];
+  if (isSecureRequest(req)) cookieAttributes.push("Secure");
+  return cookieAttributes.join("; ");
+}
+
+function hasValidAdminSession(req) {
+  const cookie = parseCookies(req)[ADMIN_SESSION_COOKIE_NAME] || "";
+  const [sessionId, expiresAt, signature] = cookie.split(".");
+  if (!sessionId || !expiresAt || !signature) return false;
+  const secret = getAdminSecret();
+  const expireTime = Number(expiresAt);
+  if (!Number.isFinite(expireTime) || expireTime <= Date.now()) return false;
+  const payload = `${sessionId}.${expiresAt}`;
+  const expected = crypto.createHmac("sha256", secret || "threads-affiliate-admin").update(payload).digest("base64url");
+  return safeEqual(signature, expected);
+}
+
+function authorizeAdminRequest(req) {
+  if (!isAdminAuthConfigured()) return;
+  const headerSecret = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+  const credential = req.headers["x-admin-token"] || req.headers["x-admin-password"] || headerSecret || "";
+  if (hasAdminCredential(config.adminToken) && safeEqual(String(credential), config.adminToken)) return;
+  if (hasAdminCredential(config.adminPassword) && safeEqual(String(credential), config.adminPassword)) return;
+  if (hasValidAdminSession(req)) return;
+
+  const error = new Error("Admin authentication required.");
+  error.statusCode = 401;
+  throw error;
+}
+
+function buildAdminSession(req) {
+  const now = Date.now();
+  const expiresAt = now + config.adminSessionTtlMs;
+  return {
+    expiresAt,
+    header: adminSessionCookieValue(req, expiresAt)
+  };
 }
 
 function authorizeConversionWebhook(req) {
@@ -557,6 +672,55 @@ function findPost(state, postId) {
 async function handleApi(req, res, url) {
   await configureRuntime();
   const route = url.pathname;
+  const isAdminPublicRoute = route === "/api/admin/session" || route === "/api/admin/login" || route === "/api/admin/logout";
+
+  if (!isAdminPublicRoute && route !== "/api/conversions" && req.method !== "OPTIONS") {
+    authorizeAdminRequest(req);
+  }
+
+  if (req.method === "GET" && route === "/api/admin/session") {
+    sendJson(res, 200, {
+      authRequired: isAdminAuthConfigured(),
+      authenticated: !isAdminAuthConfigured() || hasValidAdminSession(req),
+      methods: {
+        token: hasAdminCredential(config.adminToken),
+        password: hasAdminCredential(config.adminPassword)
+      }
+    });
+    return;
+  }
+
+  if (req.method === "POST" && route === "/api/admin/login") {
+    const body = await parseBody(req);
+    const candidate = body.password || body.token || "";
+    if (!isAdminCredentialMatch(candidate)) {
+      const error = new Error("Invalid admin credential.");
+      error.statusCode = 401;
+      throw error;
+    }
+    const session = buildAdminSession(req);
+    sendJson(res, 200, {
+      authRequired: true,
+      authenticated: true,
+      methods: {
+        token: hasAdminCredential(config.adminToken),
+        password: hasAdminCredential(config.adminPassword)
+      }
+    }, { "Set-Cookie": session.header });
+    return;
+  }
+
+  if (req.method === "POST" && route === "/api/admin/logout") {
+    sendJson(res, 200, {
+      authRequired: isAdminAuthConfigured(),
+      authenticated: false,
+      methods: {
+        token: hasAdminCredential(config.adminToken),
+        password: hasAdminCredential(config.adminPassword)
+      }
+    }, { "Set-Cookie": clearAdminCookie(req) });
+    return;
+  }
 
   if (req.method === "GET" && route === "/api/dashboard") {
     sendJson(res, 200, buildDashboard(await readState(), config));
