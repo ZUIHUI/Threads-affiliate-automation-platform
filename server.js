@@ -30,6 +30,7 @@ const DATA_FILE = process.env.DATA_FILE || path.join(ROOT, "data", "store.json")
 const SCHEMA_FILE = path.join(ROOT, "db", "schema.sql");
 const WORKER_INSTANCE_ID = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const ADMIN_SESSION_COOKIE_NAME = "threads_affiliate_admin";
+const ADMIN_ROLES = ["admin", "viewer", "operator"];
 let store = null;
 let config = null;
 let storeReady = null;
@@ -128,13 +129,28 @@ function safeEqual(left, right) {
   return crypto.timingSafeEqual(a, b);
 }
 
-function isAdminCredentialMatch(value) {
-  if (!isAdminAuthConfigured()) return true;
-  if (!hasAdminCredential(value)) return false;
-  const candidate = String(value);
-  if (hasAdminCredential(config.adminToken) && safeEqual(candidate, config.adminToken)) return true;
-  if (hasAdminCredential(config.adminPassword) && safeEqual(candidate, config.adminPassword)) return true;
-  return false;
+function normalizeAdminRole(value, fallback = "admin") {
+  const role = String(value || "").trim().toLowerCase();
+  return ADMIN_ROLES.includes(role) ? role : fallback;
+}
+
+function resolveAdminRoleByCredential(candidate) {
+  if (!isAdminAuthConfigured()) return "admin";
+  if (!hasAdminCredential(candidate)) return "";
+  const credential = String(candidate);
+  if (hasAdminCredential(config.adminToken) && safeEqual(credential, config.adminToken)) {
+    return normalizeAdminRole(config.adminTokenRole, "admin");
+  }
+  if (hasAdminCredential(config.adminPassword) && safeEqual(credential, config.adminPassword)) {
+    return normalizeAdminRole(config.adminPasswordRole, normalizeAdminRole(config.adminTokenRole, "admin"));
+  }
+  return "";
+}
+
+function hasRequiredRole(role, acceptedRoles) {
+  if (!Array.isArray(acceptedRoles) || acceptedRoles.length === 0) return true;
+  const normalizedRole = normalizeAdminRole(role, "admin");
+  return acceptedRoles.map((item) => normalizeAdminRole(item)).includes(normalizedRole);
 }
 
 function parseCookies(req) {
@@ -155,23 +171,6 @@ function isSecureRequest(req) {
   return String(req.headers["x-forwarded-proto"] || "").toLowerCase() === "https" || req.socket.encrypted === true;
 }
 
-function adminSessionCookieValue(req, expireAt) {
-  const secret = getAdminSecret();
-  const now = Date.now();
-  const sessionId = crypto.randomBytes(12).toString("base64url");
-  const payload = `${sessionId}.${expireAt}`;
-  const signature = crypto.createHmac("sha256", secret || "threads-affiliate-admin").update(payload).digest("base64url");
-  const cookieAttributes = [
-    `${ADMIN_SESSION_COOKIE_NAME}=${payload}.${signature}`,
-    "Path=/",
-    "HttpOnly",
-    "SameSite=Lax"
-  ];
-  if (isSecureRequest(req)) cookieAttributes.push("Secure");
-  cookieAttributes.push(`Max-Age=${Math.max(30, Math.floor((expireAt - now) / 1000))}`);
-  return cookieAttributes.join("; ");
-}
-
 function clearAdminCookie(req) {
   const cookieAttributes = [
     `${ADMIN_SESSION_COOKIE_NAME}=`,
@@ -185,37 +184,71 @@ function clearAdminCookie(req) {
   return cookieAttributes.join("; ");
 }
 
-function hasValidAdminSession(req) {
+function parseAdminSession(req) {
   const cookie = parseCookies(req)[ADMIN_SESSION_COOKIE_NAME] || "";
-  const [sessionId, expiresAt, signature] = cookie.split(".");
-  if (!sessionId || !expiresAt || !signature) return false;
+  const parts = cookie.split(".");
+  if (parts.length !== 3 && parts.length !== 4) return null;
+  const sessionId = parts[0];
+  const signature = parts[parts.length - 1];
+  const expiresAt = parts.length === 4 ? parts[2] : parts[1];
+  const role = parts.length === 4 ? normalizeAdminRole(parts[1], "admin") : "admin";
+  if (!sessionId || !expiresAt || !signature) return null;
   const secret = getAdminSecret();
   const expireTime = Number(expiresAt);
-  if (!Number.isFinite(expireTime) || expireTime <= Date.now()) return false;
-  const payload = `${sessionId}.${expiresAt}`;
+  if (!Number.isFinite(expireTime) || expireTime <= Date.now()) return null;
+  const payload = parts.length === 4 ? `${sessionId}.${parts[1]}.${expiresAt}` : `${sessionId}.${expiresAt}`;
   const expected = crypto.createHmac("sha256", secret || "threads-affiliate-admin").update(payload).digest("base64url");
-  return safeEqual(signature, expected);
+  if (!safeEqual(signature, expected)) return null;
+  return { sessionId, role, expiresAt };
 }
 
-function authorizeAdminRequest(req) {
-  if (!isAdminAuthConfigured()) return;
+function getAdminPrincipal(req) {
+  if (!isAdminAuthConfigured()) return { authenticated: true, role: "admin", source: "open" };
   const headerSecret = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
   const credential = req.headers["x-admin-token"] || req.headers["x-admin-password"] || headerSecret || "";
-  if (hasAdminCredential(config.adminToken) && safeEqual(String(credential), config.adminToken)) return;
-  if (hasAdminCredential(config.adminPassword) && safeEqual(String(credential), config.adminPassword)) return;
-  if (hasValidAdminSession(req)) return;
-
-  const error = new Error("Admin authentication required.");
-  error.statusCode = 401;
-  throw error;
+  const role = resolveAdminRoleByCredential(credential);
+  if (role) return { authenticated: true, role, source: "credential" };
+  const session = parseAdminSession(req);
+  if (session) return { authenticated: true, role: session.role, source: "session" };
+  return null;
 }
 
-function buildAdminSession(req) {
+function authorizeAdminRequest(req, options = {}) {
+  const acceptedRoles = options.requiredRoles || ["admin"];
+  const principal = getAdminPrincipal(req);
+  if (!principal) {
+    const error = new Error("Admin authentication required.");
+    error.statusCode = 401;
+    throw error;
+  }
+  if (!hasRequiredRole(principal.role, acceptedRoles)) {
+    const error = new Error("Admin role forbidden.");
+    error.statusCode = 403;
+    throw error;
+  }
+  return principal;
+}
+
+function buildAdminSession(req, role = "admin") {
   const now = Date.now();
   const expiresAt = now + config.adminSessionTtlMs;
+  const normalizedRole = normalizeAdminRole(role, "admin");
+  const sessionId = crypto.randomBytes(12).toString("base64url");
+  const payload = `${sessionId}.${normalizedRole}.${expiresAt}`;
+  const secret = getAdminSecret() || "threads-affiliate-admin";
+  const signature = crypto.createHmac("sha256", secret).update(payload).digest("base64url");
+  const cookieAttributes = [
+    `${ADMIN_SESSION_COOKIE_NAME}=${payload}.${signature}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax"
+  ];
+  if (isSecureRequest(req)) cookieAttributes.push("Secure");
+  cookieAttributes.push(`Max-Age=${Math.max(30, Math.floor((expiresAt - now) / 1000))}`);
   return {
+    role: normalizedRole,
     expiresAt,
-    header: adminSessionCookieValue(req, expiresAt)
+    header: cookieAttributes.join("; ")
   };
 }
 
@@ -673,15 +706,22 @@ async function handleApi(req, res, url) {
   await configureRuntime();
   const route = url.pathname;
   const isAdminPublicRoute = route === "/api/admin/session" || route === "/api/admin/login" || route === "/api/admin/logout";
+  const isReadOnlyAdminRoute = (route === "/api/dashboard" && req.method === "GET")
+    || (route === "/api/readiness" && req.method === "GET")
+    || (route === "/api/posts" && req.method === "GET")
+    || (route === "/api/threads/publishing-limit" && req.method === "GET")
+    || (route.match(/^\/api\/posts\/([^/]+)\/validate$/) && req.method === "GET");
 
   if (!isAdminPublicRoute && route !== "/api/conversions" && req.method !== "OPTIONS") {
-    authorizeAdminRequest(req);
+    authorizeAdminRequest(req, { requiredRoles: isReadOnlyAdminRoute ? ["admin", "operator", "viewer"] : ["admin"] });
   }
 
   if (req.method === "GET" && route === "/api/admin/session") {
+    const session = parseAdminSession(req);
     sendJson(res, 200, {
       authRequired: isAdminAuthConfigured(),
-      authenticated: !isAdminAuthConfigured() || hasValidAdminSession(req),
+      authenticated: !isAdminAuthConfigured() || Boolean(session),
+      role: session?.role || null,
       methods: {
         token: hasAdminCredential(config.adminToken),
         password: hasAdminCredential(config.adminPassword)
@@ -693,15 +733,17 @@ async function handleApi(req, res, url) {
   if (req.method === "POST" && route === "/api/admin/login") {
     const body = await parseBody(req);
     const candidate = body.password || body.token || "";
-    if (!isAdminCredentialMatch(candidate)) {
+    const role = resolveAdminRoleByCredential(candidate);
+    if (!role) {
       const error = new Error("Invalid admin credential.");
       error.statusCode = 401;
       throw error;
     }
-    const session = buildAdminSession(req);
+    const session = buildAdminSession(req, role);
     sendJson(res, 200, {
       authRequired: true,
       authenticated: true,
+      role,
       methods: {
         token: hasAdminCredential(config.adminToken),
         password: hasAdminCredential(config.adminPassword)

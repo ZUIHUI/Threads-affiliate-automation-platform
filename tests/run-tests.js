@@ -584,6 +584,51 @@ async function main() {
   assert.equal(Boolean(growthPayload.mission.id), true);
   assert.equal(growthPayload.dashboard.recentEvents.some((event) => event.type === "growth_loop.executed"), true);
   assert.equal(Boolean(growthPayload.dashboard.growthLoop.summary.lastExecution), true);
+
+  const roleConfig = getRuntimeConfig({
+    PUBLIC_BASE_URL: "http://localhost:4173",
+    THREADS_DRY_RUN: "true",
+    ADMIN_TOKEN: "viewer-token",
+    ADMIN_PASSWORD: "admin-secret",
+    ADMIN_TOKEN_ROLE: "viewer",
+    ADMIN_PASSWORD_ROLE: "admin"
+  });
+  const roleServerStore = createStore(path.join(tempDir, "role-server-store.json"));
+  const roleServer = await startServer(0, { store: roleServerStore, config: roleConfig });
+  const roleAddress = roleServer.address();
+  const roleBase = `http://127.0.0.1:${roleAddress.port}`;
+  const roleSession = await fetch(`${roleBase}/api/admin/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token: "viewer-token" })
+  });
+  const roleSessionPayload = await roleSession.json();
+  assert.equal(roleSession.status, 200);
+  assert.equal(roleSessionPayload.role, "viewer");
+
+  const roleDashboard = await fetch(`${roleBase}/api/dashboard`, {
+    headers: { "x-admin-token": "viewer-token" }
+  });
+  assert.equal(roleDashboard.status, 200);
+
+  const roleBlockedRun = await fetch(`${roleBase}/api/automation/run`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-token": "viewer-token" },
+    body: JSON.stringify({ source: "role-test" })
+  });
+  assert.equal(roleBlockedRun.status, 403);
+
+  const roleAdminRun = await fetch(`${roleBase}/api/automation/run`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({ source: "role-test" })
+  });
+  assert.equal(roleAdminRun.status, 200);
+
+  await new Promise((resolve, reject) => {
+    roleServer.close((error) => error ? reject(error) : resolve());
+  });
+
   await new Promise((resolve, reject) => {
     server.close((error) => error ? reject(error) : resolve());
   });

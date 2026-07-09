@@ -19,6 +19,7 @@ Set these first in Render Environment.
 - `ADMIN_TOKEN=<long random secret>` or `ADMIN_PASSWORD`
 - `ADMIN_SESSION_SECRET=<long random secret>`
 - `ADMIN_SESSION_TTL_MS=86400000` (optional)
+- (optional) `ADMIN_TOKEN_ROLE=admin` and `ADMIN_PASSWORD_ROLE=admin`
 - `DATABASE_URL=postgres://...` (provided by Render Postgres when attached)
 - `DATABASE_AUTO_MIGRATE=true`
 
