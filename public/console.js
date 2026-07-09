@@ -624,6 +624,39 @@ function renderReadiness(data) {
     </article>
   `).join("");
 
+  const center = readiness.connectorCenter || {};
+  const connectors = center.connectors || [];
+  $("#connectorCenter").innerHTML = `
+    <div class="connector-center-head">
+      <div>
+        <span>API / AI Connector Center</span>
+        <strong>${Number(center.score || 0)}% ready</strong>
+      </div>
+      <p>${escapeHtml(center.nextAction || "Connect sources to unlock autonomous profit loops.")}</p>
+      <small>${Number(center.configured || 0)}/${Number(center.total || connectors.length || 0)} configured · ${Number(center.blocked || 0)} blocked · ${Number(center.error || 0)} error · ${Number(center.backoff || 0)} cooling down</small>
+    </div>
+    <div class="connector-center-grid">
+      ${connectors.map((item) => `
+        <article class="connector-card status-${escapeHtml(item.status)}">
+          <header>
+            <span>${escapeHtml(item.status)}</span>
+            <small>${escapeHtml(item.lane)}</small>
+          </header>
+          <strong>${escapeHtml(item.name)}</strong>
+          <p>${escapeHtml(item.purpose)}</p>
+          <div class="connector-meta">
+            <span>${escapeHtml(item.signal || (item.configured ? "configured" : "setup"))}</span>
+            <small>${(item.envKeys || []).map((key) => `<code>${escapeHtml(key)}</code>`).join("")}</small>
+          </div>
+          <footer>
+            <span>${escapeHtml(item.nextRetryAt ? `retry ${formatDate(item.nextRetryAt)}` : item.nextAction || "Monitor")}</span>
+            ${item.failureCount ? `<b>${Number(item.failureCount)} fail</b>` : ""}
+          </footer>
+        </article>
+      `).join("") || `<div class="empty-state">No connector inventory available</div>`}
+    </div>
+  `;
+
   $("#readinessChecks").innerHTML = (readiness.checks || []).map((check) => `
     <article class="readiness-check status-${escapeHtml(check.status)}">
       <span>${escapeHtml(check.status)}</span>
@@ -1242,13 +1275,14 @@ function renderExperimentLoop(data) {
 
 function renderProfitEngine(data) {
   const engine = data.profitEngine || {};
-  $("#sideConnectorCount").textContent = (engine.sources || []).length;
-  $("#sideConnectorList").innerHTML = (engine.sources || []).map((source) => `
+  const sideConnectors = data.readiness?.connectorCenter?.connectors || engine.sources || [];
+  $("#sideConnectorCount").textContent = sideConnectors.length;
+  $("#sideConnectorList").innerHTML = sideConnectors.map((source) => `
     <div class="side-connector">
-      <span class="${source.runtimeStatus === "connected" ? "is-on" : ""}"></span>
+      <span class="status-${escapeHtml(source.status || source.runtimeStatus)} ${["ready", "connected"].includes(source.status || source.runtimeStatus) ? "is-on" : ""}"></span>
       <div>
         <strong>${escapeHtml(source.name)}</strong>
-        <small>${escapeHtml(source.runtimeStatus || source.status)}</small>
+        <small>${escapeHtml(source.status || source.runtimeStatus || "setup")}</small>
       </div>
     </div>
   `).join("");

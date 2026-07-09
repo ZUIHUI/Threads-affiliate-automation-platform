@@ -506,11 +506,15 @@ async function main() {
   assert.equal(redirectLocation.searchParams.get("subid"), trackedPost.id);
   assert.equal(redirectLocation.searchParams.get("utm_term"), trackedPost.funnelRatio);
   assert.equal(dashboard.readiness.checks.some((check) => check.id === "worker"), true);
+  assert.equal(dashboard.readiness.connectorCenter.connectors.some((item) => item.id === "threads_api"), true);
+  assert.equal(dashboard.readiness.connectorCenter.connectors.some((item) => item.id === "affiliate_offer_feed"), true);
+  assert.equal(Number.isFinite(dashboard.readiness.connectorCenter.score), true);
   const readinessResponse = await fetch(`http://127.0.0.1:${address.port}/api/readiness`);
   const readinessPayload = await readinessResponse.json();
   assert.equal(readinessResponse.status, 200);
   assert.equal(readinessPayload.summary.mode, "blocked");
   assert.equal(readinessPayload.checks.some((check) => check.id === "database"), true);
+  assert.equal(readinessPayload.connectorCenter.connectors.some((item) => item.id === "conversion_webhook"), true);
   const conversionResponse = await fetch(`http://127.0.0.1:${address.port}/api/conversions`, {
     method: "POST",
     headers: { "content-type": "application/json" },

@@ -1556,6 +1556,16 @@ body {
   box-shadow: 0 0 0 4px rgba(84, 224, 178, 0.12);
 }
 
+.side-connector > span.status-warning,
+.side-connector > span.status-backoff {
+  background: #e9b44c;
+}
+
+.side-connector > span.status-blocked,
+.side-connector > span.status-error {
+  background: #f26a5b;
+}
+
 .side-connector strong,
 .side-connector small {
   display: block;
@@ -1709,6 +1719,164 @@ body {
 .readiness-summary strong {
   font-size: 22px;
   line-height: 1.15;
+}
+
+.connector-center {
+  display: grid;
+  gap: 12px;
+  padding: 14px 18px 0;
+}
+
+.connector-center-head {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.85fr) minmax(260px, 1.2fr) minmax(240px, 0.9fr);
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid rgba(11, 143, 115, 0.18);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(11, 143, 115, 0.08), rgba(45, 111, 255, 0.06));
+}
+
+.connector-center-head span,
+.connector-center-head small,
+.connector-card p,
+.connector-card footer,
+.connector-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.connector-center-head span {
+  display: block;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.connector-center-head strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 24px;
+}
+
+.connector-center-head p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.connector-center-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.connector-card {
+  min-width: 0;
+  display: grid;
+  gap: 9px;
+  align-content: start;
+  min-height: 190px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--blue);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.connector-card header,
+.connector-card footer,
+.connector-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.connector-card header span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(45, 111, 255, 0.1);
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.connector-card header small,
+.connector-card footer b {
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.connector-card strong {
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.connector-card p {
+  min-height: 48px;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.connector-meta {
+  align-items: flex-start;
+  padding-top: 2px;
+}
+
+.connector-meta > span {
+  max-width: 44%;
+  overflow-wrap: anywhere;
+}
+
+.connector-meta small {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.connector-meta code {
+  padding: 3px 5px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f2f6f4;
+  color: var(--ink);
+  font-size: 10px;
+}
+
+.connector-card.status-ready {
+  border-left-color: var(--green);
+}
+
+.connector-card.status-ready header span {
+  background: rgba(11, 143, 115, 0.11);
+  color: var(--green-dark);
+}
+
+.connector-card.status-warning,
+.connector-card.status-backoff {
+  border-left-color: var(--amber);
+}
+
+.connector-card.status-warning header span,
+.connector-card.status-backoff header span {
+  background: rgba(201, 139, 33, 0.12);
+  color: #8b5d0b;
+}
+
+.connector-card.status-blocked,
+.connector-card.status-error {
+  border-left-color: var(--danger);
+}
+
+.connector-card.status-blocked header span,
+.connector-card.status-error header span {
+  background: rgba(183, 53, 53, 0.1);
+  color: var(--danger);
 }
 
 .readiness-checks {
@@ -3047,6 +3215,7 @@ body {
 
   .command-strip,
   .readiness-summary,
+  .connector-center-grid,
   .worker-health-grid,
   .pipeline-summary,
   .pipeline-steps,
@@ -3059,6 +3228,10 @@ body {
   }
 
   .readiness-checks {
+    grid-template-columns: 1fr;
+  }
+
+  .connector-center-head {
     grid-template-columns: 1fr;
   }
 
@@ -3125,6 +3298,7 @@ body {
   .mini-kpi-grid,
   .command-strip,
   .readiness-summary,
+  .connector-center-grid,
   .action-summary,
   .decision-grid,
   .worker-health-grid,
@@ -3153,6 +3327,10 @@ body {
   }
 
   .readiness-check {
+    grid-template-columns: 1fr;
+  }
+
+  .connector-center-head {
     grid-template-columns: 1fr;
   }
 
