@@ -24,6 +24,8 @@ const requiredHtml = [
   'id="promptTemplate"',
   'id="profitModels"',
   'id="profitScripts"',
+  'id="profitSourceStatuses"',
+  'id="profitSignals"',
   "內容工廠",
   "合規 / 風險審核",
   "聯盟收益管道",
@@ -40,6 +42,8 @@ const requiredJs = [
   "/api/automation/run",
   "/api/profit-engine/run",
   "/api/posts/",
+  "sourceStatuses",
+  "externalSignals",
   "已產生 5 則草稿"
 ];
 
@@ -51,6 +55,8 @@ const requiredCss = [
   ".ops-grid",
   ".profit-engine-panel",
   ".profit-layout",
+  ".intel-strip",
+  ".signal-row",
   ".content-factory",
   ".risk-panel",
   ".revenue-panel",

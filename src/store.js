@@ -197,7 +197,10 @@ function defaultState() {
       runs: [],
       modelScores: [],
       adInsights: [],
-      generatedScripts: []
+      generatedScripts: [],
+      externalSignals: [],
+      sourceStatuses: [],
+      lastIngestAt: null
     },
     version: 1
   };

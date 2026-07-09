@@ -8,6 +8,14 @@ function asNumber(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function asList(value, fallback = []) {
+  if (value == null || value === "") return fallback;
+  return String(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function getRuntimeConfig(env) {
   return {
     port: asNumber(env.PORT, 4173),
@@ -29,6 +37,17 @@ function getRuntimeConfig(env) {
     autonomyMode: asBoolean(env.AUTONOMY_MODE, false),
     autonomyIntervalMs: Math.max(15 * 60_000, asNumber(env.AUTONOMY_INTERVAL_MS, 6 * 60 * 60_000)),
     autonomyMaxScriptsPerRun: Math.max(1, Math.min(asNumber(env.AUTONOMY_MAX_SCRIPTS_PER_RUN, 3), 5)),
+    adIntelligenceFeedUrls: asList(env.AD_INTELLIGENCE_FEED_URLS),
+    affiliateOfferFeedUrls: asList(env.AFFILIATE_OFFER_FEED_URLS),
+    adIntelligenceMaxItems: Math.max(1, Math.min(asNumber(env.AD_INTELLIGENCE_MAX_ITEMS, 24), 100)),
+    adIntelligenceTimeoutMs: Math.max(1000, asNumber(env.AD_INTELLIGENCE_TIMEOUT_MS, 8000)),
+    metaGraphBase: env.META_GRAPH_BASE || "https://graph.facebook.com/v25.0",
+    metaAdLibraryAccessToken: env.META_AD_LIBRARY_ACCESS_TOKEN || "",
+    metaAdLibraryQuery: env.META_AD_LIBRARY_QUERY || "",
+    metaAdLibraryCountries: asList(env.META_AD_LIBRARY_COUNTRIES, ["US"]),
+    metaAdLibraryAdType: env.META_AD_LIBRARY_AD_TYPE || "ALL",
+    metaAdLibraryFields: env.META_AD_LIBRARY_FIELDS || "",
+    metaAdLibraryLimit: Math.max(1, Math.min(asNumber(env.META_AD_LIBRARY_LIMIT, 10), 50)),
     defaultDisclosureText: env.DEFAULT_DISCLOSURE_TEXT || "含聯盟連結",
     defaultUtmSource: env.DEFAULT_UTM_SOURCE || "threads",
     defaultUtmMedium: env.DEFAULT_UTM_MEDIUM || "affiliate_social"

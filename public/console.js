@@ -88,9 +88,9 @@ function renderProfitEngine(data) {
   const engine = data.profitEngine || {};
   $("#connectorList").innerHTML = (engine.sources || []).map((source) => `
     <article class="connector-item">
-      <span>${escapeHtml(source.status)}</span>
+      <span>${escapeHtml(source.runtimeStatus || source.status)}</span>
       <strong>${escapeHtml(source.name)}</strong>
-      <p>${escapeHtml(source.role)}</p>
+      <p>${escapeHtml(source.message || source.role)}</p>
     </article>
   `).join("");
 
@@ -114,6 +114,30 @@ function renderProfitEngine(data) {
       </article>
     `;
   }).join("") || `<div class="empty-state">尚未產生自主腳本</div>`;
+
+  $("#profitSourceStatuses").innerHTML = (engine.sourceStatuses || []).map((source) => `
+    <article class="intel-row">
+      <span class="badge ${source.status === "connected" ? "good" : source.status === "error" ? "bad" : "warn"}">
+        ${escapeHtml(source.status)}
+      </span>
+      <div>
+        <strong>${escapeHtml(source.name || source.id)}</strong>
+        <p>${escapeHtml(source.message || "")}</p>
+      </div>
+      <small>${Number(source.count || 0).toLocaleString()}</small>
+    </article>
+  `).join("") || `<div class="empty-state">No live source check yet</div>`;
+
+  $("#profitSignals").innerHTML = (engine.externalSignals || []).map((signal) => `
+    <article class="signal-row">
+      <span>${escapeHtml(signal.kind || "signal")}</span>
+      <div>
+        <strong>${escapeHtml(signal.title || signal.productName || signal.source)}</strong>
+        <p>${escapeHtml(signal.angle || signal.offer || "")}</p>
+        ${signal.adSnapshotUrl ? `<a href="${escapeHtml(signal.adSnapshotUrl)}" target="_blank" rel="noreferrer">snapshot</a>` : ""}
+      </div>
+    </article>
+  `).join("") || `<div class="empty-state">No external ad or offer signals yet</div>`;
 
   $("#profitGuardrails").innerHTML = (engine.guardrails || []).map((item) => `
     <span>${escapeHtml(item)}</span>

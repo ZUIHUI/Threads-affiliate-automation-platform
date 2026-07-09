@@ -8,6 +8,7 @@ const { createStore } = require("../src/store");
 const { extractUniqueUrls, validatePost } = require("../src/validators");
 const { generateDrafts, generateDraftsAsync, runAutomation } = require("../src/automation");
 const { runProfitEngine } = require("../src/profitEngine");
+const { buildMetaAdLibraryUrl, collectAdIntelligence } = require("../src/adIntelligenceClient");
 const { generateOpenAIDrafts, normalizeDrafts } = require("../src/openaiClient");
 const { createTextContainer, publishContainer, getPublishingLimit } = require("../src/threadsClient");
 
@@ -43,6 +44,75 @@ async function main() {
   assert.equal(generated.created.length, 5);
   assert.equal(generated.created[0].contentType, "教學型");
 
+  const intelligenceConfig = getRuntimeConfig({
+    PUBLIC_BASE_URL: "http://localhost:4173",
+    THREADS_DRY_RUN: "true",
+    AD_INTELLIGENCE_FEED_URLS: "https://feeds.test/ads.json",
+    AFFILIATE_OFFER_FEED_URLS: "https://feeds.test/offers.json",
+    META_GRAPH_BASE: "https://graph.facebook.test/v25.0",
+    META_AD_LIBRARY_ACCESS_TOKEN: "meta-secret",
+    META_AD_LIBRARY_QUERY: "ai automation",
+    META_AD_LIBRARY_COUNTRIES: "US,TW"
+  });
+  const metaUrl = buildMetaAdLibraryUrl(intelligenceConfig);
+  assert.equal(metaUrl.pathname, "/v25.0/ads_archive");
+  assert.equal(metaUrl.searchParams.get("search_terms"), "ai automation");
+  assert.equal(JSON.parse(metaUrl.searchParams.get("ad_reached_countries"))[1], "TW");
+
+  const requested = [];
+  const intelligence = await collectAdIntelligence(intelligenceConfig, {
+    fetchImpl: async (url) => {
+      requested.push(String(url));
+      if (String(url).includes("ads_archive")) {
+        return {
+          ok: true,
+          async json() {
+            return {
+              data: [{
+                id: "ad_123",
+                page_name: "Automation Lab",
+                ad_snapshot_url: "https://www.facebook.com/ads/archive/render_ad/?id=123&access_token=meta-secret",
+                ad_creative_bodies: ["Compare tools before buying."]
+              }]
+            };
+          }
+        };
+      }
+      if (String(url).includes("offers")) {
+        return {
+          ok: true,
+          async json() {
+            return {
+              offers: [{
+                name: "Automation Toolkit",
+                offer: "CPA payout for workflow builders",
+                commissionValue: 25,
+                landingUrl: "https://offer.example/toolkit?api_key=secret"
+              }]
+            };
+          }
+        };
+      }
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [{
+              title: "AI workflow hook",
+              angle: "Turn a messy process into a checklist.",
+              landingUrl: "https://ads.example/hook"
+            }]
+          };
+        }
+      };
+    }
+  });
+  assert.equal(requested.length, 3);
+  assert.equal(intelligence.items.length, 3);
+  assert.equal(intelligence.sourceStatuses.filter((source) => source.status === "connected").length, 3);
+  assert.equal(intelligence.items.some((item) => item.kind === "offer" && item.commissionValue === 25), true);
+  assert.equal(intelligence.items.some((item) => String(item.adSnapshotUrl).includes("access_token")), false);
+
   const result = await runAutomation(store, config, { source: "test" });
   assert.equal(result.run.status, "completed");
   assert.equal(result.run.simulated > 0, true);
@@ -57,6 +127,20 @@ async function main() {
   assert.equal(profitResult.skipped, false);
   assert.equal(profitResult.createdPosts.length > 0, true);
   assert.equal(store.read().profitEngine.runs.length > 0, true);
+
+  const signalStore = createStore(path.join(tempDir, "signal-store.json"));
+  const signalResult = signalStore.update((state) => runProfitEngine(state, intelligenceConfig, {
+    source: "test",
+    force: true,
+    createPosts: false,
+    intelligence
+  }));
+  const signalState = signalStore.read();
+  assert.equal(signalResult.skipped, false);
+  assert.equal(signalResult.run.ingestedSignalCount, 3);
+  assert.equal(signalState.profitEngine.externalSignals.length, 3);
+  assert.equal(signalState.profitEngine.sourceStatuses[0].status, "connected");
+  assert.equal(signalResult.scripts.some((script) => script.post.includes("這輪參考")), true);
 
   const normalized = normalizeDrafts({
     drafts: Array.from({ length: 5 }, (_, index) => ({
@@ -194,6 +278,8 @@ async function main() {
   });
   const profitPayload = await profitResponse.json();
   assert.equal(profitPayload.result.skipped, false);
+  assert.equal(profitPayload.result.run.ingestedSignalCount, 0);
+  assert.equal(profitPayload.dashboard.profitEngine.sourceStatuses.length > 0, true);
   assert.equal(profitPayload.dashboard.profitEngine.generatedScripts.length > 0, true);
   await new Promise((resolve, reject) => {
     server.close((error) => error ? reject(error) : resolve());

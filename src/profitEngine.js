@@ -56,6 +56,13 @@ const AD_SOURCES = [
     status: "manual_or_api"
   },
   {
+    id: "custom_ad_feed",
+    name: "Custom Ad Feed",
+    role: "接入自有 JSON 廣告情報、競品 hook 與 CTA",
+    input: "AD_INTELLIGENCE_FEED_URLS",
+    status: "api_ready"
+  },
+  {
     id: "google_ads_transparency",
     name: "Google Ads Transparency Center",
     role: "觀察搜尋與 YouTube 廣告主張",
@@ -63,10 +70,10 @@ const AD_SOURCES = [
     status: "manual_or_api"
   },
   {
-    id: "affiliate_network",
-    name: "Affiliate Network EPC",
+    id: "affiliate_offer_feed",
+    name: "Affiliate Offer Feed",
     role: "篩選佣金、轉換率、退訂風險",
-    input: "program feed / CSV / API",
+    input: "AFFILIATE_OFFER_FEED_URLS",
     status: "api_ready"
   },
   {
@@ -109,17 +116,52 @@ function ensureProfitState(state) {
       runs: [],
       modelScores: [],
       adInsights: [],
-      generatedScripts: []
+      generatedScripts: [],
+      externalSignals: [],
+      sourceStatuses: [],
+      lastIngestAt: null
     };
   }
   if (!Array.isArray(state.profitEngine.runs)) state.profitEngine.runs = [];
   if (!Array.isArray(state.profitEngine.modelScores)) state.profitEngine.modelScores = [];
   if (!Array.isArray(state.profitEngine.adInsights)) state.profitEngine.adInsights = [];
   if (!Array.isArray(state.profitEngine.generatedScripts)) state.profitEngine.generatedScripts = [];
+  if (!Array.isArray(state.profitEngine.externalSignals)) state.profitEngine.externalSignals = [];
+  if (!Array.isArray(state.profitEngine.sourceStatuses)) state.profitEngine.sourceStatuses = [];
   return state.profitEngine;
 }
 
-function scoreProfitModel(model, state) {
+const MODEL_SIGNAL_KEYWORDS = {
+  model_trust_stack: ["tool", "workflow", "automation", "ai", "sop", "tutorial", "stack", "工具", "自動化"],
+  model_lead_magnet: ["template", "checklist", "free", "download", "email", "newsletter", "模板", "清單"],
+  model_comparison: ["compare", "comparison", "vs", "alternative", "pricing", "review", "比較", "替代"],
+  model_micro_offer: ["bundle", "mini", "low-ticket", "course", "pack", "template", "小額", "課程"]
+};
+
+function signalText(signal) {
+  return [
+    signal.title,
+    signal.pageName,
+    signal.angle,
+    signal.offer,
+    signal.productName,
+    signal.cta,
+    signal.source
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function signalMatchCount(model, signals) {
+  const keywords = MODEL_SIGNAL_KEYWORDS[model.id] || [];
+  let count = 0;
+  for (const signal of signals) {
+    const text = signalText(signal);
+    if (keywords.some((keyword) => text.includes(keyword.toLowerCase()))) count += 1;
+    if (signal.kind === "offer" && Number(signal.commissionValue || 0) > 0) count += 1;
+  }
+  return count;
+}
+
+function scoreProfitModel(model, state, signals = []) {
   const campaigns = state.campaigns || [];
   const products = state.products || [];
   const links = state.affiliateLinks || [];
@@ -132,9 +174,10 @@ function scoreProfitModel(model, state) {
   const signalBonus = Math.min(10, Math.round(clickCount / 30) + conversionCount);
   const revenueBonus = revenue > 0 ? 4 : 0;
   const fatiguePenalty = Math.min(8, posts.filter((post) => post.funnelRatio === model.id).length);
+  const marketSignalBonus = Math.min(12, signalMatchCount(model, signals) * 3);
 
   return Math.max(0, Math.min(100,
-    model.baseScore + activeCampaignBonus + productBonus + signalBonus + revenueBonus - fatiguePenalty
+    model.baseScore + activeCampaignBonus + productBonus + signalBonus + revenueBonus + marketSignalBonus - fatiguePenalty
   ));
 }
 
@@ -179,24 +222,79 @@ function ensureAffiliateLink(state, campaign, product, config) {
   return link;
 }
 
-function buildNaturalScripts(model, campaign, product, link, config, count) {
+function mergeExternalSignals(existing, incoming, limit = 24) {
+  const seen = new Set();
+  const merged = [];
+  for (const signal of [...incoming, ...existing]) {
+    const key = signal.id || `${signal.source}:${signal.title}:${signal.angle}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(signal);
+    if (merged.length >= limit) break;
+  }
+  return merged;
+}
+
+function updateIngestState(engine, intelligence) {
+  if (!intelligence) return engine.externalSignals || [];
+  const incoming = Array.isArray(intelligence.items) ? intelligence.items : [];
+  engine.externalSignals = mergeExternalSignals(engine.externalSignals || [], incoming);
+  engine.sourceStatuses = Array.isArray(intelligence.sourceStatuses) ? intelligence.sourceStatuses : [];
+  engine.lastIngestAt = intelligence.collectedAt || nowIso();
+  return engine.externalSignals;
+}
+
+function pickSignalForModel(model, signals) {
+  if (!signals.length) return null;
+  const keywords = MODEL_SIGNAL_KEYWORDS[model.id] || [];
+  return signals.find((signal) => {
+    const text = signalText(signal);
+    return keywords.some((keyword) => text.includes(keyword.toLowerCase()));
+  }) || signals[0];
+}
+
+function signalSummary(signal) {
+  if (!signal) {
+    return {
+      source: "built-in playbook",
+      angle: "",
+      offer: "",
+      title: ""
+    };
+  }
+  return {
+    source: signal.source || "external signal",
+    angle: signal.angle || "",
+    offer: signal.offer || "",
+    title: signal.title || signal.productName || ""
+  };
+}
+
+function buildNaturalScripts(model, campaign, product, link, config, count, signal) {
   const cta = trackingUrl(config, link.slug);
   const disclosure = config.defaultDisclosureText;
+  const market = signalSummary(signal);
+  const observedAngle = market.angle || model.adAngle;
+  const observedOffer = market.offer || product.offer;
+  const observedTitle = market.title ? `「${market.title}」` : "這類工具";
+  const sourceLine = signal
+    ? `這輪參考 ${market.source} 看到的角度，但不照抄原廣告。`
+    : "這輪先使用內建獲利 playbook，等外部 feed 接上後會自動改用市場訊號。";
   const scripts = [
     {
       type: "pain_point",
       hook: `很多人做 ${campaign.name} 會先卡在工具太多，不知道從哪個開始。`,
-      post: `${disclosure}：很多人做 ${campaign.name} 會先卡在工具太多，不知道從哪個開始。\n\n我會先看一個小問題：這個工具能不能讓你今天少做一個重複步驟。\n\n${product.name} 的價值是「${product.offer}」。先用小任務驗證，不要一開始就把整套流程買滿。\n\n延伸資源：${cta}\n\n你現在最想自動化的是內容、名單，還是成交追蹤？`
+      post: `${disclosure}：很多人做 ${campaign.name} 會先卡在工具太多，不知道從哪個開始。\n\n${sourceLine}\n\n我會先看一個小問題：這個工具能不能讓你今天少做一個重複步驟。\n\n${product.name} 的價值是「${observedOffer}」。先用小任務驗證，不要一開始就把整套流程買滿。\n\n延伸資源：${cta}\n\n你現在最想自動化的是內容、名單，還是成交追蹤？`
     },
     {
       type: "decision_filter",
       hook: `我不會用「最強工具」當推薦標準，因為那通常太空泛。`,
-      post: `${disclosure}：我不會用「最強工具」當推薦標準，因為那通常太空泛。\n\n比較實際的標準是：\n1. 能不能在 30 分鐘內跑出第一版\n2. 會不會降低手動整理時間\n3. 後面能不能接到追蹤連結和名單\n\n${product.name} 比較適合想先驗證 ${campaign.niche} 的人。連結：${cta}\n\n你選工具時最在意價格、上手速度，還是可串接性？`
+      post: `${disclosure}：我不會用「最強工具」當推薦標準，因為那通常太空泛。\n\n看到 ${observedTitle} 這種 offer，我會先用三個條件過濾：\n1. 能不能在 30 分鐘內跑出第一版\n2. 會不會降低手動整理時間\n3. 後面能不能接到追蹤連結和名單\n\n${product.name} 比較適合想先驗證 ${campaign.niche} 的人。連結：${cta}\n\n你選工具時最在意價格、上手速度，還是可串接性？`
     },
     {
       type: "ad_angle",
       hook: `我會把廣告裡很浮誇的承諾，改寫成可以自己驗證的小實驗。`,
-      post: `${disclosure}：我會把廣告裡很浮誇的承諾，改寫成可以自己驗證的小實驗。\n\n這輪測的是「${model.adAngle}」。先不承諾收益，只看它能不能讓流程更短、資料更清楚。\n\n工具入口：${cta}\n\n如果你要我拆一個完整測試流程，你想看 Threads 發文、聯盟追蹤，還是自動回報？`
+      post: `${disclosure}：我會把廣告裡很浮誇的承諾，改寫成可以自己驗證的小實驗。\n\n這輪測的是「${observedAngle}」。先不承諾收益，只看它能不能讓流程更短、資料更清楚。\n\n工具入口：${cta}\n\n如果你要我拆一個完整測試流程，你想看 Threads 發文、聯盟追蹤，還是自動回報？`
     }
   ];
   return scripts.slice(0, count);
@@ -241,6 +339,7 @@ function shouldSkipRun(engine, config, force) {
 
 function runProfitEngine(state, config, options = {}) {
   const engine = ensureProfitState(state);
+  const signals = updateIngestState(engine, options.intelligence);
   if (shouldSkipRun(engine, config, options.force)) {
     return {
       skipped: true,
@@ -250,17 +349,21 @@ function runProfitEngine(state, config, options = {}) {
   }
 
   const scores = PROFIT_MODELS
-    .map((model) => ({
-      ...model,
-      score: scoreProfitModel(model, state),
-      recommendation: model.baseScore >= 78 ? "primary" : "watch"
-    }))
+    .map((model) => {
+      const score = scoreProfitModel(model, state, signals);
+      return {
+        ...model,
+        score,
+        recommendation: score >= 82 ? "primary" : "watch"
+      };
+    })
     .sort((a, b) => b.score - a.score);
   const selected = scores[0];
   const { campaign, product } = pickActiveContext(state);
   const link = ensureAffiliateLink(state, campaign, product, config);
   const count = Math.max(1, Math.min(Number(config.autonomyMaxScriptsPerRun || 3), 5));
-  const scripts = buildNaturalScripts(selected, campaign, product, link, config, count);
+  const selectedSignal = pickSignalForModel(selected, signals);
+  const scripts = buildNaturalScripts(selected, campaign, product, link, config, count, selectedSignal);
   const createdPosts = options.createPosts === false
     ? []
     : createAutonomousPosts(state, config, selected, campaign, product, link, scripts, options.autoApprove !== false);
@@ -268,9 +371,13 @@ function runProfitEngine(state, config, options = {}) {
   const insight = {
     id: makeId("ad"),
     modelId: selected.id,
-    source: selected.sourceHints[0],
-    angle: selected.adAngle,
+    source: selectedSignal?.source || selected.sourceHints[0],
+    sourceSignalId: selectedSignal?.id || "",
+    sourceStatus: selectedSignal ? "external" : "built_in",
+    angle: selectedSignal?.angle || selected.adAngle,
     naturalRewrite: "把廣告承諾改成可驗證的小實驗，避免保證收益。",
+    snapshotUrl: selectedSignal?.adSnapshotUrl || "",
+    landingUrl: selectedSignal?.landingUrl || "",
     targetCampaignId: campaign.id,
     targetProductId: product.id,
     createdAt: nowIso()
@@ -283,6 +390,8 @@ function runProfitEngine(state, config, options = {}) {
     score: selected.score,
     createdPostIds: createdPosts.map((post) => post.id),
     createdInsightId: insight.id,
+    ingestedSignalCount: options.intelligence?.items?.length || 0,
+    sourceStatuses: engine.sourceStatuses,
     status: "completed",
     createdAt: nowIso()
   };
@@ -316,26 +425,44 @@ function runProfitEngine(state, config, options = {}) {
     run,
     createdPosts,
     scripts,
+    intelligence: options.intelligence || null,
     profitEngine: buildProfitDashboard(state, config)
   };
 }
 
 function buildProfitDashboard(state, config) {
   const engine = ensureProfitState(state);
+  const signals = engine.externalSignals || [];
   const scores = engine.modelScores.length
     ? engine.modelScores
-    : PROFIT_MODELS.map((model) => ({ ...model, score: scoreProfitModel(model, state) }))
+    : PROFIT_MODELS.map((model) => {
+      const score = scoreProfitModel(model, state, signals);
+      return { ...model, score, recommendation: score >= 82 ? "primary" : "watch" };
+    })
       .sort((a, b) => b.score - a.score);
   const scheduledAutonomyPosts = (state.posts || []).filter((post) =>
     post.contentType === "自然推薦腳本" && ["draft", "scheduled"].includes(post.status)
   ).length;
+  const statusById = new Map((engine.sourceStatuses || []).map((status) => [status.id, status]));
+  const sources = AD_SOURCES.map((source) => {
+    const status = statusById.get(source.id);
+    return {
+      ...source,
+      runtimeStatus: status?.status || source.status,
+      message: status?.message || "",
+      count: status?.count || 0
+    };
+  });
 
   return {
     autonomyEnabled: Boolean(config.autonomyMode),
     objective: engine.objective,
     lastRunAt: engine.lastRunAt,
+    lastIngestAt: engine.lastIngestAt,
     nextRunHint: config.autonomyMode ? `${Math.round((config.autonomyIntervalMs || 0) / 60000)} 分鐘循環` : "手動",
-    sources: AD_SOURCES,
+    sources,
+    sourceStatuses: engine.sourceStatuses || [],
+    externalSignals: signals.slice(0, 8),
     models: scores.slice(0, 4),
     adInsights: engine.adInsights.slice(0, 6),
     generatedScripts: engine.generatedScripts.slice(0, 4),

@@ -36,6 +36,7 @@ Scores use:
 - Existing active campaign and product availability.
 - Current click, conversion, and revenue signals.
 - Content fatigue from repeated use of the same model.
+- Live ad and offer signals from configured feeds or Meta Ad Library.
 - A fixed base score derived from operating complexity and monetization fit.
 
 ## Ad Intelligence Inputs
@@ -47,8 +48,17 @@ The dashboard tracks four source classes:
 - Affiliate network EPC: rank offers by commission and conversion quality.
 - Landing page scan: extract product offer, price, proof, and risk language.
 
-The first implementation stores ad insights locally and uses deterministic scoring.
-External APIs can be attached later without changing the dashboard contract.
+The current implementation supports live ingestion through:
+
+- `AD_INTELLIGENCE_FEED_URLS`: comma-separated JSON ad signal endpoints.
+- `AFFILIATE_OFFER_FEED_URLS`: comma-separated JSON offer/program endpoints.
+- `META_AD_LIBRARY_ACCESS_TOKEN` plus `META_AD_LIBRARY_QUERY`: Meta Ad Library
+  API search using the official `ads_archive` endpoint.
+
+Each run stores normalized `externalSignals`, `sourceStatuses`, `lastIngestAt`,
+and the selected `adInsights` in the dashboard state. Secrets are read only from
+environment variables; access tokens and common API-key query params are stripped
+from URLs before they are shown in the admin UI.
 
 ## Compliance Rules
 
@@ -61,6 +71,8 @@ Sources:
 
 - https://www.ftc.gov/business-guidance/resources/disclosures-101-social-media-influencers
 - https://www.ftc.gov/business-guidance/advertising-marketing/endorsements-influencers-reviews
+- https://developers.facebook.com/docs/graph-api/reference/ads_archive/
+- https://developers.facebook.com/docs/threads/threads-api/guides/content-publishing/
 
 ## Runtime
 
@@ -71,6 +83,10 @@ AUTONOMY_MODE=true
 AUTONOMY_INTERVAL_MS=21600000
 AUTONOMY_MAX_SCRIPTS_PER_RUN=3
 THREADS_DRY_RUN=true
+AD_INTELLIGENCE_FEED_URLS=https://example.com/ad-signals.json
+AFFILIATE_OFFER_FEED_URLS=https://example.com/offers.json
+META_AD_LIBRARY_QUERY=ai automation
+META_AD_LIBRARY_ACCESS_TOKEN=...
 ```
 
 `THREADS_DRY_RUN=true` keeps the engine self-running without making live Threads

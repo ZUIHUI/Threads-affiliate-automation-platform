@@ -869,6 +869,80 @@ body {
   overflow: hidden;
 }
 
+.intel-strip {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.95fr) minmax(320px, 1.25fr);
+  gap: 14px;
+  margin: 14px 18px 0;
+}
+
+.intel-strip > div {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.intel-strip > div > strong {
+  font-size: 13px;
+}
+
+#profitSourceStatuses,
+#profitSignals {
+  display: grid;
+  gap: 8px;
+}
+
+.intel-row,
+.signal-row {
+  display: grid;
+  align-items: start;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 10px;
+}
+
+.intel-row {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.signal-row {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.signal-row > span {
+  width: fit-content;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #edf1ff;
+  color: var(--indigo);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.intel-row p,
+.signal-row p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.intel-row small {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.signal-row a {
+  display: inline-block;
+  margin-top: 6px;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .empty-state {
   border: 1px dashed var(--line);
   border-radius: 8px;
@@ -1252,6 +1326,10 @@ body {
   }
 
   .profit-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .intel-strip {
     grid-template-columns: 1fr;
   }
 

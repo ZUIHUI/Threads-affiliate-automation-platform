@@ -40,6 +40,8 @@ AUTOMATION_INTERVAL_MS=60000
 AUTONOMY_MODE=true
 AUTONOMY_INTERVAL_MS=21600000
 AUTONOMY_MAX_SCRIPTS_PER_RUN=3
+AD_INTELLIGENCE_MAX_ITEMS=24
+AD_INTELLIGENCE_TIMEOUT_MS=8000
 DEFAULT_DISCLOSURE_TEXT=含聯盟連結
 AI_DRAFT_PROVIDER=openai
 ```
@@ -54,6 +56,25 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 ```
 
 For offline demos, set `AI_DRAFT_PROVIDER=template`.
+
+Ad and offer intelligence:
+
+```env
+AD_INTELLIGENCE_FEED_URLS=https://example.com/ad-signals.json
+AFFILIATE_OFFER_FEED_URLS=https://example.com/offers.json
+META_GRAPH_BASE=https://graph.facebook.com/v25.0
+META_AD_LIBRARY_ACCESS_TOKEN=your_meta_access_token
+META_AD_LIBRARY_QUERY=ai automation
+META_AD_LIBRARY_COUNTRIES=US,TW
+META_AD_LIBRARY_AD_TYPE=ALL
+META_AD_LIBRARY_LIMIT=10
+```
+
+`AD_INTELLIGENCE_FEED_URLS` and `AFFILIATE_OFFER_FEED_URLS` accept
+comma-separated JSON endpoints. Each endpoint can return an array or an object
+with `items`, `offers`, `ads`, `data`, or `results`. The profit engine
+normalizes titles, hooks, landing URLs, offer text, commission values, and EPC
+style scores into `profitEngine.externalSignals`.
 
 ## Database
 
