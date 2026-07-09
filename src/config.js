@@ -32,6 +32,8 @@ function getRuntimeConfig(env) {
     adminSessionTtlMs: Math.max(30_000, asNumber(env.ADMIN_SESSION_TTL_MS, 24 * 60 * 60_000)),
     threadsDryRun: asBoolean(env.THREADS_DRY_RUN, true),
     threadsPublishDelayMs: Math.max(0, asNumber(env.THREADS_PUBLISH_DELAY_MS, 30_000)),
+    adminTokenRole: env.ADMIN_TOKEN_ROLE || "admin",
+    adminPasswordRole: env.ADMIN_PASSWORD_ROLE || env.ADMIN_TOKEN_ROLE || "admin",
     aiDraftProvider: env.AI_DRAFT_PROVIDER || "openai",
     profitScriptProvider: env.PROFIT_SCRIPT_PROVIDER || env.AI_DRAFT_PROVIDER || "openai",
     openaiBaseUrl: env.OPENAI_BASE_URL || "https://api.openai.com/v1",

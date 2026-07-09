@@ -1227,9 +1227,25 @@ function capacityRemaining(state) {
   return Math.max(0, max - recentlyPublished);
 }
 
+function buildLivePublishBlockers(config, readinessChecks) {
+  if (config.threadsDryRun) return [];
+  const blockerIds = [
+    "threads",
+    "public_base_url",
+    "database",
+    "offer_inventory",
+    "disclosure_guardrails"
+  ];
+  return (readinessChecks || [])
+    .filter((check) => blockerIds.includes(check.id))
+    .filter((check) => check.status === "blocked")
+    .map((check) => `${check.label}: ${check.action}`);
+}
+
 async function runAutomation(store, config, options = {}) {
   const startedAt = nowIso();
   const state = await store.read();
+  const ignoreReadiness = options.ignoreReadiness === true;
   const run = {
     id: makeId("run"),
     source: options.source || "manual",
@@ -1242,6 +1258,27 @@ async function runAutomation(store, config, options = {}) {
     failed: 0,
     messages: []
   };
+
+  if (!config.threadsDryRun && !ignoreReadiness) {
+    const readiness = buildAutonomyReadiness(state, config);
+    const blockers = buildLivePublishBlockers(config, readiness.checks);
+    if (blockers.length > 0) {
+      run.status = "blocked";
+      run.messages.push("Publishing is blocked by readiness checks before live execution.");
+      run.messages.push(...blockers.map((item) => `- ${item}`));
+      run.finishedAt = nowIso();
+      state.automationRuns.unshift(run);
+      state.events.unshift({
+        id: makeId("evt"),
+        type: "automation.run",
+        runId: run.id,
+        status: run.status,
+        createdAt: run.finishedAt
+      });
+      await store.write(state);
+      return { run, dashboard: buildDashboard(state, config) };
+    }
+  }
 
   const now = Date.now();
   let remaining = capacityRemaining(state);
