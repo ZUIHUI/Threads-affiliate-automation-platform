@@ -69,6 +69,8 @@ function defaultState() {
         targetPersona: "想用 AI 做副業、自動化、聯盟行銷的新手",
         dailyBudgetPosts: 3,
         disclosureRequired: true,
+        source: "demo",
+        isDemo: true,
         createdAt: now,
         updatedAt: now
       },
@@ -80,6 +82,8 @@ function defaultState() {
         targetPersona: "想穩定經營內容但不想每天手動發文的人",
         dailyBudgetPosts: 2,
         disclosureRequired: true,
+        source: "demo",
+        isDemo: true,
         createdAt: now,
         updatedAt: now
       }
@@ -96,6 +100,8 @@ function defaultState() {
         currency: "USD",
         landingUrl: "https://example.com/ai-affiliate-prompt-pack",
         status: "active",
+        source: "demo",
+        isDemo: true,
         createdAt: now,
         updatedAt: now
       },
@@ -110,6 +116,8 @@ function defaultState() {
         currency: "percent",
         landingUrl: "https://example.com/n8n-social-automation",
         status: "active",
+        source: "demo",
+        isDemo: true,
         createdAt: now,
         updatedAt: now
       }
@@ -126,6 +134,10 @@ function defaultState() {
         conversions: 9,
         revenue: 72,
         currency: "USD",
+        subIdParam: "subid",
+        appendUtm: true,
+        source: "demo",
+        isDemo: true,
         createdAt: now,
         updatedAt: now
       },
@@ -140,6 +152,10 @@ function defaultState() {
         conversions: 5,
         revenue: 43,
         currency: "USD",
+        subIdParam: "subid",
+        appendUtm: true,
+        source: "demo",
+        isDemo: true,
         createdAt: now,
         updatedAt: now
       }

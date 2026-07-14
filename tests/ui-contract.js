@@ -86,14 +86,16 @@ const requiredHtml = [
   'id="experimentCards"',
   'id="optimizationQueue"',
   'id="conversionEvents"',
+  'id="offerForm"',
+  'id="offerSaveBtn"',
   'id="sidebarToggle"',
   'id="sidebarBackdrop"',
   'class="nav-group-label"',
   "內容工廠",
   "合規 / 風險審核",
   "聯盟收益管道",
-  '<link rel="stylesheet" href="/styles.css?v=20260714-workspace-modes" />',
-  '<script src="/console.js?v=20260714-workspace-modes"></script>'
+  '<link rel="stylesheet" href="/styles.css?v=20260714-monetization" />',
+  '<script src="/console.js?v=20260714-monetization"></script>'
 ];
 
 for (const marker of requiredHtml) {
@@ -223,11 +225,19 @@ const requiredJs = [
   "WORKSPACE_MODE_KEY",
   "setupNavigation",
   "runButtonAction",
+  "/api/offers",
+  "submitOffer",
+  "formatRevenueTotals",
+  "尚未建立真實聯盟追蹤連結",
   "已產生 5 則待審核草稿"
 ];
 
 for (const marker of requiredJs) {
   assert.equal(js.includes(marker), true, `Missing JS marker: ${marker}`);
+}
+
+for (const marker of ["▲ 18.6%", "▲ 15.3%", "▲ 21.4%", "退款率", "clicks * 12 + 1540"]) {
+  assert.equal(js.includes(marker), false, `Synthetic revenue marker remains: ${marker}`);
 }
 
 const requiredCss = [
@@ -299,6 +309,7 @@ const requiredCss = [
   ".blocked-script-feed",
   ".blocked-script-row small",
   ".conversion-feed",
+  ".offer-form",
   ".content-factory",
   ".risk-panel",
   ".revenue-panel",

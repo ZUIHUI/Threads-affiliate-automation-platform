@@ -82,9 +82,18 @@ create table if not exists affiliate_links (
   utm_medium text not null default 'affiliate_social',
   utm_campaign text not null,
   utm_content text,
+  sub_id_param text not null default 'subid',
+  append_utm boolean not null default false,
+  source text not null default 'affiliate',
+  is_demo boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table if exists affiliate_links add column if not exists sub_id_param text not null default 'subid';
+alter table if exists affiliate_links add column if not exists append_utm boolean not null default false;
+alter table if exists affiliate_links add column if not exists source text not null default 'affiliate';
+alter table if exists affiliate_links add column if not exists is_demo boolean not null default false;
 
 create table if not exists posts (
   id uuid primary key default gen_random_uuid(),

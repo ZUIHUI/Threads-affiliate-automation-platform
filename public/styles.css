@@ -495,6 +495,10 @@ th:nth-child(5) {
   grid-column: span 4;
 }
 
+.compose-form label.span-2 {
+  grid-column: span 2;
+}
+
 .compose-form input,
 .compose-form select,
 .compose-form textarea {
@@ -528,6 +532,22 @@ th:nth-child(5) {
 
 .compose-submit {
   align-self: end;
+}
+
+.offer-form {
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-subhead {
+  padding: 18px 18px 0;
+}
+
+.settings-subhead h4 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
 .auth-gate {
@@ -3704,6 +3724,11 @@ body {
 
   .compose-form {
     grid-template-columns: 1fr;
+  }
+
+  .compose-form label.wide,
+  .compose-form label.span-2 {
+    grid-column: auto;
   }
 }
 

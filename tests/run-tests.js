@@ -14,6 +14,7 @@ const { buildMetaAdLibraryUrl, collectAdIntelligence } = require("../src/adIntel
 const { generateProfitScripts } = require("../src/profitScriptGenerator");
 const { generateOpenAIDrafts, normalizeDrafts } = require("../src/openaiClient");
 const { createTextContainer, publishContainer, getPublishingLimit } = require("../src/threadsClient");
+const { upsertRealOffer } = require("../src/offerManagement");
 
 async function main() {
   const config = getRuntimeConfig({
@@ -189,6 +190,15 @@ async function main() {
     CONVERSION_WEBHOOK_SECRET: "secret",
     DEFAULT_DISCLOSURE_TEXT: "含聯盟連結"
   });
+  store.update((state) => upsertRealOffer(state, {
+    campaignName: "Test monetizable campaign",
+    targetPersona: "Test operators",
+    productName: "Test affiliate offer",
+    offer: "Test recurring commission",
+    network: "ClickBank",
+    targetUrl: "https://hop.clickbank.net/?affiliate=tester&vendor=offer",
+    slug: "test-real-offer"
+  }, liveReadyConfig));
   const liveReadiness = buildAutonomyReadiness(store.read(), liveReadyConfig);
   assert.equal(liveReadiness.summary.mode, "live_ready");
   assert.equal(liveReadiness.summary.blocked, 0);

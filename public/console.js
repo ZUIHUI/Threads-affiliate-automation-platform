@@ -242,8 +242,24 @@ function formatDate(value) {
   }).format(date);
 }
 
-function formatMoney(value) {
-  return `$${Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+function formatMoney(value, currency = "USD") {
+  try {
+    return new Intl.NumberFormat("zh-TW", {
+      style: "currency",
+      currency: String(currency || "USD").toUpperCase(),
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2
+    }).format(Number(value || 0));
+  } catch {
+    return `${String(currency || "USD").toUpperCase()} ${Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+  }
+}
+
+function formatRevenueTotals(totals) {
+  const entries = Object.entries(totals || {}).filter(([, value]) => Number(value || 0) !== 0);
+  return entries.length
+    ? entries.map(([currency, value]) => formatMoney(value, currency)).join(" / ")
+    : formatMoney(0);
 }
 
 function showToast(message) {
@@ -2002,32 +2018,28 @@ function renderRisk(data) {
 function renderRevenue(data) {
   const clicks = data.metrics.clicks;
   const conversions = data.metrics.conversions;
-  const revenue = data.metrics.revenue;
+  const revenue = formatRevenueTotals(data.metrics.revenueByCurrency);
   const attribution = data.attribution || {};
   const attributionSummary = attribution.summary || {};
-  const exposure = clicks * 12 + 1540;
   const conversionRate = clicks ? ((conversions / clicks) * 100).toFixed(1) : "0.0";
-  const refundRate = "2.1%";
 
   $("#revenueCards").innerHTML = [
-    ["點擊數", clicks.toLocaleString(), "▲ 18.6%"],
-    ["轉換數", conversions.toLocaleString(), "▲ 15.3%"],
-    ["預估收益", formatMoney(revenue), "▲ 21.4%"],
-    ["退款率", refundRate, "▼ 0.6%"]
-  ].map(([label, value, delta]) => `
+    ["追蹤點擊", clicks.toLocaleString()],
+    ["已記錄轉換", conversions.toLocaleString()],
+    ["成交率", `${conversionRate}%`],
+    ["已記錄佣金", revenue]
+  ].map(([label, value]) => `
     <article class="revenue-card">
       <span>${escapeHtml(label)}</span>
       <strong>${escapeHtml(value)}</strong>
-      <small>${escapeHtml(delta)}</small>
     </article>
   `).join("");
 
   $("#revenueFunnel").innerHTML = [
-    ["曝光", exposure],
-    ["點擊", clicks],
-    ["加購", Math.max(conversions * 4, 1)],
-    ["轉換", conversions],
-    ["預估收益", formatMoney(revenue)]
+    ["追蹤點擊", clicks],
+    ["已記錄轉換", conversions],
+    ["成交率", `${conversionRate}%`],
+    ["已記錄佣金", revenue]
   ].map(([label, value]) => `
     <div class="funnel-step"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>
   `).join("");
@@ -2035,33 +2047,34 @@ function renderRevenue(data) {
   $("#attributionGrid").innerHTML = `
     <article class="attribution-card">
       <span>歸因收益</span>
-      <strong>${formatMoney(attributionSummary.attributedRevenue || 0)}</strong>
+      <strong>${formatRevenueTotals(attributionSummary.attributedRevenueByCurrency)}</strong>
       <small>${Number(attributionSummary.attributedConversions || 0)} 次轉換，${Number(attributionSummary.attributedClicks || 0)} 次點擊</small>
     </article>
     <article class="attribution-card">
       <span>最佳模型</span>
       <strong>${escapeHtml(attribution.topModels?.[0]?.modelId || "學習中")}</strong>
-      <small>${formatMoney(attribution.topModels?.[0]?.revenue || 0)} · ${Number(attribution.topModels?.[0]?.conversions || 0)} 次轉換</small>
+      <small>${formatRevenueTotals(attribution.topModels?.[0]?.revenueByCurrency)} · ${Number(attribution.topModels?.[0]?.conversions || 0)} 次轉換</small>
     </article>
     <article class="attribution-list">
       <strong>最佳歸因文案</strong>
       ${(attribution.topPosts || []).map((post) => `
         <div>
           <span>${escapeHtml(post.hook || post.postId)}</span>
-          <small>${escapeHtml(post.modelId || "手動")} · ${Number(post.clicks || 0)} 次點擊 · ${formatMoney(post.revenue || 0)}</small>
+          <small>${escapeHtml(post.modelId || "手動")} · ${Number(post.clicks || 0)} 次點擊 · ${formatRevenueTotals(post.revenueByCurrency)}</small>
         </div>
       `).join("") || `<p>尚無貼文層級歸因資料</p>`}
     </article>
   `;
 
-  $("#linkList").innerHTML = data.affiliateLinks.map((link) => `
+  const monetizableLinks = data.affiliateLinks.filter((link) => link.monetizable);
+  $("#linkList").innerHTML = monetizableLinks.map((link) => `
     <div class="link-row">
       <strong>${escapeHtml(link.slug)}</strong>
       <span>${Number(link.clicks || 0).toLocaleString()}</span>
       <span>${Number(link.conversions || 0).toLocaleString()}</span>
-      <span>${formatMoney(link.revenue)}</span>
+      <span>${formatMoney(link.revenue, link.currency)}</span>
     </div>
-  `).join("");
+  `).join("") || `<div class="empty-state">尚未建立真實聯盟追蹤連結</div>`;
 
   $("#conversionEvents").innerHTML = `
     <strong>最近轉換</strong>
@@ -2074,7 +2087,7 @@ function renderRevenue(data) {
             <strong>${escapeHtml(link ? link.slug : event.affiliateLinkId)}</strong>
             <p>${escapeHtml(event.networkEventId || event.id)} · ${formatDate(event.occurredAt)} · ${escapeHtml(event.postId || event.modelId || "未歸因")}</p>
           </div>
-          <small>${formatMoney(event.commissionValue)}</small>
+          <small>${formatMoney(event.commissionValue, event.currency)}</small>
         </article>
       `;
     }).join("") || `<div class="empty-state">尚無轉換 Webhook 事件</div>`}
@@ -2085,16 +2098,19 @@ function renderCampaigns(data) {
   $("#campaignList").innerHTML = data.campaigns.map((campaign) => {
     const products = data.products.filter((product) => product.campaignId === campaign.id);
     const posts = data.posts.filter((post) => post.campaignId === campaign.id);
+    const productIds = new Set(products.map((product) => product.id));
+    const verifiedLinks = data.affiliateLinks.filter((link) => productIds.has(link.productId) && link.monetizable);
     return `
       <article class="campaign-item">
         <header>
           <strong>${escapeHtml(campaign.name)}</strong>
-          <span class="badge good">${escapeHtml(operatingStatusLabel(campaign.status))}</span>
+          <span class="badge ${verifiedLinks.length ? "good" : "warn"}">${verifiedLinks.length ? "收益已連接" : "示範／未連接"}</span>
         </header>
         <div class="mini-metrics">
           <span>${escapeHtml(campaign.targetPersona)}</span>
           <span>${products.length} 個產品</span>
           <span>${posts.length} 則貼文</span>
+          <span>${verifiedLinks.length} 個真實追蹤連結</span>
         </div>
       </article>
     `;
@@ -2104,15 +2120,25 @@ function renderCampaigns(data) {
 function populateForm(data) {
   const campaignSelect = $("#campaignSelect");
   const productSelect = $("#productSelect");
-  const selectedCampaign = campaignSelect.value || data.campaigns[0]?.id;
-  campaignSelect.innerHTML = data.campaigns.map((campaign) => (
+  const monetizableProductIds = new Set(data.affiliateLinks
+    .filter((link) => link.monetizable)
+    .map((link) => link.productId));
+  const eligibleProducts = data.products.filter((product) => monetizableProductIds.has(product.id));
+  const eligibleCampaignIds = new Set(eligibleProducts.map((product) => product.campaignId));
+  const eligibleCampaigns = data.campaigns.filter((campaign) => eligibleCampaignIds.has(campaign.id));
+  const selectedCampaign = campaignSelect.value || eligibleCampaigns[0]?.id;
+  campaignSelect.innerHTML = eligibleCampaigns.map((campaign) => (
     `<option value="${campaign.id}" ${campaign.id === selectedCampaign ? "selected" : ""}>${escapeHtml(campaign.name)}</option>`
-  )).join("");
+  )).join("") || `<option value="">請先建立真實聯盟優惠</option>`;
 
-  const products = data.products.filter((product) => product.campaignId === campaignSelect.value);
+  const products = eligibleProducts.filter((product) => product.campaignId === campaignSelect.value);
   productSelect.innerHTML = products.map((product) => (
     `<option value="${product.id}">${escapeHtml(product.name)}</option>`
-  )).join("");
+  )).join("") || `<option value="">沒有可發佈的產品</option>`;
+  const canCreateContent = eligibleCampaigns.length > 0 && eligibleProducts.length > 0;
+  [$("#generateBtn"), $("#topicGenerateBtn"), $("#composeForm button[type='submit']")].forEach((button) => {
+    if (button) button.disabled = !canCreateContent;
+  });
 
   if (!$("#scheduledAt").value) {
     const date = new Date(Date.now() + 30 * 60 * 1000);
@@ -2279,6 +2305,38 @@ async function submitCompose(event) {
   showToast("貼文已建立");
 }
 
+async function submitOffer(event) {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const button = $("#offerSaveBtn");
+  setButtonBusy(button, true, "建立中");
+  try {
+    const result = await api("/api/offers", {
+      method: "POST",
+      body: {
+        campaignName: form.get("campaignName"),
+        targetPersona: form.get("targetPersona"),
+        productName: form.get("productName"),
+        network: form.get("network"),
+        commissionModel: form.get("commissionModel"),
+        commissionValue: Number(form.get("commissionValue") || 0),
+        currency: form.get("currency"),
+        subIdParam: form.get("subIdParam"),
+        targetUrl: form.get("targetUrl"),
+        offer: form.get("offer"),
+        slug: form.get("slug"),
+        appendUtm: form.get("appendUtm") === "on"
+      }
+    });
+    formElement.reset();
+    await refresh();
+    showToast(`已建立 ${result.product.name} 的聯盟追蹤連結`);
+  } finally {
+    setButtonBusy(button, false);
+  }
+}
+
 async function handleNextAction(event) {
   const button = event.target.closest("button[data-next-action]");
   if (!button) return;
@@ -2342,6 +2400,9 @@ function bindEvents() {
   });
   $("#composeForm").addEventListener("submit", (event) => {
     submitCompose(event).catch((error) => showToast(error.message));
+  });
+  $("#offerForm").addEventListener("submit", (event) => {
+    submitOffer(event).catch((error) => showToast(error.message));
   });
   const adminLoginForm = $("#adminLoginForm");
   if (adminLoginForm) {

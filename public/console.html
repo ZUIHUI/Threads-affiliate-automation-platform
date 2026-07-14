@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Threads 聯盟自動化</title>
-    <link rel="stylesheet" href="/styles.css?v=20260714-workspace-modes" />
+    <link rel="stylesheet" href="/styles.css?v=20260714-monetization" />
   </head>
   <body>
     <div class="app-shell">
@@ -439,9 +439,73 @@
         <section class="panel campaign-panel" id="settings" data-workspace-section="system">
           <div class="panel-header compact">
             <div>
-              <p class="eyebrow">活動設定</p>
-              <h3>活動與產品</h3>
+              <p class="eyebrow">聯盟優惠</p>
+              <h3>建立可追蹤收益的優惠</h3>
             </div>
+          </div>
+          <form id="offerForm" class="compose-form offer-form">
+            <label class="span-2">
+              <span>活動名稱</span>
+              <input name="campaignName" type="text" maxlength="120" required />
+            </label>
+            <label class="span-2">
+              <span>目標受眾</span>
+              <input name="targetPersona" type="text" maxlength="240" required />
+            </label>
+            <label class="span-2">
+              <span>產品名稱</span>
+              <input name="productName" type="text" maxlength="160" required />
+            </label>
+            <label class="span-2">
+              <span>聯盟平台</span>
+              <input name="network" type="text" maxlength="120" placeholder="ClickBank / Shopee / Amazon" required />
+            </label>
+            <label>
+              <span>佣金模式</span>
+              <select name="commissionModel">
+                <option value="CPS">CPS 銷售分潤</option>
+                <option value="CPA">CPA 行動分潤</option>
+                <option value="CPL">CPL 名單分潤</option>
+                <option value="RECURRING">Recurring 持續分潤</option>
+              </select>
+            </label>
+            <label>
+              <span>佣金</span>
+              <input name="commissionValue" type="number" min="0" step="0.01" value="0" required />
+            </label>
+            <label>
+              <span>幣別</span>
+              <select name="currency">
+                <option value="USD">USD</option>
+                <option value="TWD">TWD</option>
+                <option value="JPY">JPY</option>
+                <option value="EUR">EUR</option>
+              </select>
+            </label>
+            <label>
+              <span>追蹤代碼參數</span>
+              <input name="subIdParam" type="text" maxlength="64" value="subid" />
+            </label>
+            <label class="wide">
+              <span>聯盟追蹤網址（非產品一般網址）</span>
+              <input name="targetUrl" type="url" inputmode="url" placeholder="https://affiliate-network.example/..." required />
+            </label>
+            <label class="span-2">
+              <span>優惠重點</span>
+              <input name="offer" type="text" maxlength="500" required />
+            </label>
+            <label class="span-2">
+              <span>追蹤網址代稱</span>
+              <input name="slug" type="text" maxlength="48" placeholder="product-offer" />
+            </label>
+            <label class="check-row">
+              <input name="appendUtm" type="checkbox" />
+              <span>附加 UTM 參數</span>
+            </label>
+            <button class="button compose-submit" id="offerSaveBtn" type="submit">建立聯盟優惠</button>
+          </form>
+          <div class="settings-subhead">
+            <h4>現有活動與產品</h4>
           </div>
           <div class="campaign-list" id="campaignList"></div>
         </section>
@@ -464,6 +528,6 @@
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="/console.js?v=20260714-workspace-modes"></script>
+    <script src="/console.js?v=20260714-monetization"></script>
   </body>
 </html>

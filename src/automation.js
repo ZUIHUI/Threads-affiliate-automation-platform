@@ -16,6 +16,7 @@ const {
   refreshReviewMetadata
 } = require("./postReview");
 const { evaluateContentFatigue } = require("./contentFatigue");
+const { assertMonetizablePost, isMonetizableLink } = require("./offerQuality");
 
 function nowIso() {
   return new Date().toISOString();
@@ -51,6 +52,14 @@ function trackingUrl(config, slug, attribution = {}) {
 
 function sum(items, picker) {
   return items.reduce((total, item) => total + Number(picker(item) || 0), 0);
+}
+
+function revenueByCurrency(links) {
+  return links.reduce((totals, link) => {
+    const currency = String(link.currency || "USD").toUpperCase();
+    totals[currency] = Number(totals[currency] || 0) + Number(link.revenue || 0);
+    return totals;
+  }, {});
 }
 
 function formatMoney(value) {
@@ -732,7 +741,8 @@ function buildAttributionDashboard(state) {
         contentType: post.contentType || "",
         clicks: 0,
         conversions: 0,
-        revenue: 0
+        revenue: 0,
+        revenueByCurrency: {}
       });
     }
     return postStats.get(postId);
@@ -745,7 +755,8 @@ function buildAttributionDashboard(state) {
         modelId,
         clicks: 0,
         conversions: 0,
-        revenue: 0
+        revenue: 0,
+        revenueByCurrency: {}
       });
     }
     return modelStats.get(modelId);
@@ -761,24 +772,27 @@ function buildAttributionDashboard(state) {
 
   for (const event of revenueEvents) {
     const revenue = Number(event.commissionValue || 0);
+    const currency = String(event.currency || "USD").toUpperCase();
     const postStat = ensurePost(event.postId);
     if (postStat) {
       postStat.conversions += 1;
       postStat.revenue += revenue;
+      postStat.revenueByCurrency[currency] = Number(postStat.revenueByCurrency[currency] || 0) + revenue;
     }
     const modelId = event.modelId || postStat?.modelId || "";
     const modelStat = ensureModel(modelId);
     if (modelStat) {
       modelStat.conversions += 1;
       modelStat.revenue += revenue;
+      modelStat.revenueByCurrency[currency] = Number(modelStat.revenueByCurrency[currency] || 0) + revenue;
     }
   }
 
   const topPosts = [...postStats.values()]
-    .sort((a, b) => b.revenue - a.revenue || b.conversions - a.conversions || b.clicks - a.clicks)
+    .sort((a, b) => b.conversions - a.conversions || b.clicks - a.clicks)
     .slice(0, 5);
   const topModels = [...modelStats.values()]
-    .sort((a, b) => b.revenue - a.revenue || b.conversions - a.conversions || b.clicks - a.clicks)
+    .sort((a, b) => b.conversions - a.conversions || b.clicks - a.clicks)
     .slice(0, 5);
 
   return {
@@ -788,6 +802,13 @@ function buildAttributionDashboard(state) {
       attributedRevenue: revenueEvents
         .filter((event) => event.postId || event.modelId)
         .reduce((total, event) => total + Number(event.commissionValue || 0), 0),
+      attributedRevenueByCurrency: revenueEvents
+        .filter((event) => event.postId || event.modelId)
+        .reduce((totals, event) => {
+          const currency = String(event.currency || "USD").toUpperCase();
+          totals[currency] = Number(totals[currency] || 0) + Number(event.commissionValue || 0);
+          return totals;
+        }, {}),
       unattributedConversions: revenueEvents.filter((event) => !event.postId && !event.modelId).length
     },
     topPosts,
@@ -834,6 +855,7 @@ function buildWorkerLeaseStatus(state, config) {
 function buildDashboard(state, config) {
   const posts = state.posts;
   const affiliateLinks = state.affiliateLinks;
+  const monetizableLinks = affiliateLinks.filter(isMonetizableLink);
   const published = posts.filter((post) => post.status === STATUS.published);
   const simulated = posts.filter((post) => post.status === STATUS.simulated);
   const queued = posts.filter((post) => post.approved && [STATUS.scheduled, STATUS.containerCreated].includes(post.status));
@@ -852,9 +874,10 @@ function buildDashboard(state, config) {
     published: published.length,
     simulated: simulated.length,
     blocked: blocked.length,
-    clicks: sum(affiliateLinks, (link) => link.clicks),
-    conversions: sum(affiliateLinks, (link) => link.conversions),
-    revenue: sum(affiliateLinks, (link) => link.revenue),
+    clicks: sum(monetizableLinks, (link) => link.clicks),
+    conversions: sum(monetizableLinks, (link) => link.conversions),
+    revenue: sum(monetizableLinks, (link) => link.revenue),
+    revenueByCurrency: revenueByCurrency(monetizableLinks),
     disclosureCoverage: posts.length ? Math.round((disclosureCovered / posts.length) * 100) : 100
   };
   const profitEngine = buildProfitDashboard(state, config);
@@ -883,6 +906,7 @@ function buildDashboard(state, config) {
     products: state.products,
     affiliateLinks: state.affiliateLinks.map((link) => ({
       ...link,
+      monetizable: isMonetizableLink(link),
       trackingUrl: trackingUrl(config, link.slug)
     })),
     posts: posts
@@ -936,10 +960,6 @@ function ensureLinkForProduct(state, product, campaign, config) {
 
   const slug = slugify(`${campaign.name}-${product.name}`);
   const url = new URL(product.landingUrl);
-  url.searchParams.set("utm_source", config.defaultUtmSource);
-  url.searchParams.set("utm_medium", config.defaultUtmMedium);
-  url.searchParams.set("utm_campaign", campaign.id);
-  url.searchParams.set("utm_content", product.id);
 
   link = {
     id: makeId("aff"),
@@ -948,6 +968,10 @@ function ensureLinkForProduct(state, product, campaign, config) {
     productId: product.id,
     network: product.network,
     targetUrl: url.toString(),
+    subIdParam: product.subIdParam || "subid",
+    appendUtm: false,
+    source: product.source || "generated",
+    isDemo: product.isDemo === true,
     clicks: 0,
     conversions: 0,
     revenue: 0,
@@ -1020,23 +1044,38 @@ function createDraftPosts(state, input, config, drafts, campaign, product, link,
 }
 
 function resolveDraftContext(state, input, config) {
+  const eligibleProducts = config.allowDemoOffers
+    ? state.products
+    : state.products.filter((item) =>
+        item.status === "active" && state.affiliateLinks.some((link) =>
+          link.productId === item.id && isMonetizableLink(link)
+        )
+      );
   const campaign = input.campaignId
     ? findById(state.campaigns, input.campaignId)
-    : state.campaigns.find((item) => item.status === "active");
+    : state.campaigns.find((item) =>
+        item.status === "active" && eligibleProducts.some((product) => product.campaignId === item.id)
+      );
   if (!campaign) {
     const error = new Error("No active campaign is available for draft generation.");
     error.statusCode = 400;
     throw error;
   }
   const product = input.productId
-    ? findById(state.products, input.productId)
-    : state.products.find((item) => item.campaignId === campaign.id && item.status === "active");
+    ? eligibleProducts.find((item) => item.id === input.productId)
+    : eligibleProducts.find((item) => item.campaignId === campaign.id && item.status === "active");
   if (!product) {
     const error = new Error("No active product is available for this campaign.");
     error.statusCode = 400;
     throw error;
   }
   const link = ensureLinkForProduct(state, product, campaign, config);
+  if (!config.allowDemoOffers && !isMonetizableLink(link)) {
+    const error = new Error("Draft generation requires a real affiliate offer. Add a verified HTTPS affiliate URL first.");
+    error.statusCode = 409;
+    error.code = "MONETIZATION_NOT_READY";
+    throw error;
+  }
   const topic = input.topic || campaign.name;
   return { campaign, product, link, topic };
 }
@@ -1079,6 +1118,12 @@ function createPost(state, input, config, options = {}) {
   if (!link) {
     const error = new Error("Affiliate link not found.");
     error.statusCode = 400;
+    throw error;
+  }
+  if (!config.allowDemoOffers && !isMonetizableLink(link)) {
+    const error = new Error("Post creation requires a real affiliate offer. Add a verified HTTPS affiliate URL first.");
+    error.statusCode = 409;
+    error.code = "MONETIZATION_NOT_READY";
     throw error;
   }
   const post = {
@@ -1126,11 +1171,34 @@ function upsertAffiliateLink(state, input, config) {
   }
   const slug = input.slug ? slugify(input.slug) : slugify(`${campaign.name}-${product.name}`);
   const existing = state.affiliateLinks.find((link) => link.slug === slug);
-  const url = new URL(input.targetUrl);
-  url.searchParams.set("utm_source", input.utmSource || config.defaultUtmSource);
-  url.searchParams.set("utm_medium", input.utmMedium || config.defaultUtmMedium);
-  url.searchParams.set("utm_campaign", campaign.id);
-  url.searchParams.set("utm_content", product.id);
+  let url;
+  try {
+    url = new URL(input.targetUrl);
+  } catch {
+    const error = new Error("targetUrl must be a valid HTTP or HTTPS URL.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!["http:", "https:"].includes(url.protocol)) {
+    const error = new Error("targetUrl must use HTTP or HTTPS.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const appendUtm = input.appendUtm !== false;
+  if (appendUtm) {
+    url.searchParams.set("utm_source", input.utmSource || config.defaultUtmSource);
+    url.searchParams.set("utm_medium", input.utmMedium || config.defaultUtmMedium);
+    url.searchParams.set("utm_campaign", campaign.id);
+    url.searchParams.set("utm_content", product.id);
+  }
+  const subIdParam = input.subIdParam === null || String(input.subIdParam || "").toLowerCase() === "none"
+    ? ""
+    : String(input.subIdParam || "subid").trim();
+  if (subIdParam && !/^[a-zA-Z0-9_.-]+$/.test(subIdParam)) {
+    const error = new Error("subIdParam contains unsupported characters.");
+    error.statusCode = 400;
+    throw error;
+  }
 
   const link = existing || {
     id: makeId("aff"),
@@ -1146,6 +1214,10 @@ function upsertAffiliateLink(state, input, config) {
     productId: product.id,
     network: input.network || product.network,
     targetUrl: url.toString(),
+    subIdParam,
+    appendUtm,
+    source: input.source || link.source || "affiliate",
+    isDemo: input.isDemo === true,
     updatedAt: nowIso()
   });
   if (!existing) state.affiliateLinks.push(link);
@@ -1159,8 +1231,9 @@ function findPostForAttribution(state, value) {
 }
 
 function resolveConversionAttribution(state, input) {
-  const clickEvent = input.clickEventId
-    ? (state.clickEvents || []).find((event) => event.id === input.clickEventId)
+  const clickEventToken = input.clickEventId || input.click_event_id || "";
+  const clickEvent = clickEventToken
+    ? (state.clickEvents || []).find((event) => event.id === clickEventToken)
     : null;
   const postToken = input.postId
     || input.post_id
@@ -1168,6 +1241,8 @@ function resolveConversionAttribution(state, input) {
     || input.subid
     || input.sub_id
     || input.subId
+    || input.click_id
+    || input.clickid
     || input.utm_content
     || clickEvent?.postId
     || "";
@@ -1205,7 +1280,20 @@ function recordConversion(state, input) {
   const link = findLinkForConversion(state, input, attribution);
   const post = attribution.post || null;
   const clickEvent = attribution.clickEvent || null;
-  const networkEventId = String(input.networkEventId || input.eventId || input.orderId || "").trim();
+  const networkEventId = String(
+    input.networkEventId
+      || input.network_event_id
+      || input.eventId
+      || input.event_id
+      || input.orderId
+      || input.order_id
+      || input.transactionId
+      || input.transaction_id
+      || input.conversionId
+      || input.conversion_id
+      || input.tid
+      || ""
+  ).trim();
   const duplicate = networkEventId
     ? (state.conversionEvents || []).find((event) =>
         event.affiliateLinkId === link.id && event.networkEventId === networkEventId
@@ -1215,8 +1303,15 @@ function recordConversion(state, input) {
     return { conversion: duplicate, link, duplicate: true };
   }
 
-  const commissionValue = numberFrom(input.commissionValue, input.commission, input.payout, input.amount);
-  const orderValue = numberFrom(input.orderValue, input.order_value, input.saleAmount);
+  const commissionValue = numberFrom(
+    input.commissionValue,
+    input.commission_value,
+    input.commission,
+    input.commission_amount,
+    input.payout,
+    input.amount
+  );
+  const orderValue = numberFrom(input.orderValue, input.order_value, input.saleAmount, input.sale_amount, input.revenue);
   if (commissionValue < 0 || orderValue < 0) {
     const error = new Error("Conversion values cannot be negative.");
     error.statusCode = 400;
@@ -1232,7 +1327,7 @@ function recordConversion(state, input) {
     productId: post?.productId || clickEvent?.productId || link.productId || "",
     modelId: post?.funnelRatio || clickEvent?.modelId || input.modelId || input.model || "",
     trackingCode: post?.trackingCode || post?.id || input.subid || input.sub_id || "",
-    clickEventId: input.clickEventId || clickEvent?.id || "",
+    clickEventId: input.clickEventId || input.click_event_id || clickEvent?.id || "",
     networkEventId,
     orderValue,
     commissionValue,
@@ -1362,6 +1457,8 @@ async function runAutomation(store, config, options = {}) {
         remaining -= 1;
         continue;
       }
+
+      assertMonetizablePost(state, post);
 
       if (post.status === STATUS.scheduled) {
         const container = await createTextContainer(config, post);

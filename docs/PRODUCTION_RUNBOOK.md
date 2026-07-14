@@ -50,6 +50,7 @@ CONVERSION_WEBHOOK_SECRET=<long-random-webhook-secret>
 ENABLE_WORKER=false
 AUTONOMY_MODE=false
 AUTONOMY_INTERVAL_MS=21600000
+ALLOW_DEMO_OFFERS=false
 
 CONTENT_SIMILARITY_THRESHOLD=0.88
 CONTENT_FATIGUE_PRODUCT_WINDOW_HOURS=24
@@ -59,6 +60,19 @@ CONTENT_FATIGUE_MODEL_DAILY_CAP=3
 CONTENT_FATIGUE_COMMERCIAL_WINDOW_POSTS=3
 CONTENT_FATIGUE_MAX_COMMERCIAL_POSTS_PER_WINDOW=1
 ```
+
+### Monetizable Offer Setup
+
+Use the System Settings form or the authenticated API. `targetUrl` must be the affiliate network tracking URL, not the merchant's ordinary product page.
+
+```bash
+curl -X POST https://<domain>/api/offers \
+  -H "Content-Type: application/json" \
+  -H "x-admin-token: <ADMIN_TOKEN>" \
+  -d '{"campaignName":"Creator tools","targetPersona":"Taiwan creators","productName":"Automation toolkit","offer":"Recurring commission","network":"ClickBank","commissionModel":"CPS","commissionValue":25,"currency":"USD","targetUrl":"https://<affiliate-network-tracking-url>","slug":"automation-toolkit","subIdParam":"tid","appendUtm":false}'
+```
+
+The response returns the campaign, product, affiliate link, and public `/r/{slug}` tracking URL. Demo, local, and `example.com` links never satisfy the live publishing gate or revenue totals.
 
 Notes:
 
@@ -135,7 +149,7 @@ Expected:
 curl -i https://<domain>/r/<slug>
 ```
 
-Expected: `302` redirect to the affiliate target URL. If the URL includes post attribution, confirm `utm_content`, `subid`, `sub_id`, `utm_campaign`, and `utm_term` are present as applicable.
+Expected: `302` redirect to the affiliate target URL. Post attribution is written to the configured `subIdParam` only. UTM fields are added only when `appendUtm=true`.
 
 8. Test conversion webhook:
 
@@ -151,6 +165,14 @@ Expected:
 - response status is `201` for a new conversion.
 - duplicate `networkEventId` returns duplicate-safe behavior.
 - dashboard revenue/conversion metrics update.
+
+For networks that only support query-string postbacks, use HTTPS and map their fields to the supported aliases:
+
+```text
+https://<domain>/api/conversions?webhook_secret=<CONVERSION_WEBHOOK_SECRET>&slug=<slug>&transaction_id={transaction_id}&commission_amount={commission}&sale_amount={sale_amount}&subid={subid}&currency=USD
+```
+
+Prefer the header-protected POST form when the affiliate network supports custom headers because URL secrets may appear in provider access logs.
 
 ## 5. Readiness Gate Test
 
@@ -221,6 +243,7 @@ Switch to live only after all checks below are true:
 - dashboard authentication is confirmed.
 - admin API calls require auth.
 - `CONVERSION_WEBHOOK_SECRET` is set.
+- at least one real affiliate offer passes the `offer_inventory` readiness check.
 - dry-run publish flow has completed successfully.
 - `/r/{slug}` redirect tracking has been tested.
 - `/api/conversions` has been tested with `x-webhook-secret`.

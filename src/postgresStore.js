@@ -291,10 +291,12 @@ async function syncPostgresState(client, existingTables, state, options = {}) {
         `
           insert into affiliate_links (
             id, campaign_id, product_id, slug, network, target_url,
-            utm_source, utm_medium, utm_campaign, utm_content, created_at, updated_at
+            utm_source, utm_medium, utm_campaign, utm_content,
+            sub_id_param, append_utm, source, is_demo, created_at, updated_at
           ) values (
             $1, $2, $3, $4, $5, $6,
-            $7, $8, $9, $10, $11, $12
+            $7, $8, $9, $10,
+            $11, $12, $13, $14, $15, $16
           )
         `,
         [
@@ -308,6 +310,10 @@ async function syncPostgresState(client, existingTables, state, options = {}) {
           safeString(state.settings?.utmMedium, "affiliate_social"),
           safeString(link.campaignId, ""),
           safeString(link.slug || link.id, ""),
+          Object.prototype.hasOwnProperty.call(link, "subIdParam") ? safeString(link.subIdParam, "") : "subid",
+          link.appendUtm === true,
+          safeString(link.source, "affiliate"),
+          link.isDemo === true,
           safeDate(link.createdAt, now),
           safeDate(link.updatedAt, now)
         ]

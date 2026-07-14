@@ -26,6 +26,7 @@ Required for live publishing:
 ```env
 PUBLIC_BASE_URL=https://your-domain.example
 THREADS_DRY_RUN=false
+ALLOW_DEMO_OFFERS=false
 THREADS_USER_ID=your_threads_user_id
 THREADS_ACCESS_TOKEN=your_long_lived_access_token
 ENABLE_WORKER=true

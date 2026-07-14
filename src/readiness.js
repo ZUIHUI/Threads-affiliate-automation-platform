@@ -1,3 +1,5 @@
+const { realOfferInventory } = require("./offerQuality");
+
 function hasValue(value) {
   return String(value || "").trim().length > 0;
 }
@@ -77,17 +79,21 @@ function connector(id, lane, name, purpose, status, envKeys, nextAction, meta = 
 }
 
 function connectorCenter(state, config) {
+  const inventory = realOfferInventory(state);
   const localBaseUrl = isLocalPublicBaseUrl(config.publicBaseUrl);
   const metaReady = hasValue(config.metaAdLibraryAccessToken) && hasValue(config.metaAdLibraryQuery);
   const customFeedReady = (config.adIntelligenceFeedUrls || []).length > 0;
   const offerFeedReady = (config.affiliateOfferFeedUrls || []).length > 0;
+  const manualOfferReady = inventory.links.length > 0;
   const adminReady = hasValue(config.adminToken) || hasValue(config.adminPassword);
   const metaHealth = sourceHealth(state, "meta_ad_library");
   const customHealth = sourceHealth(state, "custom_ad_feed");
   const offerHealth = sourceHealth(state, "affiliate_offer_feed");
   const metaStatus = sourceRuntimeStatus(state, "meta_ad_library", metaReady);
   const customStatus = sourceRuntimeStatus(state, "custom_ad_feed", customFeedReady);
-  const offerStatus = sourceRuntimeStatus(state, "affiliate_offer_feed", offerFeedReady);
+  const offerStatus = manualOfferReady && !offerFeedReady
+    ? "ready"
+    : sourceRuntimeStatus(state, "affiliate_offer_feed", offerFeedReady);
   const threadsReady = hasValue(config.threadsUserId) && hasValue(config.threadsAccessToken);
   const aiReady = config.profitScriptProvider !== "openai" || hasValue(config.openaiApiKey);
   const workerReady = config.enableWorker && config.autonomyMode;
@@ -206,10 +212,16 @@ function connectorCenter(state, config) {
       "Syncs commission, EPC, landing URL, and offer risk into product inventory.",
       offerStatus,
       ["AFFILIATE_OFFER_FEED_URLS", "AUTONOMY_MAX_OFFERS_PER_RUN"],
-      offerFeedReady ? "Offer autopilot can sync new products." : "Add affiliate network or curated offer feed URLs.",
+      offerFeedReady
+        ? "Offer autopilot can sync new products."
+        : manualOfferReady
+          ? "A manually verified affiliate offer is ready."
+          : "Add a real affiliate offer or configure an offer feed.",
       {
-        configured: offerFeedReady,
-        signal: `${(config.affiliateOfferFeedUrls || []).length} feed(s)`,
+        configured: offerFeedReady || manualOfferReady,
+        signal: offerFeedReady
+          ? `${(config.affiliateOfferFeedUrls || []).length} feed(s)`
+          : `${inventory.links.length} verified link(s)`,
         ...offerHealth
       }
     ),
@@ -348,6 +360,16 @@ function buildLivePublishingGate(state, config, options = {}) {
     });
   }
 
+  const offerInventoryCheck = checksById.get("offer_inventory");
+  if (offerInventoryCheck?.status === "blocked") {
+    addReason({
+      id: "offer_inventory",
+      label: offerInventoryCheck.label,
+      detail: offerInventoryCheck.detail,
+      action: offerInventoryCheck.action
+    });
+  }
+
   if (autonomyLiveMode && !hasValue(config.databaseUrl)) {
     const check = checksById.get("database");
     addReason({
@@ -396,9 +418,11 @@ function buildLivePublishingGate(state, config, options = {}) {
 }
 
 function buildAutonomyReadiness(state, config, options = {}) {
-  const campaigns = activeItems(state.campaigns);
-  const products = activeItems(state.products);
-  const links = state.affiliateLinks || [];
+  const inventory = realOfferInventory(state);
+  const campaigns = inventory.campaigns;
+  const products = inventory.products;
+  const links = inventory.links;
+  const excludedLinks = Math.max(0, (state.affiliateLinks || []).length - links.length);
   const marketSources = sourceCount(config);
   const localBaseUrl = isLocalPublicBaseUrl(config.publicBaseUrl);
   const adminReady = hasValue(config.adminToken) || hasValue(config.adminPassword);
@@ -472,8 +496,8 @@ function buildAutonomyReadiness(state, config, options = {}) {
       "offer_inventory",
       "Campaign and offer inventory",
       campaigns.length > 0 && products.length > 0 && links.length > 0 ? "ready" : "blocked",
-      `${campaigns.length} active campaign(s), ${products.length} active product(s), ${links.length} tracking link(s).`,
-      "Create at least one active campaign, active product, and affiliate tracking link."
+      `${campaigns.length} monetizable campaign(s), ${products.length} product(s), ${links.length} verified tracking link(s); ${excludedLinks} demo or invalid link(s) excluded.`,
+      "Create at least one active offer with a real affiliate network and public HTTPS tracking URL."
     ),
     makeCheck(
       "conversion_feedback",

@@ -3,6 +3,7 @@ const crypto = require("node:crypto");
 const { countThreadsUnits, validatePost } = require("./validators");
 const { STATUS, prepareGeneratedPostForReview } = require("./postReview");
 const { evaluateContentFatigue, evaluateProfitModelFatigue } = require("./contentFatigue");
+const { isMonetizableLink, isMonetizableProduct } = require("./offerQuality");
 
 const PROFIT_MODELS = [
   {
@@ -186,7 +187,7 @@ function signalMatchCount(model, signals) {
 function scoreProfitModel(model, state, signals = [], config = {}) {
   const campaigns = state.campaigns || [];
   const products = state.products || [];
-  const links = state.affiliateLinks || [];
+  const links = (state.affiliateLinks || []).filter(isMonetizableLink);
   const posts = state.posts || [];
   const modelPostIds = new Set(posts.filter((post) => post.funnelRatio === model.id).map((post) => post.id));
   const attributedClicks = (state.clickEvents || []).filter((event) =>
@@ -204,8 +205,14 @@ function scoreProfitModel(model, state, signals = [], config = {}) {
   const conversionCount = attributedConversions.length || globalConversionCount;
   const clickCount = attributedClicks || globalClickCount;
   const revenue = attributedRevenue || globalRevenue;
-  const activeCampaignBonus = campaigns.some((campaign) => campaign.status === "active") ? 6 : -8;
-  const productBonus = products.some((product) => product.status === "active") ? 5 : -10;
+  const monetizableCampaignIds = new Set(links.map((link) => link.campaignId));
+  const monetizableProductIds = new Set(links.map((link) => link.productId));
+  const activeCampaignBonus = campaigns.some((campaign) =>
+    campaign.status === "active" && monetizableCampaignIds.has(campaign.id)
+  ) ? 6 : -8;
+  const productBonus = products.some((product) =>
+    product.status === "active" && monetizableProductIds.has(product.id)
+  ) ? 5 : -10;
   const signalBonus = Math.min(10, Math.round(clickCount / 30) + conversionCount);
   const revenueBonus = revenue > 0 ? 4 : 0;
   const modelFatigue = evaluateProfitModelFatigue(model.id, posts, config);
@@ -220,19 +227,23 @@ function scoreProfitModel(model, state, signals = [], config = {}) {
   return { score, fatigue: modelFatigue };
 }
 
-function pickActiveContext(state, preferredSignal, syncedProducts = []) {
+function pickActiveContext(state, preferredSignal, syncedProducts = [], config = {}) {
+  const products = config.allowDemoOffers
+    ? (state.products || [])
+    : (state.products || []).filter(isMonetizableProduct);
   const preferredProduct = preferredSignal
-    ? (state.products || []).find((item) => item.sourceSignalId === preferredSignal.id)
+    ? products.find((item) => item.sourceSignalId === preferredSignal.id)
     : null;
-  const syncedProduct = syncedProducts.find((item) => item.status === "active");
-  const campaign = (state.campaigns || []).find((item) =>
-    item.id === preferredProduct?.campaignId || item.id === syncedProduct?.campaignId
-  ) || (state.campaigns || []).find((item) => item.status === "active") || state.campaigns?.[0];
+  const syncedProduct = syncedProducts.find((item) =>
+    item.status === "active" && (config.allowDemoOffers || isMonetizableProduct(item))
+  );
   const product = preferredProduct
     || syncedProduct
-    || (state.products || []).find((item) => item.campaignId === campaign?.id && item.status === "active")
-    || (state.products || []).find((item) => item.status === "active")
-    || state.products?.[0];
+    || products.find((item) => item.status === "active")
+    || products[0];
+  const campaign = (state.campaigns || []).find((item) => item.id === product?.campaignId)
+    || (state.campaigns || []).find((item) => item.status === "active")
+    || state.campaigns?.[0];
   if (!campaign || !product) {
     const error = new Error("Profit engine requires at least one campaign and one product.");
     error.statusCode = 400;
@@ -246,10 +257,6 @@ function ensureAffiliateLink(state, campaign, product, config) {
   if (link) return link;
 
   const url = new URL(product.landingUrl);
-  url.searchParams.set("utm_source", config.defaultUtmSource);
-  url.searchParams.set("utm_medium", config.defaultUtmMedium);
-  url.searchParams.set("utm_campaign", campaign.id);
-  url.searchParams.set("utm_content", product.id);
 
   link = {
     id: makeId("aff"),
@@ -258,6 +265,10 @@ function ensureAffiliateLink(state, campaign, product, config) {
     productId: product.id,
     network: product.network || "Direct",
     targetUrl: url.toString(),
+    subIdParam: product.subIdParam || "subid",
+    appendUtm: false,
+    source: product.source || "affiliate",
+    isDemo: product.isDemo === true,
     clicks: 0,
     conversions: 0,
     revenue: 0,
@@ -306,8 +317,11 @@ function upsertProductFromSignal(state, signal, campaign, config) {
     currency: signal.currency || "USD",
     landingUrl: signal.landingUrl,
     status: "active",
+    source: "affiliate",
+    isDemo: false,
     updatedAt: now
   });
+  if (!config.allowDemoOffers && !isMonetizableProduct(product)) return null;
   if (!existing) state.products.push(product);
   const link = ensureAffiliateLink(state, campaign, product, config);
   return { product, link, created: !existing };
@@ -782,7 +796,9 @@ function buildOptimizationQueue(experiments, signals) {
 
 function buildExperimentLoop(state, config, engine, scores) {
   const posts = state.posts || [];
-  const linksById = new Map((state.affiliateLinks || []).map((link) => [link.id, link]));
+  const linksById = new Map((state.affiliateLinks || [])
+    .filter(isMonetizableLink)
+    .map((link) => [link.id, link]));
   const clickEvents = state.clickEvents || [];
   const conversionEvents = state.conversionEvents || [];
   const signals = engine.externalSignals || [];
@@ -953,9 +969,12 @@ function applyOptimizerPolicy(scores, policy) {
   return adjusted.sort((a, b) => b.score - a.score);
 }
 
-function activeProductForModel(state, model, signal) {
+function activeProductForModel(state, model, signal, config = {}) {
+  const products = config.allowDemoOffers
+    ? (state.products || [])
+    : (state.products || []).filter(isMonetizableProduct);
   if (signal?.id) {
-    const signalProduct = (state.products || []).find((product) => product.sourceSignalId === signal.id);
+    const signalProduct = products.find((product) => product.sourceSignalId === signal.id);
     if (signalProduct) return signalProduct;
   }
   const text = [
@@ -968,16 +987,18 @@ function activeProductForModel(state, model, signal) {
     signal?.productName,
     signal?.offer
   ].filter(Boolean).join(" ").toLowerCase();
-  return (state.products || []).find((product) =>
+  return products.find((product) =>
     product.status === "active" && text.includes(String(product.name || "").toLowerCase())
-  ) || (state.products || []).find((product) => product.status === "active")
-    || (state.products || [])[0]
+  ) || products.find((product) => product.status === "active")
+    || products[0]
     || null;
 }
 
-function linkForProduct(state, product) {
+function linkForProduct(state, product, config = {}) {
   if (!product) return null;
-  return (state.affiliateLinks || []).find((link) => link.productId === product.id) || null;
+  return (state.affiliateLinks || []).find((link) =>
+    link.productId === product.id && (config.allowDemoOffers || isMonetizableLink(link))
+  ) || null;
 }
 
 function opportunityPriority(score, queueItem) {
@@ -1006,8 +1027,8 @@ function buildProfitOpportunities(state, config, engine, scores, experimentLoop)
   const opportunities = scores.slice(0, 4).map((model, index) => {
     const experiment = experimentsByModel.get(model.id) || {};
     const signal = pickSignalForModel(model, signals);
-    const product = activeProductForModel(state, model, signal);
-    const link = linkForProduct(state, product);
+    const product = activeProductForModel(state, model, signal, config);
+    const link = linkForProduct(state, product, config);
     const queueItem = queue.find((item) => item.modelId === model.id);
     const marketBoost = signal ? 8 : 0;
     const revenueBoost = Number(experiment.revenue || 0) > 0 ? 10 : Number(experiment.conversions || 0) > 0 ? 7 : 0;
@@ -1116,7 +1137,7 @@ function buildProfitRunPreview(state, config, options = {}) {
   const scores = applyOptimizerPolicy(rawScores, optimizerPolicy);
   const selected = scores[0];
   const selectedSignal = pickSignalForModel(selected, signals);
-  const { campaign, product } = pickActiveContext(previewState, selectedSignal, offerSync.syncedProducts);
+  const { campaign, product } = pickActiveContext(previewState, selectedSignal, offerSync.syncedProducts, config);
   const link = ensureAffiliateLink(previewState, campaign, product, config);
   const count = Math.max(1, Math.min(Number(config.autonomyMaxScriptsPerRun || 3) + Number(optimizerPolicy.scriptCountDelta || 0), 5));
   return {
@@ -1153,7 +1174,7 @@ function runProfitEngine(state, config, options = {}) {
   const scores = applyOptimizerPolicy(rawScores, optimizerPolicy);
   const selected = scores[0];
   const selectedSignal = pickSignalForModel(selected, signals);
-  const { campaign, product } = pickActiveContext(state, selectedSignal, offerSync.syncedProducts);
+  const { campaign, product } = pickActiveContext(state, selectedSignal, offerSync.syncedProducts, config);
   const link = ensureAffiliateLink(state, campaign, product, config);
   const count = Math.max(1, Math.min(Number(config.autonomyMaxScriptsPerRun || 3) + Number(optimizerPolicy.scriptCountDelta || 0), 5));
   const cta = trackingUrl(config, link.slug);

@@ -34,6 +34,7 @@ const {
   schedulePost
 } = require("./src/postReview");
 const { evaluateContentFatigue } = require("./src/contentFatigue");
+const { upsertRealOffer } = require("./src/offerManagement");
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
@@ -345,11 +346,16 @@ function buildAdminAuthStatus(req) {
   };
 }
 
-function authorizeConversionWebhook(req) {
+function authorizeConversionWebhook(req, input = {}) {
   if (!config.conversionWebhookSecret) return;
   const bearer = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
-  const provided = req.headers["x-webhook-secret"] || bearer;
-  if (provided !== config.conversionWebhookSecret) {
+  const provided = req.headers["x-webhook-secret"]
+    || bearer
+    || input.webhook_secret
+    || input.webhookSecret
+    || input.secret
+    || "";
+  if (!safeEqual(provided, config.conversionWebhookSecret)) {
     const error = new Error("Invalid conversion webhook secret.");
     error.statusCode = 401;
     throw error;
@@ -1241,9 +1247,18 @@ async function handleApi(req, res, url) {
     return;
   }
 
-  if (req.method === "POST" && route === "/api/conversions") {
-    authorizeConversionWebhook(req);
+  if (req.method === "POST" && route === "/api/offers") {
     const body = await parseBody(req);
+    const result = await store.update((state) => upsertRealOffer(state, body, config));
+    sendJson(res, result.created.link ? 201 : 200, result);
+    return;
+  }
+
+  if (["GET", "POST"].includes(req.method) && route === "/api/conversions") {
+    const body = req.method === "GET"
+      ? Object.fromEntries(url.searchParams.entries())
+      : await parseBody(req);
+    authorizeConversionWebhook(req, body);
     const result = await store.update((state) => recordConversion(state, body));
     sendJson(res, result.duplicate ? 200 : 201, result);
     return;
@@ -1286,7 +1301,7 @@ async function handleRedirect(req, res, url) {
     const campaignId = url.searchParams.get("campaign") || link.campaignId || "";
     const productId = url.searchParams.get("product") || link.productId || "";
     const post = postId ? state.posts.find((item) => item.id === postId) : null;
-    link.clicks += 1;
+    link.clicks = Number(link.clicks || 0) + 1;
     link.updatedAt = now;
     if (post) {
       post.clicks = Number(post.clicks || 0) + 1;
@@ -1307,13 +1322,17 @@ async function handleRedirect(req, res, url) {
     };
     state.clickEvents.unshift(click);
     const target = new URL(link.targetUrl);
-    if (postId) {
-      target.searchParams.set("utm_content", postId);
-      target.searchParams.set("subid", postId);
-      target.searchParams.set("sub_id", postId);
+    const subIdParam = Object.prototype.hasOwnProperty.call(link, "subIdParam")
+      ? String(link.subIdParam || "")
+      : "subid";
+    if (postId && subIdParam) {
+      target.searchParams.set(subIdParam, postId);
     }
-    if (modelId) target.searchParams.set("utm_term", modelId);
-    if (campaignId) target.searchParams.set("utm_campaign", campaignId);
+    if (link.appendUtm === true) {
+      if (postId) target.searchParams.set("utm_content", postId);
+      if (modelId) target.searchParams.set("utm_term", modelId);
+      if (campaignId) target.searchParams.set("utm_campaign", campaignId);
+    }
     return { targetUrl: target.toString() };
   });
   res.writeHead(302, {
