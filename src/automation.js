@@ -1093,8 +1093,20 @@ function generateDrafts(state, input, config, options = {}) {
 
 async function generateDraftsAsync(state, input, config, options = {}) {
   const { campaign, product, link, topic } = resolveDraftContext(state, input, config);
+  const offerContext = {
+    campaignName: campaign.name,
+    targetPersona: campaign.targetPersona,
+    productName: product.name,
+    offer: product.offer,
+    network: product.network,
+    commissionModel: product.commissionModel,
+    commissionValue: product.commissionValue,
+    currency: product.currency,
+    disclosureText: config.defaultDisclosureText,
+    trackingUrl: trackingUrl(config, link.slug)
+  };
   const drafts = shouldUseOpenAI(config, input)
-    ? await generateOpenAIDrafts({ topic, config, fetchImpl: options.fetchImpl })
+    ? await generateOpenAIDrafts({ topic, offerContext, config, fetchImpl: options.fetchImpl })
     : generatePromptDrafts({
         topic,
         productName: product.name,

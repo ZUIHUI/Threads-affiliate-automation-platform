@@ -56,7 +56,7 @@ function normalizeDrafts(value) {
   }));
 }
 
-async function generateOpenAIDrafts({ topic, config, fetchImpl = fetch }) {
+async function generateOpenAIDrafts({ topic, offerContext = {}, config, fetchImpl = fetch }) {
   if (!config.openaiApiKey) {
     throw new Error("OPENAI_API_KEY is required for OpenAI draft generation.");
   }
@@ -69,7 +69,7 @@ async function generateOpenAIDrafts({ topic, config, fetchImpl = fetch }) {
     },
     body: JSON.stringify({
       model: config.openaiModel,
-      input: buildPrompt(topic),
+      input: buildPrompt(topic, offerContext),
       text: {
         format: {
           type: "json_schema",

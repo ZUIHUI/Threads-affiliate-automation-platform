@@ -3,10 +3,12 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const { buildDashboard, recordConversion } = require("../src/automation");
+const { buildDashboard, generateDraftsAsync, recordConversion } = require("../src/automation");
 const { getRuntimeConfig } = require("../src/config");
+const { normalizeFeedItem } = require("../src/adIntelligenceClient");
 const { upsertRealOffer } = require("../src/offerManagement");
 const { isMonetizableLink, isPlaceholderUrl, realOfferInventory } = require("../src/offerQuality");
+const { runProfitEngine } = require("../src/profitEngine");
 const { buildAutonomyReadiness } = require("../src/readiness");
 const { createStore, defaultState } = require("../src/store");
 const { startServer } = require("../server");
@@ -45,6 +47,35 @@ async function main() {
   assert.equal(demoReadiness.liveGate.allowed, false);
   assert.equal(demoReadiness.liveGate.blockedCheckIds.includes("offer_inventory"), true);
 
+  const feedSignal = normalizeFeedItem({
+    id: "network-offer-1",
+    productName: "Feed automation toolkit",
+    offer: "Verified recurring toolkit offer",
+    network: "ClickBank",
+    landingUrl: "https://hop.clickbank.net/?affiliate=feedpublisher&vendor=toolkit",
+    commissionModel: "CPS",
+    commissionValue: 30,
+    currency: "USD",
+    subIdParam: "tid",
+    appendUtm: false
+  }, "partner-api", "offer");
+  assert.equal(feedSignal.network, "ClickBank");
+  assert.equal(feedSignal.subIdParam, "tid");
+  const feedState = defaultState();
+  runProfitEngine(feedState, config, {
+    force: true,
+    createPosts: false,
+    intelligence: {
+      collectedAt: new Date().toISOString(),
+      items: [feedSignal],
+      sourceStatuses: []
+    }
+  });
+  const syncedFeedLink = realOfferInventory(feedState).links[0];
+  assert.equal(syncedFeedLink.network, "ClickBank");
+  assert.equal(syncedFeedLink.subIdParam, "tid");
+  assert.equal(syncedFeedLink.source, "affiliate");
+
   assert.throws(() => upsertRealOffer(demoState, {
     campaignName: "Invalid offer",
     targetPersona: "Creators",
@@ -77,6 +108,43 @@ async function main() {
   const readiness = buildAutonomyReadiness(state, config);
   assert.equal(readiness.checks.find((check) => check.id === "offer_inventory").status, "ready");
   assert.equal(readiness.liveGate.allowed, true);
+
+  let capturedOfferPrompt = "";
+  const aiConfig = {
+    ...config,
+    aiDraftProvider: "openai",
+    openaiApiKey: "test-key",
+    openaiBaseUrl: "https://api.openai.test/v1"
+  };
+  const generated = await generateDraftsAsync(state, {
+    campaignId: created.campaign.id,
+    productId: created.product.id,
+    topic: "Creator automation"
+  }, aiConfig, {
+    fetchImpl: async (_url, options) => {
+      capturedOfferPrompt = JSON.parse(options.body).input;
+      return {
+        ok: true,
+        async json() {
+          return {
+            output_text: JSON.stringify({
+              drafts: Array.from({ length: 5 }, (_, index) => ({
+                hook: `Verified offer hook ${index + 1}`,
+                post: `含聯盟連結：Automation toolkit for creators ${created.trackingUrl}\n\n你會先測哪一步？`,
+                cta: "查看已驗證優惠",
+                risk_note: "Uses verified offer facts only."
+              }))
+            })
+          };
+        }
+      };
+    }
+  });
+  assert.equal(generated.created.length, 5);
+  assert.match(capturedOfferPrompt, /Automation toolkit/);
+  assert.match(capturedOfferPrompt, /Taiwanese creators building a side income/);
+  assert.match(capturedOfferPrompt, /threads-affiliate-automation-platform\.onrender\.com\/r\/automation-toolkit/);
+  assert.doesNotMatch(capturedOfferPrompt, /hop\.clickbank\.net|affiliate=publisher/);
 
   state.posts.push({
     id: "post_real_1",

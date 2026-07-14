@@ -72,6 +72,11 @@ function numericValue(...values) {
   return 0;
 }
 
+function booleanValue(value, fallback = false) {
+  if (value == null || value === "") return fallback;
+  return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
+}
+
 function sourceNameFromUrl(url) {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
@@ -144,9 +149,12 @@ function normalizeFeedItem(item, source, kind) {
     landingUrl,
     productName: firstValue(item.productName, item.product_name, item.name, title),
     offer: firstValue(item.offer, item.payoutDescription, item.payout_description, item.description),
+    network: firstValue(item.network, item.affiliateNetwork, item.affiliate_network, item.programName, source),
     commissionModel: firstValue(item.commissionModel, item.commission_model, item.model),
     commissionValue,
     currency: firstValue(item.currency, "USD"),
+    subIdParam: firstValue(item.subIdParam, item.sub_id_param, item.subIdParameter, "subid"),
+    appendUtm: booleanValue(firstValue(item.appendUtm, item.append_utm), false),
     scoreSignal: numericValue(item.scoreSignal, item.score, item.epc, commissionValue),
     observedAt: firstValue(item.observedAt, item.observed_at, item.updatedAt, item.updated_at, nowIso())
   };

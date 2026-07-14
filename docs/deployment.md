@@ -89,6 +89,34 @@ with `items`, `offers`, `ads`, `data`, or `results`. The profit engine
 normalizes titles, hooks, landing URLs, offer text, commission values, and EPC
 style scores into `profitEngine.externalSignals`.
 
+For automatic affiliate offer import, expose a small JSON adapter for the chosen
+network and add its HTTPS URL to `AFFILIATE_OFFER_FEED_URLS`. The worker polls it
+on each profit-engine cycle. A normalized feed can use this shape:
+
+```json
+{
+  "offers": [
+    {
+      "id": "network-offer-123",
+      "productName": "Automation toolkit",
+      "offer": "Recurring subscription offer",
+      "network": "ClickBank",
+      "landingUrl": "https://affiliate-network.example/tracking-link",
+      "commissionModel": "CPS",
+      "commissionValue": 25,
+      "currency": "USD",
+      "subIdParam": "tid",
+      "appendUtm": false
+    }
+  ]
+}
+```
+
+The adapter, not the AI model, must authenticate to the affiliate network and
+return links assigned to the publisher account. Networks that require OAuth,
+signed requests, or custom headers need a network-specific adapter; do not
+scrape the network dashboard or ask the model to invent tracking links.
+
 Conversion webhook:
 
 ```http
