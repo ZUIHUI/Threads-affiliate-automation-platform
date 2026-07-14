@@ -4,211 +4,236 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Threads 聯盟自動化</title>
-    <link rel="stylesheet" href="/styles.css?v=20260714-operations" />
+    <link rel="stylesheet" href="/styles.css?v=20260714-workspace-modes" />
   </head>
   <body>
     <div class="app-shell">
-      <aside class="sidebar" id="sidebar" aria-label="Main navigation">
+      <aside class="sidebar" id="sidebar" aria-label="主要導覽">
         <div class="brand-block">
           <div class="brand-mark" aria-hidden="true">◎</div>
           <div>
             <h1>Threads 聯盟自動化</h1>
-            <p>creator_lab</p>
+            <p>聯盟內容營運台</p>
           </div>
         </div>
 
-        <nav class="nav-list" aria-label="Dashboard sections">
-          <div class="nav-group">
-            <p class="nav-group-label">營運決策</p>
-            <a href="#overview" class="nav-item is-active">總覽</a>
-            <a href="#readiness" class="nav-item">上線檢查</a>
-            <a href="#next-actions" class="nav-item">待辦行動</a>
-            <a href="#decision-brief" class="nav-item">決策摘要</a>
+        <div class="workspace-mode-switcher" aria-label="工作模式">
+          <span>工作模式</span>
+          <div class="workspace-mode-options" role="tablist" aria-label="選擇工作模式">
+            <button type="button" role="tab" data-workspace-mode="operate" aria-selected="true">日常營運</button>
+            <button type="button" role="tab" data-workspace-mode="insights" aria-selected="false">成效分析</button>
+            <button type="button" role="tab" data-workspace-mode="system" aria-selected="false">系統設定</button>
           </div>
-          <div class="nav-group">
-            <p class="nav-group-label">內容與收益</p>
-            <a href="#profit-engine" class="nav-item">獲利模式</a>
+        </div>
+
+        <nav class="nav-list" aria-label="功能導覽">
+          <div class="nav-group" data-mode-nav="operate">
+            <p class="nav-group-label">貼文流程</p>
+            <a href="#workflow-overview" class="nav-item is-active">流程總覽</a>
             <a href="#factory" class="nav-item">內容審核</a>
-            <a href="#schedule" class="nav-item">發佈排程</a>
             <a href="#risk" class="nav-item">合規風險</a>
-            <a href="#affiliate" class="nav-item">聯盟收益</a>
+            <a href="#compose" class="nav-item">手動新增</a>
           </div>
-          <div class="nav-group">
-            <p class="nav-group-label">系統監控</p>
+          <div class="nav-group" data-mode-nav="insights" hidden>
+            <p class="nav-group-label">收益與優化</p>
+            <a href="#commandStats" class="nav-item">成效總覽</a>
+            <a href="#affiliate" class="nav-item">聯盟收益</a>
+            <a href="#decision-brief" class="nav-item">決策摘要</a>
+            <a href="#profit-engine" class="nav-item">獲利模型</a>
+            <a href="#experiments" class="nav-item">實驗優化</a>
+          </div>
+          <div class="nav-group" data-mode-nav="system" hidden>
+            <p class="nav-group-label">設定與監控</p>
+            <a href="#readiness" class="nav-item">上線檢查</a>
             <a href="#control-tower" class="nav-item">自動化流程</a>
             <a href="#operating-map" class="nav-item">營運地圖</a>
             <a href="#timeline" class="nav-item">營運紀錄</a>
             <a href="#worker-health" class="nav-item">工作程序</a>
-            <a href="#experiments" class="nav-item">實驗優化</a>
             <a href="#settings" class="nav-item">活動設定</a>
           </div>
         </nav>
 
         <div class="workspace-card">
-          <span>Autonomy Mode</span>
-          <strong id="sideAutonomyStatus">Loading</strong>
+          <span>自動化狀態</span>
+          <strong id="sideAutonomyStatus">載入中</strong>
           <div class="meter"><span style="width:78%"></span></div>
           <small id="sideRuntimeSummary">等待同步</small>
         </div>
 
         <div class="sidebar-connectors">
           <div class="sidebar-section-title">
-            <span>API Connectors</span>
+            <span>服務連線</span>
             <b id="sideConnectorCount">0</b>
           </div>
           <div id="sideConnectorList"></div>
         </div>
       </aside>
 
-      <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="Close navigation"></button>
+      <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="關閉導覽"></button>
 
       <main class="main" id="overview">
         <header class="topbar">
-          <button class="icon-button" id="sidebarToggle" type="button" aria-label="Toggle navigation" aria-controls="sidebar" aria-expanded="false">☰</button>
+          <button class="icon-button" id="sidebarToggle" type="button" aria-label="開啟導覽" aria-controls="sidebar" aria-expanded="false">☰</button>
           <div class="view-title">
-            <h2>營運總覽</h2>
-            <span>資料更新於 <strong id="updatedAt">--</strong></span>
+            <h2 id="workspaceModeTitle">日常營運</h2>
+            <span id="workspaceModeSubtitle">草稿、審核、排程與發佈</span>
+            <small>資料更新於 <strong id="updatedAt">--</strong></small>
           </div>
           <div class="topbar-actions">
             <div class="topbar-status">
-              <span class="runtime-pill" id="runtimePill">Loading</span>
+              <span class="runtime-pill" id="runtimePill">載入中</span>
             </div>
             <div class="topbar-secondary-actions">
-              <button class="button secondary" id="generateBtn" type="button">AI 草稿</button>
-              <button class="button secondary" id="cycleRunBtn" type="button">自主循環</button>
+              <button class="button secondary" id="generateBtn" type="button" data-action-modes="operate">產生草稿</button>
+              <button class="button secondary" id="cycleRunBtn" type="button" data-action-modes="insights">執行自主循環</button>
               <button class="button tertiary" id="adminLogoutBtn" type="button">登出</button>
             </div>
             <div class="topbar-primary-actions">
-              <button class="button secondary" id="autoGenerateBtn" type="button">產生並排程</button>
-              <button class="button" id="runBtn" type="button">立即發佈</button>
+              <button class="button" id="runBtn" type="button" data-action-modes="operate">執行發佈佇列</button>
             </div>
           </div>
         </header>
 
-        <section class="command-strip" id="commandStats" aria-label="Autonomous command metrics">
+        <section class="workflow-overview" id="workflow-overview" data-workspace-section="operate" aria-labelledby="workflowOverviewTitle">
+          <div class="workflow-overview-header">
+            <div>
+              <p class="eyebrow">日常營運</p>
+              <h3 id="workflowOverviewTitle">貼文發佈流程</h3>
+            </div>
+            <span class="workflow-mode-badge" id="workflowModeBadge">測試模式</span>
+          </div>
+          <ol class="workflow-mode-steps">
+            <li><span>1</span><div><strong>產生草稿</strong><small><b id="workflowDraftCount">0</b> 則待審核</small></div></li>
+            <li><span>2</span><div><strong>人工審核</strong><small><b id="workflowApprovedCount">0</b> 則已核准</small></div></li>
+            <li><span>3</span><div><strong>設定排程</strong><small><b id="workflowQueuedCount">0</b> 則待發佈</small></div></li>
+            <li><span>4</span><div><strong>發佈追蹤</strong><small><b id="workflowSentCount">0</b> 則已送出</small></div></li>
+          </ol>
+        </section>
+
+        <section class="command-strip" id="commandStats" data-workspace-section="insights" aria-label="成效摘要">
           <div>
-            <span>AI Scripts</span>
+            <span>AI 文案</span>
             <strong id="cmdScripts">0</strong>
           </div>
           <div>
-            <span>Ad Signals</span>
+            <span>廣告訊號</span>
             <strong id="cmdSignals">0</strong>
           </div>
           <div>
-            <span>Offer Autopilot</span>
+            <span>自動優惠</span>
             <strong id="cmdOffers">0</strong>
           </div>
           <div>
-            <span>Conversion Feedback</span>
+            <span>轉換回饋</span>
             <strong id="cmdConversions">0</strong>
           </div>
           <div>
-            <span>Guardrails</span>
+            <span>安全阻擋</span>
             <strong id="cmdGuardrails">0</strong>
           </div>
         </section>
 
-        <section class="operating-map-section" id="operating-map" aria-label="Autonomous profit operating map">
+        <section class="operating-map-section" id="operating-map" data-workspace-section="system" aria-label="自動化營運地圖">
           <div class="operating-map-header">
             <div>
-              <p class="eyebrow">Autonomous Profit OS</p>
+              <p class="eyebrow">自主獲利系統</p>
               <h3>API 到收益的無人化控制塔</h3>
               <p id="operatingMapObjective">自然真實內容 → 廣告情報 → 聯盟成交</p>
             </div>
             <div class="operating-map-score">
-              <span id="operatingMapMode">Loading</span>
+              <span id="operatingMapMode">載入中</span>
               <strong id="operatingMapScore">--</strong>
-              <small id="operatingMapLoop">waiting</small>
+              <small id="operatingMapLoop">等待更新</small>
             </div>
           </div>
           <div class="operating-map-grid">
-            <aside class="agent-rail" aria-label="API and AI agents">
+            <aside class="agent-rail" aria-label="API 與 AI 串接服務">
               <div class="rail-title">
-                <span>Left rail</span>
+                <span>串接服務</span>
                 <strong>API / AI 自動串接</strong>
               </div>
               <div id="operatingMapLanes"></div>
             </aside>
-            <div class="loop-canvas" aria-label="Autonomous profit flow">
+            <div class="loop-canvas" aria-label="自主獲利流程">
               <div class="loop-canvas-head">
-                <span>Autonomous loop</span>
-                <strong id="operatingMapNextAction">Loading</strong>
+                <span>自主循環</span>
+                <strong id="operatingMapNextAction">載入中</strong>
               </div>
               <div class="operating-flow" id="operatingMapFlow"></div>
             </div>
-            <aside class="decision-rail" id="operatingMapDecision" aria-label="Autopilot decision"></aside>
+            <aside class="decision-rail" id="operatingMapDecision" aria-label="自主決策"></aside>
           </div>
         </section>
 
-        <section class="panel growth-loop-panel" id="growth-loop">
+        <section class="panel growth-loop-panel" id="growth-loop" data-workspace-section="insights">
           <div class="panel-header compact">
             <div>
-              <p class="eyebrow">Self-Optimizing Growth Loop</p>
+              <p class="eyebrow">自我優化循環</p>
               <h3>無須人工的優化任務佇列</h3>
             </div>
-            <span class="growth-mode" id="growthLoopMode">Loading</span>
+            <span class="growth-mode" id="growthLoopMode">載入中</span>
           </div>
           <div class="growth-summary" id="growthLoopSummary"></div>
           <div class="growth-controls" id="growthLoopControls"></div>
           <div class="growth-mission-list" id="growthLoopMissions"></div>
         </section>
 
-        <section class="panel control-panel" id="control-tower">
+        <section class="panel control-panel" id="control-tower" data-workspace-section="system">
           <div class="panel-header compact">
             <div>
-              <p class="eyebrow">Autonomy Control Tower</p>
+              <p class="eyebrow">自動化控制</p>
               <h3>全自動獲利流水線</h3>
             </div>
-            <span class="pipeline-mode" id="pipelineMode">Loading</span>
+            <span class="pipeline-mode" id="pipelineMode">載入中</span>
           </div>
           <div class="pipeline-summary" id="pipelineSummary"></div>
           <div class="policy-governor">
-            <span class="policy-mode" id="policyMode">Policy loading</span>
+            <span class="policy-mode" id="policyMode">規則載入中</span>
             <div class="policy-rules" id="policyRules"></div>
           </div>
           <div class="pipeline-steps" id="pipelineSteps"></div>
         </section>
 
-        <section class="panel readiness-panel" id="readiness">
+        <section class="panel readiness-panel" id="readiness" data-workspace-section="system">
           <div class="panel-header compact">
             <div>
-              <p class="eyebrow">Autonomous Readiness</p>
+              <p class="eyebrow">上線準備</p>
               <h3>自動化上線檢查</h3>
             </div>
-            <span class="readiness-mode" id="readinessMode">Loading</span>
+            <span class="readiness-mode" id="readinessMode">載入中</span>
           </div>
           <div class="readiness-summary" id="readinessSummary"></div>
           <div class="connector-center" id="connectorCenter"></div>
           <div class="readiness-checks" id="readinessChecks"></div>
         </section>
 
-        <section class="panel timeline-panel" id="timeline">
+        <section class="panel timeline-panel" id="timeline" data-workspace-section="system">
           <div class="panel-header compact">
             <div>
-              <p class="eyebrow">Autonomy Timeline</p>
+              <p class="eyebrow">營運時間軸</p>
               <h3>自主營運紀錄</h3>
             </div>
-            <span class="timeline-count" id="timelineCount">0 events</span>
+            <span class="timeline-count" id="timelineCount">0 筆</span>
           </div>
           <div class="timeline-list" id="opTimeline"></div>
         </section>
 
-        <section class="panel actions-panel" id="next-actions">
+        <section class="panel actions-panel" id="next-actions" data-workspace-section="insights">
           <div class="panel-header compact">
             <div>
-              <p class="eyebrow">Autopilot Next Actions</p>
+              <p class="eyebrow">自主待辦</p>
               <h3>自主系統下一步</h3>
             </div>
-            <span class="action-count" id="nextActionCount">0 actions</span>
+            <span class="action-count" id="nextActionCount">0 項</span>
           </div>
           <div class="action-summary" id="actionSummary"></div>
           <div class="action-list" id="nextActionList"></div>
         </section>
 
-        <section class="panel decision-panel" id="decision-brief">
+        <section class="panel decision-panel" id="decision-brief" data-workspace-section="insights">
           <div class="panel-header compact">
             <div>
-              <p class="eyebrow">Autopilot Decision Brief</p>
+              <p class="eyebrow">獲利決策</p>
               <h3>獲利決策摘要</h3>
             </div>
             <span class="decision-confidence" id="decisionConfidence">--</span>
@@ -216,25 +241,25 @@
           <div class="decision-grid" id="decisionBrief"></div>
         </section>
 
-        <section class="panel worker-panel" id="worker-health">
+        <section class="panel worker-panel" id="worker-health" data-workspace-section="system">
           <div class="panel-header compact">
             <div>
-              <p class="eyebrow">Worker / Scheduler Health</p>
+              <p class="eyebrow">排程程序狀態</p>
               <h3>無人值守排程狀態</h3>
             </div>
-            <span class="worker-mode" id="workerHealthMode">Loading</span>
+            <span class="worker-mode" id="workerHealthMode">載入中</span>
           </div>
           <div class="worker-health-grid" id="workerHealthGrid"></div>
           <div class="worker-notes" id="workerHealthNotes"></div>
         </section>
 
-        <section class="panel experiment-panel" id="experiments">
+        <section class="panel experiment-panel" id="experiments" data-workspace-section="insights">
           <div class="panel-header compact">
             <div>
-              <p class="eyebrow">Autonomous Experiment Loop</p>
+              <p class="eyebrow">自動實驗循環</p>
               <h3>獲利模式實驗與優化</h3>
             </div>
-            <span class="experiment-mode" id="experimentMode">Loading</span>
+            <span class="experiment-mode" id="experimentMode">載入中</span>
           </div>
           <div class="experiment-summary" id="experimentSummary"></div>
           <div class="optimizer-decision" id="optimizerDecision"></div>
@@ -244,11 +269,11 @@
           </div>
         </section>
 
-        <section class="ops-grid">
-          <section class="panel profit-engine-panel" id="profit-engine">
+        <section class="ops-grid" data-workspace-section="operate insights">
+          <section class="panel profit-engine-panel" id="profit-engine" data-workspace-section="insights">
             <div class="panel-header">
               <div>
-                <p class="eyebrow">Autonomous Profit Engine</p>
+                <p class="eyebrow">自主獲利引擎</p>
                 <h3>自主獲利模式監控</h3>
               </div>
               <button class="button" id="profitRunBtn" type="button">研究並產生文案</button>
@@ -271,11 +296,11 @@
 
             <div class="intel-strip">
               <div>
-                <strong>Live source status</strong>
+                <strong>即時資料來源</strong>
                 <div id="profitSourceStatuses"></div>
               </div>
               <div>
-                <strong>Latest market signals</strong>
+                <strong>最新市場訊號</strong>
                 <div id="profitSignals"></div>
               </div>
             </div>
@@ -284,13 +309,13 @@
             <div class="blocked-script-feed" id="profitBlockedScripts"></div>
           </section>
 
-          <section class="panel content-factory" id="factory">
+          <section class="panel content-factory" id="factory" data-workspace-section="operate">
             <div class="panel-header">
               <div>
                 <p class="eyebrow">內容工廠</p>
                 <h3>內容佇列</h3>
               </div>
-              <button class="button secondary" id="refreshBtn" type="button">Refresh</button>
+              <button class="button secondary" id="refreshBtn" type="button">更新</button>
             </div>
 
             <div class="mini-kpi-grid" id="factoryMetrics"></div>
@@ -311,16 +336,9 @@
               </table>
             </div>
 
-            <div class="workflow-strip" aria-label="AI content workflow">
-              <div><span>01</span>主題輸入</div>
-              <div><span>02</span>AI 生成</div>
-              <div><span>03</span>內容優化</div>
-              <div><span>04</span>合規檢查</div>
-              <div><span>05</span>排程發佈</div>
-            </div>
           </section>
 
-          <section class="panel risk-panel" id="risk">
+          <section class="panel risk-panel" id="risk" data-workspace-section="operate">
             <div class="panel-header">
               <div>
                 <p class="eyebrow">合規 / 風險審核</p>
@@ -337,7 +355,7 @@
             </div>
           </section>
 
-          <section class="panel revenue-panel" id="affiliate">
+          <section class="panel revenue-panel" id="affiliate" data-workspace-section="insights">
             <div class="panel-header">
               <div>
                 <p class="eyebrow">聯盟收益管道</p>
@@ -363,11 +381,11 @@
           </section>
         </section>
 
-        <section class="lower-grid">
-          <section class="panel compose-panel">
+        <section class="lower-grid" data-workspace-section="operate system">
+          <section class="panel compose-panel" id="compose" data-workspace-section="operate">
             <div class="panel-header compact">
               <div>
-                <p class="eyebrow">Compose</p>
+                <p class="eyebrow">手動建立</p>
                 <h3>新增貼文</h3>
               </div>
             </div>
@@ -381,7 +399,7 @@
                 <select id="productSelect" name="productId"></select>
               </label>
               <label>
-                <span>Topic tag</span>
+                <span>主題標籤</span>
                 <input id="topicTag" name="topicTag" type="text" maxlength="50" />
               </label>
               <label>
@@ -396,15 +414,15 @@
                 <input id="approved" name="approved" type="checkbox" />
                 <span>建立時標為已核准（仍需按排程）</span>
               </label>
-              <button class="button compose-submit" type="submit">Create post</button>
+              <button class="button compose-submit" type="submit">建立貼文</button>
             </form>
           </section>
 
-          <section class="panel prompt-panel" id="prompt">
+          <section class="panel prompt-panel" id="prompt" data-workspace-section="system">
             <div class="panel-header compact">
               <div>
-                <p class="eyebrow">Prompt System</p>
-                <h3>發文 prompt 範本</h3>
+                <p class="eyebrow">AI 指令設定</p>
+                <h3>發文指令範本</h3>
               </div>
             </div>
             <div class="prompt-controls">
@@ -418,10 +436,10 @@
           </section>
         </section>
 
-        <section class="panel campaign-panel" id="settings">
+        <section class="panel campaign-panel" id="settings" data-workspace-section="system">
           <div class="panel-header compact">
             <div>
-              <p class="eyebrow">Campaigns</p>
+              <p class="eyebrow">活動設定</p>
               <h3>活動與產品</h3>
             </div>
           </div>
@@ -432,20 +450,20 @@
 
     <div class="auth-gate is-hidden" id="authGate">
       <form class="auth-gate-card" id="adminLoginForm">
-        <h3>Admin access required</h3>
-        <p>Enter ADMIN_TOKEN or ADMIN_PASSWORD to open dashboard features.</p>
+        <h3>需要管理員權限</h3>
+        <p>請輸入管理員權杖或密碼以開啟管理介面。</p>
         <label>
-          <span>Admin credential</span>
+          <span>管理員憑證</span>
           <input id="adminSecretInput" type="password" placeholder="ADMIN_TOKEN / ADMIN_PASSWORD" />
         </label>
         <div class="auth-gate-actions">
-          <button class="button" type="submit">Unlock</button>
+          <button class="button" type="submit">登入管理介面</button>
           <small id="authMessage" class="auth-message"></small>
         </div>
       </form>
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="/console.js?v=20260714-operations"></script>
+    <script src="/console.js?v=20260714-workspace-modes"></script>
   </body>
 </html>

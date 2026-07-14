@@ -9,6 +9,25 @@ const state = {
 
 const $ = (selector) => document.querySelector(selector);
 
+const WORKSPACE_MODE_KEY = "threads-affiliate-workspace-mode";
+const WORKSPACE_MODES = {
+  operate: {
+    title: "日常營運",
+    subtitle: "草稿、審核、排程與發佈",
+    target: "#workflow-overview"
+  },
+  insights: {
+    title: "成效分析",
+    subtitle: "收益、轉換與內容優化",
+    target: "#commandStats"
+  },
+  system: {
+    title: "系統設定",
+    subtitle: "上線檢查、排程與服務連線",
+    target: "#readiness"
+  }
+};
+
 function setButtonBusy(button, busy, busyLabel = "處理中") {
   if (!button) return;
   if (busy) {
@@ -41,6 +60,86 @@ function setNavigationOpen(open) {
   if (toggle) toggle.setAttribute("aria-expanded", String(open));
 }
 
+function elementSupportsMode(element, mode, attribute) {
+  return String(element.dataset[attribute] || "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .includes(mode);
+}
+
+function setWorkspaceMode(mode, { persist = true, scroll = false } = {}) {
+  const config = WORKSPACE_MODES[mode] || WORKSPACE_MODES.operate;
+  const activeMode = WORKSPACE_MODES[mode] ? mode : "operate";
+  document.body.dataset.workspaceMode = activeMode;
+
+  document.querySelectorAll("[data-workspace-mode]").forEach((button) => {
+    const active = button.dataset.workspaceMode === activeMode;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+  });
+  document.querySelectorAll("[data-mode-nav]").forEach((group) => {
+    group.hidden = group.dataset.modeNav !== activeMode;
+  });
+  document.querySelectorAll("[data-workspace-section]").forEach((section) => {
+    section.hidden = !elementSupportsMode(section, activeMode, "workspaceSection");
+  });
+  document.querySelectorAll("[data-action-modes]").forEach((action) => {
+    action.hidden = !elementSupportsMode(action, activeMode, "actionModes");
+  });
+
+  const title = $("#workspaceModeTitle");
+  const subtitle = $("#workspaceModeSubtitle");
+  if (title) title.textContent = config.title;
+  if (subtitle) subtitle.textContent = config.subtitle;
+
+  const firstVisibleLink = document.querySelector(`[data-mode-nav="${activeMode}"] .nav-item`);
+  if (firstVisibleLink) setActiveNavigation(firstVisibleLink);
+  setNavigationOpen(false);
+
+  if (persist) {
+    try {
+      window.localStorage.setItem(WORKSPACE_MODE_KEY, activeMode);
+    } catch {
+      // Browser storage is optional; the default mode remains available.
+    }
+  }
+  if (scroll) {
+    const target = document.querySelector(config.target);
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+function setupWorkspaceModes() {
+  let initialMode = "operate";
+  try {
+    const storedMode = window.localStorage.getItem(WORKSPACE_MODE_KEY);
+    if (storedMode && WORKSPACE_MODES[storedMode]) initialMode = storedMode;
+  } catch {
+    // Browser storage is optional; use the daily operations mode.
+  }
+
+  const modeButtons = [...document.querySelectorAll("[data-workspace-mode]")];
+  modeButtons.forEach((button, index) => {
+    button.addEventListener("click", () => {
+      setWorkspaceMode(button.dataset.workspaceMode, { scroll: true });
+    });
+    button.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const nextIndex = event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? modeButtons.length - 1
+          : (index + (event.key === "ArrowRight" ? 1 : -1) + modeButtons.length) % modeButtons.length;
+      const nextButton = modeButtons[nextIndex];
+      setWorkspaceMode(nextButton.dataset.workspaceMode);
+      nextButton.focus();
+    });
+  });
+  setWorkspaceMode(initialMode, { persist: false });
+}
+
 function setActiveNavigation(link) {
   document.querySelectorAll(".nav-item").forEach((item) => {
     const active = item === link;
@@ -62,6 +161,7 @@ function arrangeDashboardSections() {
 
   [
     ".topbar",
+    "#workflow-overview",
     ".command-strip",
     "#readiness",
     "#next-actions",
@@ -104,9 +204,7 @@ function setupNavigation() {
   const targets = links
     .map((link) => ({
       link,
-      section: link.getAttribute("href") === "#overview"
-        ? document.querySelector(".command-strip")
-        : document.querySelector(link.getAttribute("href"))
+      section: document.querySelector(link.getAttribute("href"))
     }))
     .filter((item) => item.section);
   const observer = new IntersectionObserver((entries) => {
@@ -166,9 +264,9 @@ async function api(path, options = {}) {
     ...options,
     body: options.body ? JSON.stringify(options.body) : undefined
   });
-  const payload = response.status === 204 ? {} : await response.json().catch(() => ({ error: "Invalid server response." }));
+  const payload = response.status === 204 ? {} : await response.json().catch(() => ({ error: "伺服器回應格式無效。" }));
   if (!response.ok) {
-    const error = new Error(payload.error || "Request failed");
+    const error = new Error(payload.error || "請求失敗");
     error.statusCode = response.status;
     if (response.status === 401 && options.skipAuth !== true) {
       setAuthGateVisible(true, error.message);
@@ -184,7 +282,7 @@ function setAuthGateVisible(visible, message = "") {
   gate.classList.toggle("is-hidden", !visible);
   const messageNode = $("#authMessage");
   if (messageNode) {
-    messageNode.textContent = message || "Enter ADMIN_TOKEN or ADMIN_PASSWORD";
+    messageNode.textContent = message || "請輸入管理員權杖或密碼";
   }
 }
 
@@ -196,7 +294,7 @@ async function refreshAdminSession() {
     if (logoutBtn) {
       logoutBtn.classList.toggle("is-hidden", !session.authRequired || !session.authenticated);
     }
-    setAuthGateVisible(session.authRequired && !session.authenticated, "Admin access required.");
+    setAuthGateVisible(session.authRequired && !session.authenticated, "需要管理員權限。");
     return session;
   } catch (error) {
     state.auth = { authRequired: false, authenticated: true, methods: { token: false, password: false } };
@@ -225,7 +323,7 @@ async function adminLogin(event) {
     if (input) input.value = "";
     await refresh();
   } catch (error) {
-    setAuthGateVisible(true, error.message || "Admin login failed.");
+    setAuthGateVisible(true, error.message || "管理員登入失敗。");
     if (input) input.focus();
   }
 }
@@ -275,6 +373,27 @@ function reviewStatusOf(post) {
   if (post.status === "container_created") return "scheduled";
   if (post.status === "blocked_credentials") return "failed";
   return post.status || (post.approved ? "approved" : "needs_review");
+}
+
+function reviewStatusLabel(status) {
+  const labels = {
+    generated: "已生成",
+    needs_review: "待審核",
+    draft: "草稿",
+    approved: "已核准",
+    scheduled: "已排程",
+    container_created: "待發佈",
+    published: "已發佈",
+    simulated: "已模擬",
+    failed: "失敗",
+    rejected: "已拒絕",
+    blocked_credentials: "缺少憑證",
+    completed: "完成",
+    completed_with_errors: "完成但有錯誤",
+    paid: "已付款",
+    pending: "處理中"
+  };
+  return labels[status] || status || "未知";
 }
 
 function isReviewable(post) {
@@ -350,16 +469,25 @@ function blockedActionAttributes(reason) {
 
 function renderRuntime(data) {
   $("#updatedAt").textContent = formatDate(data.generatedAt);
-  $("#runtimePill").textContent = data.runtime.dryRun ? "DRY RUN" : "LIVE";
+  $("#runtimePill").textContent = data.runtime.dryRun ? "測試模式" : "正式模式";
   $("#runtimePill").className = `runtime-pill ${data.runtime.dryRun ? "" : "badge good"}`;
   $("#promptTemplate").textContent = data.promptTemplate || "";
   $("#sideAutonomyStatus").textContent = data.runtime.autonomyMode ? "自主運行中" : "手動監控";
-  $("#sideRuntimeSummary").textContent = `${data.runtime.dryRun ? "Dry-run" : "Live"} · ${data.runtime.hasThreadsCredentials ? "Threads ready" : "Needs Threads token"}`;
+  $("#sideRuntimeSummary").textContent = `${data.runtime.dryRun ? "測試發佈" : "正式發佈"} · ${data.runtime.hasThreadsCredentials ? "Threads 已連線" : "Threads 憑證未完成"}`;
+  $("#workflowModeBadge").textContent = data.runtime.dryRun ? "測試模式" : "正式模式";
   $("#cmdScripts").textContent = data.profitEngine?.generatedScripts?.length || 0;
   $("#cmdSignals").textContent = data.profitEngine?.externalSignals?.length || 0;
   $("#cmdOffers").textContent = data.profitEngine?.offerAutopilot?.activeSyncedProductCount || 0;
   $("#cmdConversions").textContent = data.metrics.conversions || 0;
   $("#cmdGuardrails").textContent = data.profitEngine?.blockedScripts?.length || 0;
+}
+
+function renderWorkflowSummary(data) {
+  const metrics = data.metrics || {};
+  $("#workflowDraftCount").textContent = Number(metrics.needsReview ?? metrics.drafts ?? 0);
+  $("#workflowApprovedCount").textContent = Number(metrics.approved || 0);
+  $("#workflowQueuedCount").textContent = Number(metrics.queued || 0);
+  $("#workflowSentCount").textContent = Number(metrics.published || 0) + Number(metrics.simulated || 0);
 }
 
 function pipelineStatusScore(status) {
@@ -378,51 +506,51 @@ function buildPipelineFallback(data) {
   const steps = [
     {
       id: "api_intake",
-      label: "API / Ad Intake",
+      label: "API / 廣告資料匯入",
       status: connectedSources > 0 ? "active" : signalCount > 0 ? "watch" : "blocked",
-      value: `${signalCount} signals`,
-      detail: connectedSources > 0 ? `${connectedSources} source(s) connected` : "No live ad or offer feed is connected yet.",
-      nextAction: connectedSources > 0 ? "Monitor signal freshness" : "Connect ad or offer feeds"
+      value: `${signalCount} 筆訊號`,
+      detail: connectedSources > 0 ? `${connectedSources} 個資料來源已連線` : "尚未連接即時廣告或優惠資料來源。",
+      nextAction: connectedSources > 0 ? "監控訊號時效" : "連接廣告或優惠資料來源"
     },
     {
       id: "ai_scripts",
-      label: "AI Script Engine",
+      label: "AI 文案引擎",
       status: runtime.hasOpenAIApiKey ? "active" : scriptCount > 0 ? "watch" : "manual",
-      value: `${scriptCount} scripts`,
-      detail: runtime.hasOpenAIApiKey ? "AI provider ready" : "Template fallback is active.",
-      nextAction: runtime.hasOpenAIApiKey ? "Generate variants" : "Set OPENAI_API_KEY"
+      value: `${scriptCount} 則文案`,
+      detail: runtime.hasOpenAIApiKey ? "AI 服務已就緒" : "目前使用範本備援。",
+      nextAction: runtime.hasOpenAIApiKey ? "產生文案變體" : "設定 OPENAI_API_KEY"
     },
     {
       id: "profit_optimizer",
-      label: "Profit Optimizer",
+      label: "獲利優化器",
       status: hasOptimizer ? "active" : (engine.runs || []).length ? "watch" : "manual",
       value: engine.optimizer?.latestPolicy?.mode || "baseline",
-      detail: engine.optimizer?.latestPolicy?.targetAction || "Optimizer will appear after a profit run.",
-      nextAction: hasOptimizer ? "Let policy tune the next cycle" : "Run profit engine"
+      detail: engine.optimizer?.latestPolicy?.targetAction || "完成一次獲利循環後會顯示優化策略。",
+      nextAction: hasOptimizer ? "依策略調整下次循環" : "執行獲利引擎"
     },
     {
       id: "worker_loop",
-      label: "Worker Loop",
+      label: "背景程序循環",
       status: runtime.workerEnabled && runtime.autonomyMode ? "active" : runtime.workerEnabled ? "watch" : "blocked",
-      value: runtime.autonomyMode ? "autonomous" : "manual",
-      detail: runtime.workerEnabled ? "Worker process is enabled." : "Worker is disabled.",
-      nextAction: runtime.workerEnabled && runtime.autonomyMode ? "Watch next heartbeat" : "Enable worker and autonomy mode"
+      value: runtime.autonomyMode ? "自主" : "手動",
+      detail: runtime.workerEnabled ? "背景程序已啟用。" : "背景程序目前關閉。",
+      nextAction: runtime.workerEnabled && runtime.autonomyMode ? "觀察下次心跳" : "啟用背景程序與自主模式"
     },
     {
       id: "threads_publish",
-      label: "Threads Publishing",
+      label: "Threads 發佈",
       status: runtime.dryRun ? "dry_run" : runtime.hasThreadsCredentials ? "active" : "blocked",
-      value: runtime.dryRun ? "dry-run" : "live",
-      detail: runtime.dryRun ? "Publishing is simulated." : runtime.hasThreadsCredentials ? "Credentials ready" : "Missing Threads credentials.",
-      nextAction: runtime.dryRun ? "Switch live after validation" : "Monitor publishing"
+      value: runtime.dryRun ? "測試模式" : "正式模式",
+      detail: runtime.dryRun ? "目前只會模擬發佈。" : runtime.hasThreadsCredentials ? "憑證已就緒" : "缺少 Threads 憑證。",
+      nextAction: runtime.dryRun ? "驗證完成後切換正式模式" : "監控發佈"
     },
     {
       id: "feedback_loop",
-      label: "Conversion Feedback",
+      label: "轉換回饋",
       status: Number(metrics.conversions || 0) > 0 ? "active" : "blocked",
-      value: `${Number(metrics.conversions || 0)} conversions`,
-      detail: Number(metrics.conversions || 0) > 0 ? "Revenue is feeding model scores." : "No conversion feedback yet.",
-      nextAction: Number(metrics.conversions || 0) > 0 ? "Scale revenue-backed experiments" : "Connect conversion webhook"
+      value: `${Number(metrics.conversions || 0)} 次轉換`,
+      detail: Number(metrics.conversions || 0) > 0 ? "收益正在回饋模型評分。" : "尚無轉換回饋。",
+      nextAction: Number(metrics.conversions || 0) > 0 ? "擴大收益驗證實驗" : "連接轉換 Webhook"
     }
   ];
   const score = Math.round(steps.reduce((total, step) => total + pipelineStatusScore(step.status), 0) / steps.length);
@@ -449,27 +577,27 @@ function buildPolicyFallback(data) {
   const rules = [
     {
       id: "queue_depth",
-      label: "Queue depth",
+      label: "佇列深度",
       status: queueDepth <= 50 ? "pass" : "pause",
       value: queueDepth,
       limit: 50,
-      action: "Process or review the queue before adding more scheduled posts."
+      action: "新增排程前，請先處理或審核現有佇列。"
     },
     {
       id: "publish_capacity",
-      label: "Dry-run/live capacity",
+      label: "測試與正式發佈能力",
       status: runtime.dryRun || runtime.hasThreadsCredentials ? "pass" : "pause",
-      value: runtime.dryRun ? "dry-run" : "live",
-      limit: "ready",
-      action: "Set Threads credentials or keep dry-run enabled."
+      value: runtime.dryRun ? "測試模式" : "正式模式",
+      limit: "就緒",
+      action: "設定 Threads 憑證，或維持測試模式。"
     },
     {
       id: "conversion_feedback",
-      label: "Conversion feedback",
+      label: "轉換回饋",
       status: Number(metrics.conversions || 0) > 0 ? "pass" : "watch",
       value: Number(metrics.conversions || 0),
       limit: "1+",
-      action: "Connect conversion webhook for revenue learning."
+      action: "連接轉換 Webhook 以啟用收益學習。"
     }
   ];
   const pausedRules = rules.filter((rule) => rule.status === "pause");
@@ -478,7 +606,7 @@ function buildPolicyFallback(data) {
     canRunCycle: pausedRules.length === 0,
     canCreatePosts: pausedRules.length === 0,
     canPublishQueue: pausedRules.length === 0,
-    nextAction: pausedRules[0]?.action || "Autonomy policy is clear.",
+    nextAction: pausedRules[0]?.action || "自主規則檢查已通過。",
     rules
   };
 }
@@ -504,8 +632,8 @@ function buildOperatingMapFallback(data) {
       mode: policy.mode === "paused" ? "policy_paused" : runtime.dryRun ? "dry_run" : runtime.autonomyMode ? "autonomous_setup" : "manual_build",
       healthScore,
       objective: engine.objective || "自然真實內容 -> 廣告情報 -> 聯盟成交",
-      loopLabel: runtime.dryRun ? "dry-run validation loop" : "autonomy operating loop",
-      nextAction: policy.nextAction || pipeline.summary?.nextAction || "Monitor loop",
+      loopLabel: runtime.dryRun ? "測試驗證循環" : "自主營運循環",
+      nextAction: policy.nextAction || pipeline.summary?.nextAction || "持續監控",
       unattendedReady: Boolean(pipeline.summary?.readyForUnattended),
       revenue: metrics.revenue || 0,
       conversionRate
@@ -513,87 +641,87 @@ function buildOperatingMapFallback(data) {
     lanes: [
       {
         id: "market_api",
-        label: "API / market intake",
+        label: "API / 市場資料匯入",
         status: connectedSources > 0 ? "active" : signalCount > 0 ? "watch" : "blocked",
-        value: `${signalCount} signals`,
-        detail: connectedSources > 0 ? `${connectedSources} source(s) connected.` : "Connect ad or affiliate feeds.",
-        action: "Sync market signals"
+        value: `${signalCount} 筆訊號`,
+        detail: connectedSources > 0 ? `${connectedSources} 個資料來源已連線。` : "請連接廣告或聯盟資料來源。",
+        action: "同步市場訊號"
       },
       {
         id: "ai_script_agent",
-        label: "AI natural script agent",
+        label: "AI 自然文案代理",
         status: runtime.hasOpenAIApiKey ? "active" : scriptCount > 0 ? "watch" : "manual",
-        value: `${scriptCount} scripts`,
-        detail: runtime.hasOpenAIApiKey ? "AI provider ready." : "Template fallback active.",
-        action: runtime.hasOpenAIApiKey ? "Generate variants" : "Connect OpenAI"
+        value: `${scriptCount} 則文案`,
+        detail: runtime.hasOpenAIApiKey ? "AI 服務已就緒。" : "目前使用範本備援。",
+        action: runtime.hasOpenAIApiKey ? "產生文案變體" : "連接 OpenAI"
       },
       {
         id: "threads_publish_api",
-        label: "Threads publish API",
+        label: "Threads 發佈 API",
         status: runtime.dryRun ? "dry_run" : runtime.hasThreadsCredentials ? "active" : "blocked",
-        value: runtime.dryRun ? "dry-run" : "live",
-        detail: runtime.dryRun ? "Publishing is simulated." : "Live publish path.",
-        action: "Watch queue"
+        value: runtime.dryRun ? "測試模式" : "正式模式",
+        detail: runtime.dryRun ? "目前只會模擬發佈。" : "正式發佈路徑。",
+        action: "監控佇列"
       },
       {
         id: "conversion_feedback",
-        label: "Conversion feedback",
+        label: "轉換回饋",
         status: Number(metrics.conversions || 0) > 0 ? "active" : "blocked",
-        value: `${Number(metrics.conversions || 0)} conversions`,
-        detail: "Revenue events tune future model scoring.",
-        action: "Connect postback"
+        value: `${Number(metrics.conversions || 0)} 次轉換`,
+        detail: "收益事件會調整後續模型評分。",
+        action: "連接回傳事件"
       }
     ],
     flow: [
       {
         id: "research_profit_model",
-        label: "Research profit model",
+        label: "研究獲利模型",
         status: (engine.runs || []).length ? "active" : "manual",
-        value: `${(engine.models || []).length} models`,
-        detail: leader.name ? `Leader: ${leader.name}` : "Run research to pick a model.",
-        signal: engine.experiments?.confidence || "setup"
+        value: `${(engine.models || []).length} 個模型`,
+        detail: leader.name ? `領先模型：${leader.name}` : "執行研究以選擇模型。",
+        signal: operatingStatusLabel(engine.experiments?.confidence || "setup")
       },
       {
         id: "rewrite_natural",
-        label: "Rewrite as natural Threads scripts",
+        label: "改寫自然 Threads 文案",
         status: scriptCount > 0 ? "active" : "manual",
-        value: `${scriptCount} scripts`,
-        detail: "Turns offers into honest, low-risk posts.",
-        signal: "guarded"
+        value: `${scriptCount} 則文案`,
+        detail: "將優惠轉為誠實且低風險的推薦貼文。",
+        signal: "安全檢查"
       },
       {
         id: "acquire_ads",
-        label: "Acquire ad and offer evidence",
+        label: "取得廣告與優惠依據",
         status: signalCount > 0 ? "active" : "blocked",
-        value: `${signalCount} signals`,
-        detail: "Ads and offers become scoring evidence.",
-        signal: connectedSources > 0 ? "live" : "setup"
+        value: `${signalCount} 筆訊號`,
+        detail: "廣告與優惠資料會成為評分依據。",
+        signal: connectedSources > 0 ? "即時" : "待設定"
       },
       {
         id: "schedule_publish",
-        label: "Schedule and publish",
+        label: "排程與發佈",
         status: Number(metrics.queued || 0) > 0 ? "active" : runtime.dryRun ? "dry_run" : "watch",
-        value: `${Number(metrics.queued || 0)} queued`,
-        detail: "Validated posts enter the publishing queue.",
-        signal: `${Number(metrics.published || 0) + Number(metrics.simulated || 0)} sent`
+        value: `${Number(metrics.queued || 0)} 則等待中`,
+        detail: "通過驗證的貼文會進入發佈佇列。",
+        signal: `${Number(metrics.published || 0) + Number(metrics.simulated || 0)} 則已送出`
       },
       {
         id: "learn_optimize",
-        label: "Learn and optimize",
+        label: "學習與優化",
         status: Number(metrics.conversions || 0) > 0 ? "active" : Number(metrics.clicks || 0) > 0 ? "watch" : "manual",
-        value: `${conversionRate}% CVR`,
-        detail: "Feedback updates the next autonomous policy.",
-        signal: engine.optimizer?.latestPolicy?.mode || "baseline"
+        value: `${conversionRate}% 轉換率`,
+        detail: "回饋資料會更新下一次自主策略。",
+        signal: engine.optimizer?.latestPolicy?.mode || "基準"
       }
     ],
     decision: {
-      title: engine.optimizer?.latestPolicy?.targetAction || "Continue highest scoring model",
+      title: engine.optimizer?.latestPolicy?.targetAction || "維持最高分模型",
       confidence: engine.experiments?.confidence || "setup",
-      selectedModel: leader.name || "No model selected",
-      selectedOffer: engine.generatedScripts?.[0]?.hook || "No active script",
+      selectedModel: leader.name || "尚未選擇模型",
+      selectedOffer: engine.generatedScripts?.[0]?.hook || "尚無有效文案",
       policyMode: policy.mode,
       guardrailState: (engine.blockedScripts || []).length ? "needs_review" : "clear",
-      nextAction: policy.nextAction || "Run profit engine",
+      nextAction: policy.nextAction || "執行獲利引擎",
       reasons: [
         ...(engine.optimizer?.latestPolicy?.reasons || []),
         policy.nextAction || "",
@@ -605,14 +733,47 @@ function buildOperatingMapFallback(data) {
 
 function operatingStatusLabel(status) {
   const labels = {
-    active: "active",
-    dry_run: "dry-run",
-    watch: "watch",
-    manual: "manual",
-    paused: "paused",
-    blocked: "blocked"
+    active: "正常",
+    dry_run: "測試模式",
+    watch: "觀察中",
+    manual: "手動",
+    paused: "已暫停",
+    blocked: "已阻擋",
+    pass: "通過",
+    pause: "暫停",
+    warning: "警告",
+    ready: "就緒",
+    connected: "已連線",
+    configured: "已設定",
+    setup: "待設定",
+    error: "錯誤",
+    backoff: "等待重試",
+    on: "開啟",
+    off: "關閉",
+    autonomous: "自主",
+    live: "正式",
+    high: "高",
+    medium: "中",
+    low: "低",
+    critical: "緊急",
+    auto: "自動",
+    waiting: "等待中",
+    needs_config: "待設定",
+    self_running: "自主運行",
+    operator_assisted: "人工輔助",
+    policy_paused: "規則暫停",
+    clear: "通過",
+    needs_review: "待審核",
+    scaling: "擴大中",
+    learning: "學習中",
+    watching: "觀察中",
+    revenue_backed: "收益驗證",
+    traffic_backed: "流量驗證",
+    model_backed: "模型驗證",
+    unknown: "未知"
   };
-  return labels[status] || status || "unknown";
+  const key = String(status || "unknown").replaceAll("-", "_");
+  return labels[key] || status || "未知";
 }
 
 function renderOperatingMap(data) {
@@ -624,11 +785,11 @@ function renderOperatingMap(data) {
   const modeClass = summary.unattendedReady ? "active" : summary.mode === "policy_paused" ? "paused" : summary.mode === "dry_run" ? "dry_run" : "watch";
 
   $("#operatingMapObjective").textContent = summary.objective || "自然真實內容 → 廣告情報 → 聯盟成交";
-  $("#operatingMapMode").textContent = String(summary.mode || "manual").replaceAll("_", " ");
+  $("#operatingMapMode").textContent = operatingStatusLabel(summary.mode || "manual");
   $("#operatingMapMode").className = `status-${modeClass}`;
   $("#operatingMapScore").textContent = `${Number(summary.healthScore || 0)}%`;
-  $("#operatingMapLoop").textContent = `${summary.loopLabel || "autonomy loop"} · ${formatMoney(summary.revenue || 0)} · ${Number(summary.conversionRate || 0)}% CVR`;
-  $("#operatingMapNextAction").textContent = summary.nextAction || "Monitor loop";
+  $("#operatingMapLoop").textContent = `${summary.loopLabel || "自主循環"} · ${formatMoney(summary.revenue || 0)} · ${Number(summary.conversionRate || 0)}% 轉換率`;
+  $("#operatingMapNextAction").textContent = summary.nextAction || "持續監控";
 
   $("#operatingMapLanes").innerHTML = lanes.map((lane) => `
     <article class="agent-lane status-${escapeHtml(lane.status)}">
@@ -657,20 +818,20 @@ function renderOperatingMap(data) {
 
   $("#operatingMapDecision").innerHTML = `
     <div class="decision-rail-head">
-      <span>Autopilot decision</span>
-      <strong>${escapeHtml(decision.title || "Monitor")}</strong>
+      <span>自主決策</span>
+      <strong>${escapeHtml(decision.title || "持續監控")}</strong>
     </div>
     <dl class="decision-facts">
-      <div><dt>Confidence</dt><dd>${escapeHtml(decision.confidence || "setup")}</dd></div>
-      <div><dt>Model</dt><dd>${escapeHtml(decision.selectedModel || "-")}</dd></div>
-      <div><dt>Offer</dt><dd>${escapeHtml(decision.selectedOffer || "-")}</dd></div>
-      <div><dt>Policy</dt><dd>${escapeHtml(decision.policyMode || "manual")}</dd></div>
-      <div><dt>Guardrails</dt><dd>${escapeHtml(decision.guardrailState || "clear")}</dd></div>
+      <div><dt>信心程度</dt><dd>${escapeHtml(operatingStatusLabel(decision.confidence || "setup"))}</dd></div>
+      <div><dt>獲利模型</dt><dd>${escapeHtml(decision.selectedModel || "-")}</dd></div>
+      <div><dt>推薦內容</dt><dd>${escapeHtml(decision.selectedOffer || "-")}</dd></div>
+      <div><dt>執行規則</dt><dd>${escapeHtml(operatingStatusLabel(decision.policyMode || "manual"))}</dd></div>
+      <div><dt>安全檢查</dt><dd>${escapeHtml(operatingStatusLabel(decision.guardrailState || "clear"))}</dd></div>
     </dl>
     <div class="decision-reasons">
-      ${(decision.reasons || []).map((reason) => `<p>${escapeHtml(reason)}</p>`).join("") || "<p>No decision evidence yet.</p>"}
+      ${(decision.reasons || []).map((reason) => `<p>${escapeHtml(reason)}</p>`).join("") || "<p>尚無決策依據。</p>"}
     </div>
-    <small>${escapeHtml(decision.nextAction || "Run profit engine")}</small>
+    <small>${escapeHtml(decision.nextAction || "執行獲利引擎")}</small>
   `;
 }
 
@@ -688,13 +849,13 @@ function buildGrowthLoopFallback(data) {
     {
       id: "market_signal_ingest",
       lane: "research",
-      title: "取得行銷廣告與 offer 訊號",
+      title: "取得行銷廣告與優惠訊號",
       priority: signalCount ? "medium" : "high",
       status: signalCount ? "auto" : "needs_config",
       automation: signalCount ? "worker_ingest" : "config_required",
-      trigger: `${signalCount} signal(s)`,
+      trigger: `${signalCount} 筆訊號`,
       expectedImpact: "讓獲利模型從市場證據學習。",
-      action: signalCount ? "Next cycle will ingest sources." : "Connect ad or offer feeds.",
+      action: signalCount ? "下次循環會匯入資料來源。" : "請連接廣告或優惠資料來源。",
       request: signalCount ? { path: "/api/autonomy/cycle", method: "POST", body: { source: "growth-loop.market", force: true, createPosts: false, publishQueue: false } } : null
     },
     {
@@ -704,21 +865,21 @@ function buildGrowthLoopFallback(data) {
       priority: scriptCount ? "medium" : "high",
       status: policy.canCreatePosts ? "auto" : "paused",
       automation: runtime.hasOpenAIApiKey ? "ai_script_agent" : "template_fallback",
-      trigger: `${scriptCount} script(s)`,
+      trigger: `${scriptCount} 則文案`,
       expectedImpact: "產生有揭露、不誇大、可排程的推薦文。",
-      action: policy.canCreatePosts ? "Generate scripts." : policy.nextAction,
+      action: policy.canCreatePosts ? "產生文案。" : policy.nextAction,
       request: policy.canCreatePosts ? { path: "/api/profit-engine/run", method: "POST", body: { source: "growth-loop.scripts", force: true, createPosts: true, autoApprove: true } } : null
     },
     {
       id: "queue_publish",
       lane: "distribution",
-      title: "發佈或 dry-run 佇列",
+      title: "執行發佈或測試佇列",
       priority: queueDepth ? "high" : "medium",
       status: queueDepth ? policy.canPublishQueue ? "auto" : "paused" : "waiting",
       automation: "queue_runner",
-      trigger: `${queueDepth} queued post(s)`,
+      trigger: `${queueDepth} 則貼文等待中`,
       expectedImpact: "把通過 guardrail 的內容送入發佈流程。",
-      action: queueDepth ? "Process queue." : "Wait for generated scripts.",
+      action: queueDepth ? "處理佇列。" : "等待產生文案。",
       request: queueDepth && policy.canPublishQueue ? { path: "/api/automation/run", method: "POST", body: { source: "growth-loop.queue" } } : null
     },
     {
@@ -728,9 +889,9 @@ function buildGrowthLoopFallback(data) {
       priority: blockedScriptCount ? "high" : "low",
       status: blockedScriptCount ? "auto" : "waiting",
       automation: blockedScriptCount ? "optimizer_repair" : "observe",
-      trigger: `${blockedScriptCount} blocked script(s)`,
+      trigger: `${blockedScriptCount} 則文案被阻擋`,
       expectedImpact: "降低合規風險與重複發文。",
-      action: blockedScriptCount ? "Regenerate safer copy." : "No repair needed.",
+      action: blockedScriptCount ? "重新產生較安全的文案。" : "目前不需修復。",
       request: blockedScriptCount ? { path: "/api/profit-engine/run", method: "POST", body: { source: "growth-loop.repair", force: true, createPosts: true, autoApprove: true } } : null
     }
   ];
@@ -747,8 +908,8 @@ function buildGrowthLoopFallback(data) {
       needsConfig,
       paused,
       waiting,
-      nextMissionTitle: missions.find((mission) => mission.status === "auto")?.title || missions[0]?.title || "Monitor growth loop",
-      nextAction: missions.find((mission) => mission.status === "auto")?.action || missions[0]?.action || "Monitor growth loop",
+      nextMissionTitle: missions.find((mission) => mission.status === "auto")?.title || missions[0]?.title || "監控成長循環",
+      nextAction: missions.find((mission) => mission.status === "auto")?.action || missions[0]?.action || "監控成長循環",
       cadence: runtime.autonomyMode ? "scheduled" : "manual",
       dryRun: runtime.dryRun
     },
@@ -772,16 +933,16 @@ function renderGrowthLoop(data) {
   const missions = loop.missions || [];
   const modeClass = summary.mode === "self_running" ? "active" : summary.mode === "policy_paused" ? "paused" : "watch";
 
-  $("#growthLoopMode").textContent = `${String(summary.mode || "manual").replaceAll("_", " ")} · ${Number(summary.automationScore || 0)}%`;
+  $("#growthLoopMode").textContent = `${operatingStatusLabel(summary.mode || "manual")} · ${Number(summary.automationScore || 0)}%`;
   $("#growthLoopMode").className = `growth-mode status-${modeClass}`;
   $("#growthLoopSummary").innerHTML = [
-    ["Auto missions", summary.autoExecutable || 0, "can run through API"],
-    ["Needs config", summary.needsConfig || 0, "environment or feed setup"],
-    ["Paused", summary.paused || 0, "policy guarded"],
-    ["Waiting", summary.waiting || 0, "needs data"],
-    ["Next", summary.nextMissionTitle || "Monitor", summary.nextAction || "No action"],
-    ["Cadence", summary.cadence || "manual", summary.workerWillRun ? "worker scheduled" : "operator assisted"],
-    ["Last", summary.lastExecution?.missionTitle || "none", summary.lastExecution ? `${summary.lastExecution.status} · ${formatDate(summary.lastExecution.createdAt)}` : "no executor event"]
+    ["自動任務", summary.autoExecutable || 0, "可透過 API 執行"],
+    ["待設定", summary.needsConfig || 0, "環境變數或資料來源"],
+    ["已暫停", summary.paused || 0, "受規則保護"],
+    ["等待中", summary.waiting || 0, "等待資料"],
+    ["下一步", summary.nextMissionTitle || "持續監控", summary.nextAction || "無需動作"],
+    ["執行週期", operatingStatusLabel(summary.cadence || "manual"), summary.workerWillRun ? "已排程自動執行" : "人工輔助"],
+    ["上次執行", summary.lastExecution?.missionTitle || "尚無", summary.lastExecution ? `${operatingStatusLabel(summary.lastExecution.status)} · ${formatDate(summary.lastExecution.createdAt)}` : "尚無執行紀錄"]
   ].map(([label, value, hint]) => `
     <article>
       <span>${escapeHtml(label)}</span>
@@ -791,14 +952,14 @@ function renderGrowthLoop(data) {
   `).join("");
 
   $("#growthLoopControls").innerHTML = [
-    ["Worker", controls.enableWorker ? "on" : "off", "ENABLE_WORKER"],
-    ["Autonomy", controls.autonomyMode ? "on" : "off", "AUTONOMY_MODE"],
-    ["Policy", controls.policyMode || "manual", controls.policyAction || "-"],
-    ["Cycle", controls.canRunCycle ? "ready" : "paused", "run research loop"],
-    ["Scripts", controls.canCreatePosts ? "ready" : "paused", "create content"],
-    ["Queue", controls.canPublishQueue ? "ready" : "paused", "publish queue"]
+    ["背景程序", controls.enableWorker ? "開啟" : "關閉", "ENABLE_WORKER"],
+    ["自主模式", controls.autonomyMode ? "開啟" : "關閉", "AUTONOMY_MODE"],
+    ["執行規則", operatingStatusLabel(controls.policyMode || "manual"), controls.policyAction || "-"],
+    ["研究循環", controls.canRunCycle ? "就緒" : "已暫停", "執行研究循環"],
+    ["內容建立", controls.canCreatePosts ? "就緒" : "已暫停", "建立貼文內容"],
+    ["發佈佇列", controls.canPublishQueue ? "就緒" : "已暫停", "執行發佈佇列"]
   ].map(([label, value, hint]) => `
-    <article class="growth-control ${String(value).includes("off") || String(value).includes("paused") ? "is-warn" : "is-ready"}">
+    <article class="growth-control ${String(value).includes("關閉") || String(value).includes("暫停") ? "is-warn" : "is-ready"}">
       <span>${escapeHtml(label)}</span>
       <strong>${escapeHtml(value)}</strong>
       <small>${escapeHtml(hint)}</small>
@@ -807,17 +968,17 @@ function renderGrowthLoop(data) {
 
   $("#growthLoopMissions").innerHTML = missions.map((mission, index) => `
     <article class="growth-mission status-${escapeHtml(mission.status)} priority-${escapeHtml(mission.priority)}">
-      <span>${escapeHtml(mission.priority)}</span>
+      <span>${escapeHtml(operatingStatusLabel(mission.priority))}</span>
       <div>
         <header>
           <strong>${escapeHtml(mission.title)}</strong>
-          <small>${escapeHtml(mission.status)} · ${escapeHtml(mission.automation)}</small>
+          <small>${escapeHtml(operatingStatusLabel(mission.status))} · ${escapeHtml(mission.automation)}</small>
         </header>
         <p>${escapeHtml(mission.expectedImpact)}</p>
         <small>${escapeHtml(mission.trigger)} · ${escapeHtml(mission.action)}</small>
       </div>
       <button class="button ${mission.request ? "" : "secondary"}" type="button" data-growth-mission="${index}" ${mission.request ? "" : "disabled"}>
-        ${mission.request ? "Run" : "Monitor"}
+        ${mission.request ? "執行" : "監控"}
       </button>
     </article>
   `).join("");
@@ -830,14 +991,14 @@ function renderAutonomyPipeline(data) {
   const summary = pipeline.summary || {};
   const steps = pipeline.steps || [];
   const latestCycle = pipeline.latestCycle || null;
-  $("#pipelineMode").textContent = `${summary.mode || "manual"} · ${summary.score || 0}%`;
+  $("#pipelineMode").textContent = `${operatingStatusLabel(summary.mode || "manual")} · ${summary.score || 0}%`;
   $("#pipelineMode").className = `pipeline-mode status-${summary.readyForUnattended ? "active" : summary.blocked ? "blocked" : "watch"}`;
   $("#pipelineSummary").innerHTML = [
-    ["Score", `${summary.score || 0}%`, "autonomy pipeline"],
-    ["Active", summary.active || 0, "running stages"],
-    ["Blocked", summary.blocked || 0, "must fix"],
-    ["Next gate", summary.nextGate || "Monitor", summary.nextAction || "No action"],
-    ["Last cycle", latestCycle ? `${latestCycle.createdPostCount || 0} posts` : "none", latestCycle ? `${latestCycle.source || "cycle"} · ${formatDate(latestCycle.createdAt)}` : "not run yet"]
+    ["完成度", `${summary.score || 0}%`, "自動化流程"],
+    ["執行中", summary.active || 0, "正常階段"],
+    ["已阻擋", summary.blocked || 0, "必須處理"],
+    ["下一關卡", summary.nextGate || "持續監控", summary.nextAction || "無需動作"],
+    ["上次循環", latestCycle ? `${latestCycle.createdPostCount || 0} 則貼文` : "尚無", latestCycle ? `${latestCycle.source || "循環"} · ${formatDate(latestCycle.createdAt)}` : "尚未執行"]
   ].map(([label, value, hint]) => `
     <article>
       <span>${escapeHtml(label)}</span>
@@ -856,11 +1017,11 @@ function renderAutonomyPipeline(data) {
       <b>${escapeHtml(step.value)}</b>
     </article>
   `).join("");
-  $("#policyMode").textContent = `${policy.mode || "manual"} · ${policy.canRunCycle ? "cycle ready" : "cycle paused"}`;
+  $("#policyMode").textContent = `${operatingStatusLabel(policy.mode || "manual")} · ${policy.canRunCycle ? "循環就緒" : "循環暫停"}`;
   $("#policyMode").className = `policy-mode status-${policy.canRunCycle ? "pass" : "pause"}`;
   $("#policyRules").innerHTML = (policy.rules || []).map((rule) => `
     <article class="policy-rule status-${escapeHtml(rule.status)}">
-      <span>${escapeHtml(rule.status)}</span>
+      <span>${escapeHtml(operatingStatusLabel(rule.status))}</span>
       <div>
         <strong>${escapeHtml(rule.label)}</strong>
         <small>${escapeHtml(rule.value)} / ${escapeHtml(rule.limit)}</small>
@@ -874,26 +1035,26 @@ function renderReadiness(data) {
   const summary = readiness.summary || {};
   const liveGate = readiness.liveGate || {};
   const liveAllowed = liveGate.allowed === true;
-  const liveGateLabel = liveAllowed ? "Allowed" : "Blocked";
-  const liveGateHint = liveGate.enforced ? "enforced now" : "dry-run can continue";
-  const missingEnv = (liveGate.missingEnv || []).join(", ") || "none";
+  const liveGateLabel = liveAllowed ? "允許" : "阻擋";
+  const liveGateHint = liveGate.enforced ? "目前強制檢查" : "可繼續測試模式";
+  const missingEnv = (liveGate.missingEnv || []).join(", ") || "無";
   const modeLabels = {
-    blocked: "Blocked",
-    dry_run_ready: "Dry-run ready",
-    needs_attention: "Needs attention",
-    live_ready: "Live ready"
+    blocked: "已阻擋",
+    dry_run_ready: "測試模式就緒",
+    needs_attention: "需要處理",
+    live_ready: "正式模式就緒"
   };
-  $("#readinessMode").textContent = modeLabels[summary.mode] || "Unknown";
+  $("#readinessMode").textContent = modeLabels[summary.mode] || "未知";
   $("#readinessMode").className = `readiness-mode ${escapeHtml(summary.mode || "unknown")}`;
 
   $("#readinessSummary").innerHTML = [
-    ["Score", `${summary.score || 0}%`, "autonomy readiness"],
-    ["Live gate", liveGateLabel, liveGateHint],
-    ["Ready", summary.ready || 0, "checks passing"],
-    ["Warnings", summary.warning || 0, "safe but incomplete"],
-    ["Blocked", summary.blocked || 0, "must fix"],
-    ["Missing env", missingEnv, "required before live mode"],
-    ["Next", summary.nextAction || "-", "highest priority"]
+    ["準備度", `${summary.score || 0}%`, "自動化上線狀態"],
+    ["正式發佈", liveGateLabel, liveGateHint],
+    ["已通過", summary.ready || 0, "檢查通過"],
+    ["警告", summary.warning || 0, "安全但尚未完整"],
+    ["已阻擋", summary.blocked || 0, "必須處理"],
+    ["缺少設定", missingEnv, "正式模式前必填"],
+    ["下一步", summary.nextAction || "-", "最高優先"]
   ].map(([label, value, hint]) => `
     <article>
       <span>${escapeHtml(label)}</span>
@@ -907,37 +1068,37 @@ function renderReadiness(data) {
   $("#connectorCenter").innerHTML = `
     <div class="connector-center-head">
       <div>
-        <span>API / AI Connector Center</span>
-        <strong>${Number(center.score || 0)}% ready</strong>
+        <span>API / AI 服務連線</span>
+        <strong>${Number(center.score || 0)}% 就緒</strong>
       </div>
       <p>${escapeHtml(center.nextAction || "Connect sources to unlock autonomous profit loops.")}</p>
-      <small>${Number(center.configured || 0)}/${Number(center.total || connectors.length || 0)} configured · ${Number(center.blocked || 0)} blocked · ${Number(center.error || 0)} error · ${Number(center.backoff || 0)} cooling down</small>
+      <small>${Number(center.configured || 0)}/${Number(center.total || connectors.length || 0)} 已設定 · ${Number(center.blocked || 0)} 阻擋 · ${Number(center.error || 0)} 錯誤 · ${Number(center.backoff || 0)} 等待重試</small>
     </div>
     <div class="connector-center-grid">
       ${connectors.map((item) => `
         <article class="connector-card status-${escapeHtml(item.status)}">
           <header>
-            <span>${escapeHtml(item.status)}</span>
+            <span>${escapeHtml(operatingStatusLabel(item.status))}</span>
             <small>${escapeHtml(item.lane)}</small>
           </header>
           <strong>${escapeHtml(item.name)}</strong>
           <p>${escapeHtml(item.purpose)}</p>
           <div class="connector-meta">
-            <span>${escapeHtml(item.signal || (item.configured ? "configured" : "setup"))}</span>
+            <span>${escapeHtml(operatingStatusLabel(item.signal || (item.configured ? "configured" : "setup")))}</span>
             <small>${(item.envKeys || []).map((key) => `<code>${escapeHtml(key)}</code>`).join("")}</small>
           </div>
           <footer>
-            <span>${escapeHtml(item.nextRetryAt ? `retry ${formatDate(item.nextRetryAt)}` : item.nextAction || "Monitor")}</span>
-            ${item.failureCount ? `<b>${Number(item.failureCount)} fail</b>` : ""}
+            <span>${escapeHtml(item.nextRetryAt ? `重試 ${formatDate(item.nextRetryAt)}` : item.nextAction || "持續監控")}</span>
+            ${item.failureCount ? `<b>${Number(item.failureCount)} 次失敗</b>` : ""}
           </footer>
         </article>
-      `).join("") || `<div class="empty-state">No connector inventory available</div>`}
+      `).join("") || `<div class="empty-state">尚無服務連線資料</div>`}
     </div>
   `;
 
   const liveGateRows = (liveGate.reasons || []).map((reason) => `
     <article class="readiness-check status-blocked">
-      <span>live blocked</span>
+      <span>正式發佈阻擋</span>
       <div>
         <strong>${escapeHtml(reason.label)}</strong>
         <p>${escapeHtml(reason.detail)}</p>
@@ -948,7 +1109,7 @@ function renderReadiness(data) {
 
   $("#readinessChecks").innerHTML = `${liveGateRows}${(readiness.checks || []).map((check) => `
     <article class="readiness-check status-${escapeHtml(check.status)}">
-      <span>${escapeHtml(check.status)}</span>
+      <span>${escapeHtml(operatingStatusLabel(check.status))}</span>
       <div>
         <strong>${escapeHtml(check.label)}</strong>
         <p>${escapeHtml(check.detail)}</p>
@@ -967,12 +1128,12 @@ function buildTimelineItems(data) {
     type: "profit",
     tone: run.blockedScriptCount ? "warn" : "good",
     at: run.createdAt,
-    title: `Profit engine selected ${run.selectedModelName || run.selectedModelId || "model"}`,
-    detail: `${run.source || "manual"} run · score ${Number(run.score || 0)} · ${run.scriptSource || "template"} scripts`,
+    title: `獲利引擎選擇 ${run.selectedModelName || run.selectedModelId || "模型"}`,
+    detail: `${run.source || "手動"}執行 · 分數 ${Number(run.score || 0)} · ${run.scriptSource || "範本"}文案`,
     badges: [
-      timelineBadge(`${(run.createdPostIds || []).length} posts`, "info"),
-      timelineBadge(`${run.blockedScriptCount || 0} blocked`, run.blockedScriptCount ? "warn" : "good"),
-      timelineBadge(`${(run.syncedProductIds || []).length} offers`, "info")
+      timelineBadge(`${(run.createdPostIds || []).length} 則貼文`, "info"),
+      timelineBadge(`${run.blockedScriptCount || 0} 則阻擋`, run.blockedScriptCount ? "warn" : "good"),
+      timelineBadge(`${(run.syncedProductIds || []).length} 筆優惠`, "info")
     ]
   }));
 
@@ -980,11 +1141,11 @@ function buildTimelineItems(data) {
     type: "publish",
     tone: run.failed ? "warn" : "good",
     at: run.finishedAt || run.startedAt,
-    title: `Publishing queue ${run.status || "run"}`,
-    detail: `${run.source || "manual"} · processed ${Number(run.processed || 0)} · simulated ${Number(run.simulated || 0)} · published ${Number(run.published || 0)}`,
+    title: `發佈佇列${reviewStatusLabel(run.status || "completed")}`,
+    detail: `${run.source || "手動"} · 已處理 ${Number(run.processed || 0)} · 已模擬 ${Number(run.simulated || 0)} · 已發佈 ${Number(run.published || 0)}`,
     badges: [
-      timelineBadge(`${run.failed || 0} failed`, run.failed ? "warn" : "good"),
-      timelineBadge(`${run.messages?.length || 0} messages`, "info")
+      timelineBadge(`${run.failed || 0} 次失敗`, run.failed ? "warn" : "good"),
+      timelineBadge(`${run.messages?.length || 0} 則訊息`, "info")
     ]
   }));
 
@@ -992,10 +1153,10 @@ function buildTimelineItems(data) {
     type: "event",
     tone: "info",
     at: event.createdAt,
-    title: String(event.type || "event").replaceAll("_", " "),
+    title: String(event.type || "事件").replaceAll("_", " "),
     detail: [event.runId, event.postId, event.affiliateLinkId, event.conversionId].filter(Boolean).join(" · ") || event.id,
     badges: [
-      event.createdPostCount != null ? timelineBadge(`${event.createdPostCount} created`, "info") : "",
+      event.createdPostCount != null ? timelineBadge(`${event.createdPostCount} 則已建立`, "info") : "",
       event.revenueDelta != null ? timelineBadge(formatMoney(event.revenueDelta), "good") : ""
     ].filter(Boolean)
   }));
@@ -1008,7 +1169,7 @@ function buildTimelineItems(data) {
 
 function renderOpsTimeline(data) {
   const items = buildTimelineItems(data);
-  $("#timelineCount").textContent = `${items.length} events`;
+  $("#timelineCount").textContent = `${items.length} 筆`;
   $("#opTimeline").innerHTML = items.map((item) => `
     <article class="timeline-item tone-${escapeHtml(item.tone)}">
       <div class="timeline-dot" aria-hidden="true"></div>
@@ -1021,7 +1182,7 @@ function renderOpsTimeline(data) {
         <div class="timeline-badges">${item.badges.join("")}</div>
       </div>
     </article>
-  `).join("") || `<div class="empty-state">No autonomous operations recorded yet</div>`;
+  `).join("") || `<div class="empty-state">尚無自主營運紀錄</div>`;
 }
 
 function nextAction(priority, title, detail, actionLabel, request = null) {
@@ -1043,18 +1204,18 @@ function buildNextActions(data) {
   if ((engine.externalSignals || []).length === 0) {
     actions.push(nextAction(
       "high",
-      "Connect live market signals",
-      "The profit engine is still using built-in playbooks. Connect ad or offer feeds so scoring can follow real market demand.",
-      "Set AD_INTELLIGENCE_FEED_URLS or AFFILIATE_OFFER_FEED_URLS"
+      "連接即時市場訊號",
+      "獲利引擎目前仍使用內建資料。連接廣告或優惠資料來源後，評分才能反映真實市場需求。",
+      "設定 AD_INTELLIGENCE_FEED_URLS 或 AFFILIATE_OFFER_FEED_URLS"
     ));
   }
 
   if ((engine.generatedScripts || []).length === 0 || (engine.runs || []).length === 0) {
     actions.push(nextAction(
       "high",
-      "Run research-to-script cycle",
-      "Generate a fresh profit model decision and natural affiliate scripts from the current offer inventory.",
-      "Run profit engine",
+      "執行研究與文案循環",
+      "根據目前優惠資料重新選擇獲利模型，並產生自然的聯盟行銷文案。",
+      "執行獲利引擎",
       {
         path: "/api/profit-engine/run",
         method: "POST",
@@ -1066,9 +1227,9 @@ function buildNextActions(data) {
   if (Number(metrics.queued || 0) > 0) {
     actions.push(nextAction(
       "medium",
-      "Process publishing queue",
-      `${Number(metrics.queued || 0)} approved post(s) are queued for publishing or dry-run simulation.`,
-      "Run queue",
+      "處理發佈佇列",
+      `${Number(metrics.queued || 0)} 則已核准貼文正在等待正式發佈或測試模擬。`,
+      "執行佇列",
       { path: "/api/automation/run", method: "POST", body: { source: "next-actions" } }
     ));
   }
@@ -1076,27 +1237,27 @@ function buildNextActions(data) {
   if (Number(metrics.drafts || 0) > 0) {
     actions.push(nextAction(
       "medium",
-      "Review draft backlog",
-      `${Number(metrics.drafts || 0)} draft post(s) are waiting for approval before the publishing loop can move them.`,
-      "Review drafts in content factory"
+      "審核待處理草稿",
+      `${Number(metrics.drafts || 0)} 則草稿正在等待核准，完成後才能進入發佈流程。`,
+      "前往內容審核"
     ));
   }
 
   if ((engine.blockedScripts || []).length > 0) {
     actions.push(nextAction(
       "high",
-      "Inspect guardrail blocks",
-      `${engine.blockedScripts.length} script(s) were blocked by compliance or Threads validation rules.`,
-      "Open blocked scripts"
+      "檢查安全規則阻擋",
+      `${engine.blockedScripts.length} 則文案被合規或 Threads 驗證規則阻擋。`,
+      "查看被阻擋文案"
     ));
   }
 
   if (Number(metrics.clicks || 0) > 0 && Number(metrics.conversions || 0) === 0) {
     actions.push(nextAction(
       "medium",
-      "Connect conversion feedback",
-      "Clicks exist but no conversions are feeding back yet, so model scoring cannot learn from revenue quality.",
-      "Configure /api/conversions webhook"
+      "連接轉換回饋",
+      "目前已有點擊但尚無轉換回傳，因此模型還無法依收益品質學習。",
+      "設定 /api/conversions Webhook"
     ));
   }
 
@@ -1109,9 +1270,9 @@ function buildNextActions(data) {
   if (!actions.length) {
     actions.push(nextAction(
       "low",
-      "Monitor next autonomy cycle",
-      "No urgent action is needed. Keep watching the timeline, conversion feed, and guardrail blocks.",
-      "Continue monitoring"
+      "監控下一次自主循環",
+      "目前沒有緊急事項，持續觀察營運紀錄、轉換回饋與安全阻擋即可。",
+      "持續監控"
     ));
   }
 
@@ -1127,16 +1288,16 @@ function renderNextActions(data) {
     acc[action.priority] = (acc[action.priority] || 0) + 1;
     return acc;
   }, {});
-  $("#nextActionCount").textContent = `${actions.length} actions`;
+  $("#nextActionCount").textContent = `${actions.length} 項`;
   $("#actionSummary").innerHTML = ["critical", "high", "medium", "low"].map((priority) => `
     <article>
-      <span>${escapeHtml(priority)}</span>
+      <span>${escapeHtml(operatingStatusLabel(priority))}</span>
       <strong>${Number(counts[priority] || 0)}</strong>
     </article>
   `).join("");
   $("#nextActionList").innerHTML = actions.map((action, index) => `
     <article class="next-action priority-${escapeHtml(action.priority)}">
-      <span>${escapeHtml(action.priority)}</span>
+      <span>${escapeHtml(operatingStatusLabel(action.priority))}</span>
       <div>
         <strong>${escapeHtml(action.title)}</strong>
         <p>${escapeHtml(action.detail)}</p>
@@ -1177,82 +1338,82 @@ function buildDecisionBrief(data) {
   return {
     confidence,
     confidenceScore,
-    selectedModel: selected.name || "No model selected",
+    selectedModel: selected.name || "尚未選擇模型",
     selectedScore: Number(selected.score || 0),
-    runnerUp: runnerUp.name || "No runner-up",
+    runnerUp: runnerUp.name || "尚無次選模型",
     scoreGap,
     latestRunAt: latestRun.createdAt,
-    scriptSource: latestRun.scriptSource || (engine.generatedScripts?.[0]?.source || "not generated"),
+    scriptSource: latestRun.scriptSource || (engine.generatedScripts?.[0]?.source || "尚未產生"),
     evidence: [
-      `${models.length} monetization models scored`,
-      `${signalCount} external market signal(s), ${sourceCount} connected source(s)`,
-      `${Number(metrics.clicks || 0)} clicks, ${Number(metrics.conversions || 0)} conversions, ${conversionRate}% conversion rate`,
-      `${(engine.blockedScripts || []).length} guardrail block(s), ${Number(metrics.disclosureCoverage || 0)}% disclosure coverage`
+      `${models.length} 個獲利模型已評分`,
+      `${signalCount} 筆外部市場訊號，${sourceCount} 個資料來源已連線`,
+      `${Number(metrics.clicks || 0)} 次點擊，${Number(metrics.conversions || 0)} 次轉換，轉換率 ${conversionRate}%`,
+      `${(engine.blockedScripts || []).length} 次安全阻擋，揭露完整率 ${Number(metrics.disclosureCoverage || 0)}%`
     ],
     rationale: [
-      selected.stage ? `Funnel fit: ${selected.stage}` : "Funnel fit is pending until the first profit run completes.",
-      selected.monetization ? `Revenue mode: ${selected.monetization}` : "Revenue mode is not selected yet.",
-      selected.adAngle ? `Natural ad rewrite angle: ${selected.adAngle}` : "Ad angle will improve after live market feeds are connected.",
-      latestRun.source ? `Latest decision source: ${latestRun.source}` : "No autonomous decision run has been recorded yet."
+      selected.stage ? `漏斗階段：${selected.stage}` : "首次獲利循環完成後才會判斷漏斗階段。",
+      selected.monetization ? `收益模式：${selected.monetization}` : "尚未選擇收益模式。",
+      selected.adAngle ? `自然文案角度：${selected.adAngle}` : "連接即時市場資料後，文案角度會更準確。",
+      latestRun.source ? `最新決策來源：${latestRun.source}` : "尚無自主決策執行紀錄。"
     ],
     gaps: [
-      signalCount === 0 ? "Connect ad or offer feeds for real market evidence." : "",
-      sourceCount === 0 ? "No live source has reported connected status yet." : "",
-      Number(metrics.conversions || 0) === 0 ? "Conversion feedback is still too thin for revenue learning." : "",
-      readiness.blocked > 0 ? `${readiness.blocked} readiness blocker(s) remain before live autonomy.` : ""
+      signalCount === 0 ? "請連接廣告或優惠資料來源以取得真實市場依據。" : "",
+      sourceCount === 0 ? "目前尚無即時資料來源回報已連線。" : "",
+      Number(metrics.conversions || 0) === 0 ? "轉換回饋仍不足，暫時無法依收益學習。" : "",
+      readiness.blocked > 0 ? `正式自主運行前仍有 ${readiness.blocked} 個阻擋項目。` : ""
     ].filter(Boolean)
   };
 }
 
 function renderDecisionBrief(data) {
   const brief = buildDecisionBrief(data);
-  $("#decisionConfidence").textContent = `${brief.confidence} confidence · ${brief.confidenceScore}%`;
+  $("#decisionConfidence").textContent = `${operatingStatusLabel(brief.confidence)}信心 · ${brief.confidenceScore}%`;
   $("#decisionConfidence").className = `decision-confidence confidence-${escapeHtml(brief.confidence)}`;
   $("#decisionBrief").innerHTML = `
     <article class="decision-card decision-primary">
-      <span>Selected model</span>
+      <span>選定模型</span>
       <strong>${escapeHtml(brief.selectedModel)}</strong>
-      <p>Score ${brief.selectedScore} · gap ${brief.scoreGap >= 0 ? "+" : ""}${brief.scoreGap} vs runner-up</p>
-      <small>Runner-up: ${escapeHtml(brief.runnerUp)}</small>
+      <p>分數 ${brief.selectedScore} · 與次選差距 ${brief.scoreGap >= 0 ? "+" : ""}${brief.scoreGap}</p>
+      <small>次選模型：${escapeHtml(brief.runnerUp)}</small>
     </article>
     <article class="decision-card">
-      <span>Latest run</span>
+      <span>最新執行</span>
       <strong>${escapeHtml(brief.scriptSource)}</strong>
-      <p>${escapeHtml(brief.latestRunAt ? formatDate(brief.latestRunAt) : "No run yet")}</p>
-      <small>Script source and timing help detect fallback behavior.</small>
+      <p>${escapeHtml(brief.latestRunAt ? formatDate(brief.latestRunAt) : "尚未執行")}</p>
+      <small>文案來源與執行時間可協助判斷是否使用備援流程。</small>
     </article>
     <article class="decision-card wide">
-      <span>Evidence</span>
+      <span>決策依據</span>
       <div class="decision-list">
         ${brief.evidence.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}
       </div>
     </article>
     <article class="decision-card wide">
-      <span>Rationale</span>
+      <span>選擇理由</span>
       <div class="decision-list">
         ${brief.rationale.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}
       </div>
     </article>
     <article class="decision-card wide">
-      <span>Evidence gaps</span>
+      <span>資料缺口</span>
       <div class="decision-list">
-        ${(brief.gaps.length ? brief.gaps : ["No major evidence gap detected."]).map((item) => `<p>${escapeHtml(item)}</p>`).join("")}
+        ${(brief.gaps.length ? brief.gaps : ["目前沒有重大資料缺口。"]).map((item) => `<p>${escapeHtml(item)}</p>`).join("")}
       </div>
     </article>
   `;
 }
 
 function ageLabel(value, referenceValue) {
-  if (!value) return "No heartbeat yet";
+  if (!value) return "尚無心跳紀錄";
   const then = new Date(value).getTime();
   const now = referenceValue ? new Date(referenceValue).getTime() : Date.now();
-  if (Number.isNaN(then) || Number.isNaN(now)) return "Unknown";
+  if (Number.isNaN(then) || Number.isNaN(now)) return "未知";
   const minutes = Math.max(0, Math.round((now - then) / 60_000));
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return "剛剛";
+  if (minutes < 60) return `${minutes} 分鐘前`;
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
-  return rest ? `${hours}h ${rest}m ago` : `${hours}h ago`;
+  return rest ? `${hours} 小時 ${rest} 分鐘前` : `${hours} 小時前`;
 }
 
 function buildWorkerHealth(data) {
@@ -1281,10 +1442,10 @@ function buildWorkerHealth(data) {
         ? "dry_run"
         : "live";
   const modeLabels = {
-    offline: "Worker off",
-    manual: "Manual monitor",
-    dry_run: "Dry-run loop",
-    live: "Live autonomy"
+    offline: "背景程序關閉",
+    manual: "手動監控",
+    dry_run: "測試循環",
+    live: "正式自主運行"
   };
   const healthScore = Math.max(0, Math.min(100,
     (runtime.workerEnabled ? 25 : 0)
@@ -1296,19 +1457,19 @@ function buildWorkerHealth(data) {
     + ((runtime.dryRun || runtime.hasThreadsCredentials) ? 15 : 0)
   ));
   const notes = [
-    !runtime.workerEnabled ? "Enable ENABLE_WORKER=true so the platform can run without manual clicks." : "",
-    runtime.workerEnabled && !runtime.autonomyMode ? "Enable AUTONOMY_MODE=true when you want research, scripts, and queue processing to run by schedule." : "",
-    runtime.workerEnabled && runtime.autonomyMode && runtime.dryRun ? "Dry-run is protecting the system: it will simulate publishing until Threads credentials are ready." : "",
-    !runtime.dryRun && !runtime.hasThreadsCredentials ? "Live mode needs valid Threads credentials before publishing can succeed." : "",
-    runtime.workerEnabled && !lease.active ? "No active worker lease is present; another replica may be stale or the worker has not ticked yet." : "",
-    lease.active ? `Worker lease is active for ${lease.ownerId || "current owner"}.` : "",
-    !heartbeatAt ? "No worker heartbeat has been recorded yet; run the profit engine or queue once to seed history." : "",
-    Number(readiness.blocked || 0) > 0 ? `${readiness.blocked} readiness blocker(s) remain before unattended live mode.` : "",
-    queuePressure > 0 ? `${queuePressure} post(s) are waiting in autonomous or queue pressure.` : ""
+    !runtime.workerEnabled ? "設定 ENABLE_WORKER=true 後，平台才能在無人點擊時持續執行。" : "",
+    runtime.workerEnabled && !runtime.autonomyMode ? "需要排程研究、產稿與佇列處理時，請設定 AUTONOMY_MODE=true。" : "",
+    runtime.workerEnabled && runtime.autonomyMode && runtime.dryRun ? "目前由測試模式保護，只會模擬發佈，不會送出正式貼文。" : "",
+    !runtime.dryRun && !runtime.hasThreadsCredentials ? "正式模式需要有效的 Threads 憑證才能發佈。" : "",
+    runtime.workerEnabled && !lease.active ? "目前沒有有效的工作租約，背景程序可能尚未執行或先前執行個體已失效。" : "",
+    lease.active ? `工作租約目前由 ${lease.ownerId || "目前執行個體"} 持有。` : "",
+    !heartbeatAt ? "尚無背景程序心跳紀錄，請先執行一次獲利引擎或發佈佇列。" : "",
+    Number(readiness.blocked || 0) > 0 ? `正式無人運行前仍有 ${readiness.blocked} 個阻擋項目。` : "",
+    queuePressure > 0 ? `目前有 ${queuePressure} 則貼文等待自主流程或發佈佇列處理。` : ""
   ].filter(Boolean);
 
   if (!notes.length) {
-    notes.push("Worker health is clear; monitor the next scheduled autonomy loop.");
+    notes.push("背景程序狀態正常，請持續觀察下一次自主循環。");
   }
 
   return {
@@ -1317,17 +1478,17 @@ function buildWorkerHealth(data) {
     healthScore,
     heartbeatAt,
     heartbeatAge: ageLabel(heartbeatAt, data.generatedAt),
-    leaseStatus: lease.active ? "active" : lease.stale ? "stale" : "none",
+    leaseStatus: lease.active ? "正常" : lease.stale ? "已失效" : "無",
     leaseOwner: lease.ownerId || "-",
     leaseExpiresAt: lease.expiresAt || "",
     leaseTtlSeconds: Number(lease.ttlSeconds || 0),
-    nextRunHint: engine.nextRunHint || (runtime.workerEnabled ? "Configured interval" : "手動"),
-    latestAutomationStatus: automationRun.status || "No automation run",
-    latestProfitSource: profitRun.source || (engine.lastRunAt ? "profit engine" : "No profit run"),
+    nextRunHint: engine.nextRunHint || (runtime.workerEnabled ? "依設定週期" : "手動"),
+    latestAutomationStatus: automationRun.status || "尚無自動化執行",
+    latestProfitSource: profitRun.source || (engine.lastRunAt ? "獲利引擎" : "尚無獲利執行"),
     queuePressure,
     scheduledAutonomyPosts,
     queuedPosts,
-    readinessMode: readiness.mode || "unknown",
+    readinessMode: readiness.mode || "未知",
     readinessBlocked: Number(readiness.blocked || 0),
     notes
   };
@@ -1338,13 +1499,13 @@ function renderWorkerHealth(data) {
   $("#workerHealthMode").textContent = `${health.modeLabel} · ${health.healthScore}%`;
   $("#workerHealthMode").className = `worker-mode mode-${escapeHtml(health.mode)}`;
   $("#workerHealthGrid").innerHTML = [
-    ["Health score", `${health.healthScore}%`, "scheduler readiness"],
-    ["Last heartbeat", health.heartbeatAge, health.heartbeatAt ? formatDate(health.heartbeatAt) : "no run recorded"],
-    ["Lease", health.leaseStatus, health.leaseExpiresAt ? `${health.leaseTtlSeconds}s ttl · ${health.leaseOwner}` : "no lease owner"],
-    ["Next cycle", health.nextRunHint, "from profit engine config"],
-    ["Queue pressure", health.queuePressure, `${health.queuedPosts} queued · ${health.scheduledAutonomyPosts} autonomous`],
-    ["Automation run", health.latestAutomationStatus, "latest queue worker result"],
-    ["Readiness", health.readinessMode, `${health.readinessBlocked} blocker(s)`]
+    ["健康度", `${health.healthScore}%`, "排程程序準備度"],
+    ["最近心跳", health.heartbeatAge, health.heartbeatAt ? formatDate(health.heartbeatAt) : "尚無執行紀錄"],
+    ["工作租約", health.leaseStatus, health.leaseExpiresAt ? `${health.leaseTtlSeconds} 秒有效期 · ${health.leaseOwner}` : "目前無持有者"],
+    ["下次循環", health.nextRunHint, "依獲利引擎設定"],
+    ["佇列壓力", health.queuePressure, `${health.queuedPosts} 則排隊 · ${health.scheduledAutonomyPosts} 則自主排程`],
+    ["自動化執行", operatingStatusLabel(health.latestAutomationStatus), "最近一次佇列處理結果"],
+    ["上線準備", operatingStatusLabel(health.readinessMode), `${health.readinessBlocked} 個阻擋項目`]
   ].map(([label, value, hint]) => `
     <article class="worker-card">
       <span>${escapeHtml(label)}</span>
@@ -1491,14 +1652,14 @@ function renderExperimentLoop(data) {
   const experiments = loop.experiments || [];
   const queue = loop.optimizationQueue || [];
   const optimizer = data.profitEngine?.optimizer?.latestPolicy || buildOptimizerDecisionFallback(loop);
-  $("#experimentMode").textContent = `${loop.loopState || "manual"} · ${loop.confidence || "setup"}`;
+  $("#experimentMode").textContent = `${operatingStatusLabel(loop.loopState || "manual")} · ${operatingStatusLabel(loop.confidence || "setup")}`;
   $("#experimentMode").className = `experiment-mode confidence-${escapeHtml(loop.confidence || "setup")}`;
   $("#experimentSummary").innerHTML = [
-    ["Leader", loop.leaderName || "No experiment", loop.leaderModelId || "not selected"],
-    ["Active", loop.activeExperimentCount || 0, "models in play"],
-    ["Posts", loop.totalExperimentPosts || 0, "experiment content"],
-    ["Revenue", formatMoney(loop.totalExperimentRevenue || 0), "attributed links"],
-    ["Velocity", loop.learningVelocity || "0 run(s)", "learning inputs"]
+    ["領先模型", loop.leaderName || "尚無實驗", loop.leaderModelId || "尚未選擇"],
+    ["進行中", loop.activeExperimentCount || 0, "執行中的模型"],
+    ["貼文", loop.totalExperimentPosts || 0, "實驗內容"],
+    ["收益", formatMoney(loop.totalExperimentRevenue || 0), "已歸因連結"],
+    ["學習速度", loop.learningVelocity || "0 次執行", "學習輸入"]
   ].map(([label, value, hint]) => `
     <article>
       <span>${escapeHtml(label)}</span>
@@ -1509,19 +1670,19 @@ function renderExperimentLoop(data) {
 
   $("#optimizerDecision").innerHTML = `
     <article class="optimizer-card">
-      <span>Optimizer mode</span>
+      <span>優化模式</span>
       <strong>${escapeHtml(optimizer.mode || "baseline")}</strong>
-      <p>${escapeHtml(optimizer.targetAction || "Continue leader")}</p>
+      <p>${escapeHtml(optimizer.targetAction || "維持領先模型")}</p>
     </article>
     <article class="optimizer-card">
-      <span>Target model</span>
-      <strong>${escapeHtml(optimizer.targetModelId || "leader")}</strong>
-      <p>${escapeHtml(`scripts ${Number(optimizer.scriptCountDelta || 0) >= 0 ? "+" : ""}${Number(optimizer.scriptCountDelta || 0)} · ${optimizer.guardrailMode || "standard"} guardrails`)}</p>
+      <span>目標模型</span>
+      <strong>${escapeHtml(optimizer.targetModelId || "領先模型")}</strong>
+      <p>${escapeHtml(`文案 ${Number(optimizer.scriptCountDelta || 0) >= 0 ? "+" : ""}${Number(optimizer.scriptCountDelta || 0)} · ${optimizer.guardrailMode || "standard"} 安全規則`)}</p>
     </article>
     <article class="optimizer-card wide">
-      <span>Decision reasons</span>
+      <span>決策理由</span>
       <div class="optimizer-reasons">
-        ${(optimizer.reasons || ["No optimizer reason recorded."]).map((reason) => `<p>${escapeHtml(reason)}</p>`).join("")}
+        ${(optimizer.reasons || ["尚無優化決策理由。"]).map((reason) => `<p>${escapeHtml(reason)}</p>`).join("")}
       </div>
     </article>
   `;
@@ -1529,7 +1690,7 @@ function renderExperimentLoop(data) {
   $("#experimentCards").innerHTML = experiments.map((experiment) => `
     <article class="experiment-card status-${escapeHtml(experiment.status)}" data-profit-experiment="${escapeHtml(experiment.modelId)}">
       <div class="experiment-card-head">
-        <span>${escapeHtml(experiment.status)}</span>
+        <span>${escapeHtml(operatingStatusLabel(experiment.status))}</span>
         <strong>${escapeHtml(experiment.name)}</strong>
       </div>
       <div class="experiment-score">
@@ -1537,28 +1698,28 @@ function renderExperimentLoop(data) {
       </div>
       <p>${escapeHtml(experiment.hypothesis || experiment.stage)}</p>
       <div class="experiment-metrics">
-        <span>Score <b>${Number(experiment.score || 0)}</b></span>
-        <span>Alloc <b>${Number(experiment.allocationPct || 0)}%</b></span>
-        <span>Posts <b>${Number(experiment.postCount || 0)}</b></span>
-        <span>CVR <b>${Number(experiment.conversionRate || 0)}%</b></span>
-        <span>EPC <b>${formatMoney(experiment.epc || 0)}</b></span>
+        <span>分數 <b>${Number(experiment.score || 0)}</b></span>
+        <span>配比 <b>${Number(experiment.allocationPct || 0)}%</b></span>
+        <span>貼文 <b>${Number(experiment.postCount || 0)}</b></span>
+        <span>轉換率 <b>${Number(experiment.conversionRate || 0)}%</b></span>
+        <span>單次點擊收益 <b>${formatMoney(experiment.epc || 0)}</b></span>
       </div>
       <small>${escapeHtml(experiment.nextAction || "Monitor")}</small>
     </article>
-  `).join("") || `<div class="empty-state">No experiments yet</div>`;
+  `).join("") || `<div class="empty-state">尚無實驗資料</div>`;
 
   $("#optimizationQueue").innerHTML = `
-    <strong>Optimization queue</strong>
+    <strong>優化佇列</strong>
     ${queue.map((item) => `
       <article class="optimization-item priority-${escapeHtml(item.priority)}">
-        <span>${escapeHtml(item.priority)}</span>
+        <span>${escapeHtml(operatingStatusLabel(item.priority))}</span>
         <div>
           <strong>${escapeHtml(item.title)}</strong>
           <p>${escapeHtml(item.action)}</p>
           <small>${escapeHtml(item.modelId)}</small>
         </div>
       </article>
-    `).join("") || `<div class="empty-state">No optimization action pending</div>`}
+    `).join("") || `<div class="empty-state">目前沒有待處理的優化項目</div>`}
   `;
 }
 
@@ -1571,7 +1732,7 @@ function renderProfitEngine(data) {
       <span class="status-${escapeHtml(source.status || source.runtimeStatus)} ${["ready", "connected"].includes(source.status || source.runtimeStatus) ? "is-on" : ""}"></span>
       <div>
         <strong>${escapeHtml(source.name)}</strong>
-        <small>${escapeHtml(source.status || source.runtimeStatus || "setup")}</small>
+        <small>${escapeHtml(operatingStatusLabel(source.status || source.runtimeStatus || "setup"))}</small>
       </div>
     </div>
   `).join("");
@@ -1579,12 +1740,12 @@ function renderProfitEngine(data) {
   const offer = engine.offerAutopilot || {};
   const recovery = engine.sourceRecovery || {};
   $("#autopilotSummary").innerHTML = [
-    ["Sources", (engine.sourceStatuses || []).length, "API / feed checks"],
-    ["Signals", (engine.externalSignals || []).length, "Ad + offer inputs"],
-    ["Recovery", recovery.mode || "setup", recovery.nextRetryAt ? `next retry ${formatDate(recovery.nextRetryAt)}` : `${recovery.errors || 0} error(s)`],
-    ["Offers", offer.activeSyncedProductCount || 0, `max ${offer.maxOffersPerRun || 0}/run`],
-    ["Queued", engine.scheduledAutonomyPosts || 0, "autonomous posts"],
-    ["Blocked", (engine.blockedScripts || []).length, "guardrail catches"]
+    ["資料來源", (engine.sourceStatuses || []).length, "API / Feed 檢查"],
+    ["市場訊號", (engine.externalSignals || []).length, "廣告與優惠輸入"],
+    ["來源復原", operatingStatusLabel(recovery.mode || "setup"), recovery.nextRetryAt ? `下次重試 ${formatDate(recovery.nextRetryAt)}` : `${recovery.errors || 0} 個錯誤`],
+    ["有效優惠", offer.activeSyncedProductCount || 0, `每次最多 ${offer.maxOffersPerRun || 0} 筆`],
+    ["等待處理", engine.scheduledAutonomyPosts || 0, "自主排程貼文"],
+    ["安全阻擋", (engine.blockedScripts || []).length, "規則阻擋次數"]
   ].map(([label, value, hint]) => `
     <article>
       <span>${escapeHtml(label)}</span>
@@ -1597,40 +1758,40 @@ function renderProfitEngine(data) {
   $("#opportunityScanner").innerHTML = `
     <div class="opportunity-head">
       <div>
-        <span>Autonomous Opportunity Scanner</span>
-        <strong>${escapeHtml(scanner.nextAction || "Run profit engine")}</strong>
+        <span>自主機會掃描</span>
+        <strong>${escapeHtml(scanner.nextAction || "執行獲利引擎")}</strong>
       </div>
-      <small>${Number(scanner.topScore || 0)} top score · ${escapeHtml(scanner.confidence || "setup")} confidence · ${Number(scanner.opportunityCount || 0)} ranked</small>
+      <small>最高分 ${Number(scanner.topScore || 0)} · ${escapeHtml(operatingStatusLabel(scanner.confidence || "setup"))}信心 · ${Number(scanner.opportunityCount || 0)} 個候選</small>
     </div>
     <div class="opportunity-list">
       ${(scanner.opportunities || []).map((item) => `
         <article class="opportunity-card priority-${escapeHtml(item.priority)}">
           <header>
             <span>#${Number(item.rank || 0)}</span>
-            <b>${escapeHtml(item.priority)}</b>
+            <b>${escapeHtml(operatingStatusLabel(item.priority))}</b>
           </header>
           <div class="opportunity-main">
             <strong>${escapeHtml(item.modelName)}</strong>
             <p>${escapeHtml(item.expectedImpact)}</p>
           </div>
           <dl>
-            <div><dt>Score</dt><dd>${Number(item.score || 0)}</dd></div>
-            <div><dt>Offer</dt><dd>${escapeHtml(item.offerName || "-")}</dd></div>
-            <div><dt>Signal</dt><dd>${escapeHtml(item.signalSource || "-")}</dd></div>
-            <div><dt>Action</dt><dd>${escapeHtml(item.automationAction || "-")}</dd></div>
+            <div><dt>分數</dt><dd>${Number(item.score || 0)}</dd></div>
+            <div><dt>優惠</dt><dd>${escapeHtml(item.offerName || "-")}</dd></div>
+            <div><dt>訊號</dt><dd>${escapeHtml(item.signalSource || "-")}</dd></div>
+            <div><dt>動作</dt><dd>${escapeHtml(item.automationAction || "-")}</dd></div>
           </dl>
           <footer>
-            <span>${escapeHtml(item.guardrailState || "ready")}</span>
+            <span>${escapeHtml(operatingStatusLabel(item.guardrailState || "ready"))}</span>
             <small>${(item.evidence || []).slice(0, 3).map((line) => escapeHtml(line)).join(" · ")}</small>
           </footer>
         </article>
-      `).join("") || `<div class="empty-state">No autonomous opportunities yet</div>`}
+      `).join("") || `<div class="empty-state">尚無自主獲利機會</div>`}
     </div>
   `;
 
   $("#connectorList").innerHTML = (engine.sources || []).map((source) => `
     <article class="connector-item">
-      <span>${escapeHtml(source.runtimeStatus || source.status)}</span>
+      <span>${escapeHtml(operatingStatusLabel(source.runtimeStatus || source.status))}</span>
       <strong>${escapeHtml(source.name)}</strong>
       <p>${escapeHtml(source.nextRetryAt ? `${source.message || source.role} Next retry ${formatDate(source.nextRetryAt)}.` : source.message || source.role)}</p>
     </article>
@@ -1661,15 +1822,15 @@ function renderProfitEngine(data) {
   $("#profitSourceStatuses").innerHTML = (engine.sourceStatuses || []).map((source) => `
     <article class="intel-row">
       <span class="badge ${source.status === "connected" ? "good" : source.status === "error" ? "bad" : "warn"}">
-        ${escapeHtml(source.status)}
+        ${escapeHtml(operatingStatusLabel(source.status))}
       </span>
       <div>
         <strong>${escapeHtml(source.name || source.id)}</strong>
         <p>${escapeHtml(source.nextRetryAt ? `${source.message || ""} Next retry ${formatDate(source.nextRetryAt)}.` : source.message || "")}</p>
       </div>
-      <small>${Number(source.count || 0).toLocaleString()}${source.failureCount ? ` · ${Number(source.failureCount)} fail` : ""}</small>
+      <small>${Number(source.count || 0).toLocaleString()}${source.failureCount ? ` · ${Number(source.failureCount)} 次失敗` : ""}</small>
     </article>
-  `).join("") || `<div class="empty-state">No live source check yet</div>`;
+  `).join("") || `<div class="empty-state">尚無即時資料來源檢查</div>`;
 
   $("#profitSignals").innerHTML = (engine.externalSignals || []).map((signal) => `
     <article class="signal-row">
@@ -1677,24 +1838,24 @@ function renderProfitEngine(data) {
       <div>
         <strong>${escapeHtml(signal.title || signal.productName || signal.source)}</strong>
         <p>${escapeHtml(signal.angle || signal.offer || "")}</p>
-        ${signal.adSnapshotUrl ? `<a href="${escapeHtml(signal.adSnapshotUrl)}" target="_blank" rel="noreferrer">snapshot</a>` : ""}
+        ${signal.adSnapshotUrl ? `<a href="${escapeHtml(signal.adSnapshotUrl)}" target="_blank" rel="noreferrer">查看快照</a>` : ""}
       </div>
     </article>
-  `).join("") || `<div class="empty-state">No external ad or offer signals yet</div>`;
+  `).join("") || `<div class="empty-state">尚無外部廣告或優惠訊號</div>`;
 
   $("#profitGuardrails").innerHTML = (engine.guardrails || []).map((item) => `
     <span>${escapeHtml(item)}</span>
   `).join("");
 
   $("#profitBlockedScripts").innerHTML = (engine.blockedScripts || []).length ? `
-    <strong>Blocked scripts</strong>
+    <strong>被阻擋文案</strong>
     ${(engine.blockedScripts || []).map((script) => `
       <article class="blocked-script-row">
-        <span class="badge bad">blocked</span>
+        <span class="badge bad">已阻擋</span>
         <div>
-          <strong>${escapeHtml(script.hook || script.type || "script")}</strong>
-          <p>${escapeHtml(script.reason || "Guardrail blocked this script.")}</p>
-          ${script.freshness ? `<small>Matched ${escapeHtml(script.freshness.matchedPostId)} · ${Math.round(Number(script.freshness.score || 0) * 100)}%</small>` : ""}
+          <strong>${escapeHtml(script.hook || script.type || "文案")}</strong>
+          <p>${escapeHtml(script.reason || "安全規則阻擋此文案。")}</p>
+          ${script.freshness ? `<small>相符貼文 ${escapeHtml(script.freshness.matchedPostId)} · ${Math.round(Number(script.freshness.score || 0) * 100)}%</small>` : ""}
         </div>
       </article>
     `).join("")}
@@ -1754,7 +1915,7 @@ function renderPosts(data) {
           <p class="post-copy">${escapeHtml(post.hook || post.text)}</p>
           <div class="post-meta">
             <span>${escapeHtml(post.contentType || "手動")}</span>
-            <span>${escapeHtml(validation.threadsUnits || 0)} units</span>
+            <span>${escapeHtml(validation.threadsUnits || 0)} 字元單位</span>
             ${riskBadge(riskLevel)}
             ${disclosureBadge(disclosureStatus)}
             ${fatigueBadge(fatigue.status)}
@@ -1773,7 +1934,7 @@ function renderPosts(data) {
         </td>
         <td>
           ${statusBadge(post.status)}
-          <small class="review-status">審核：${escapeHtml(reviewStatus)}</small>
+          <small class="review-status">審核：${escapeHtml(reviewStatusLabel(reviewStatus))}</small>
         </td>
         <td>${escapeHtml(post.topicTag || "-")}</td>
         <td>${escapeHtml(link ? link.slug : "-")}</td>
@@ -1873,23 +2034,23 @@ function renderRevenue(data) {
 
   $("#attributionGrid").innerHTML = `
     <article class="attribution-card">
-      <span>Attributed revenue</span>
+      <span>歸因收益</span>
       <strong>${formatMoney(attributionSummary.attributedRevenue || 0)}</strong>
-      <small>${Number(attributionSummary.attributedConversions || 0)} conversion(s), ${Number(attributionSummary.attributedClicks || 0)} click(s)</small>
+      <small>${Number(attributionSummary.attributedConversions || 0)} 次轉換，${Number(attributionSummary.attributedClicks || 0)} 次點擊</small>
     </article>
     <article class="attribution-card">
-      <span>Top model</span>
-      <strong>${escapeHtml(attribution.topModels?.[0]?.modelId || "learning")}</strong>
-      <small>${formatMoney(attribution.topModels?.[0]?.revenue || 0)} · ${Number(attribution.topModels?.[0]?.conversions || 0)} conversion(s)</small>
+      <span>最佳模型</span>
+      <strong>${escapeHtml(attribution.topModels?.[0]?.modelId || "學習中")}</strong>
+      <small>${formatMoney(attribution.topModels?.[0]?.revenue || 0)} · ${Number(attribution.topModels?.[0]?.conversions || 0)} 次轉換</small>
     </article>
     <article class="attribution-list">
-      <strong>Top attributed scripts</strong>
+      <strong>最佳歸因文案</strong>
       ${(attribution.topPosts || []).map((post) => `
         <div>
           <span>${escapeHtml(post.hook || post.postId)}</span>
-          <small>${escapeHtml(post.modelId || "manual")} · ${Number(post.clicks || 0)} click(s) · ${formatMoney(post.revenue || 0)}</small>
+          <small>${escapeHtml(post.modelId || "手動")} · ${Number(post.clicks || 0)} 次點擊 · ${formatMoney(post.revenue || 0)}</small>
         </div>
-      `).join("") || `<p>No post-level attribution yet</p>`}
+      `).join("") || `<p>尚無貼文層級歸因資料</p>`}
     </article>
   `;
 
@@ -1903,20 +2064,20 @@ function renderRevenue(data) {
   `).join("");
 
   $("#conversionEvents").innerHTML = `
-    <strong>Recent conversions</strong>
+    <strong>最近轉換</strong>
     ${(data.conversionEvents || []).map((event) => {
       const link = linkById(data, event.affiliateLinkId);
       return `
         <article class="conversion-row">
-          <span class="badge ${event.status === "approved" || event.status === "paid" ? "good" : "warn"}">${escapeHtml(event.status)}</span>
+          <span class="badge ${event.status === "approved" || event.status === "paid" ? "good" : "warn"}">${escapeHtml(reviewStatusLabel(event.status))}</span>
           <div>
             <strong>${escapeHtml(link ? link.slug : event.affiliateLinkId)}</strong>
-            <p>${escapeHtml(event.networkEventId || event.id)} · ${formatDate(event.occurredAt)} · ${escapeHtml(event.postId || event.modelId || "unattributed")}</p>
+            <p>${escapeHtml(event.networkEventId || event.id)} · ${formatDate(event.occurredAt)} · ${escapeHtml(event.postId || event.modelId || "未歸因")}</p>
           </div>
           <small>${formatMoney(event.commissionValue)}</small>
         </article>
       `;
-    }).join("") || `<div class="empty-state">No conversion webhook events yet</div>`}
+    }).join("") || `<div class="empty-state">尚無轉換 Webhook 事件</div>`}
   `;
 }
 
@@ -1928,12 +2089,12 @@ function renderCampaigns(data) {
       <article class="campaign-item">
         <header>
           <strong>${escapeHtml(campaign.name)}</strong>
-          <span class="badge good">${escapeHtml(campaign.status)}</span>
+          <span class="badge good">${escapeHtml(operatingStatusLabel(campaign.status))}</span>
         </header>
         <div class="mini-metrics">
           <span>${escapeHtml(campaign.targetPersona)}</span>
-          <span>${products.length} products</span>
-          <span>${posts.length} posts</span>
+          <span>${products.length} 個產品</span>
+          <span>${posts.length} 則貼文</span>
         </div>
       </article>
     `;
@@ -1963,6 +2124,7 @@ function populateForm(data) {
 function render(data) {
   state.dashboard = data;
   renderRuntime(data);
+  renderWorkflowSummary(data);
   renderOperatingMap(data);
   renderGrowthLoop(data);
   renderAutonomyPipeline(data);
@@ -1993,10 +2155,10 @@ async function runQueue() {
     body: { source: "dashboard" }
   });
   render(result.dashboard);
-  showToast(`Queue finished: ${result.run.status}`);
+  showToast(`發佈佇列完成：${reviewStatusLabel(result.run.status)}`);
 }
 
-async function generateDrafts(autoApprove) {
+async function generateDrafts() {
   const topic = $("#topicInput").value.trim() || "AI 自動化聯盟行銷";
   await api("/api/automation/generate", {
     method: "POST",
@@ -2008,7 +2170,7 @@ async function generateDrafts(autoApprove) {
     }
   });
   await refresh();
-  showToast(autoApprove ? "已產生 5 則待審核內容" : "已產生 5 則待審核草稿");
+  showToast("已產生 5 則待審核草稿");
 }
 
 async function runProfitEngine() {
@@ -2063,17 +2225,17 @@ async function handlePostAction(event) {
     if (action === "approve") {
       await api(`/api/posts/${id}/approve`, { method: "POST", body: {} });
       await refresh();
-      showToast("Post approved");
+      showToast("貼文已核准");
     }
     if (action === "reject") {
-      await api(`/api/posts/${id}/reject`, { method: "POST", body: { reason: "Rejected from dashboard review queue." } });
+      await api(`/api/posts/${id}/reject`, { method: "POST", body: { reason: "由管理介面審核佇列拒絕。" } });
       await refresh();
-      showToast("Post rejected");
+      showToast("貼文已拒絕");
     }
     if (action === "schedule") {
       await api(`/api/posts/${id}/schedule`, { method: "POST", body: {} });
       await refresh();
-      showToast("Post scheduled");
+      showToast("貼文已排程");
     }
     if (action === "save") {
       const row = button.closest("tr");
@@ -2083,12 +2245,12 @@ async function handlePostAction(event) {
         body: { text: textarea ? textarea.value : "" }
       });
       await refresh();
-      showToast("Post saved for review");
+      showToast("修改已儲存並送回審核");
     }
     if (action === "publish") {
       const result = await api(`/api/posts/${id}/publish-now`, { method: "POST", body: {} });
       render(result.dashboard);
-      showToast(`Publish flow: ${result.run.status}`);
+      showToast(`發佈流程：${reviewStatusLabel(result.run.status)}`);
     }
   } finally {
     if (button.isConnected) setButtonBusy(button, false);
@@ -2114,7 +2276,7 @@ async function submitCompose(event) {
   });
   event.currentTarget.reset();
   await refresh();
-  showToast("Post created");
+  showToast("貼文已建立");
 }
 
 async function handleNextAction(event) {
@@ -2133,7 +2295,7 @@ async function handleNextAction(event) {
   });
   if (result.dashboard) render(result.dashboard);
   else await refresh();
-  showToast(`${action.title} completed`);
+  showToast(`${action.title}已完成`);
 }
 
 async function handleGrowthMission(event) {
@@ -2152,7 +2314,7 @@ async function handleGrowthMission(event) {
   });
   if (result.dashboard) render(result.dashboard);
   else await refresh();
-  showToast(`${mission.title} completed`);
+  showToast(`${mission.title}已完成`);
 }
 
 function bindEvents() {
@@ -2164,14 +2326,14 @@ function bindEvents() {
   };
 
   arrangeDashboardSections();
+  setupWorkspaceModes();
   setupNavigation();
   bindAsyncButton("#refreshBtn", refresh, "更新中");
   bindAsyncButton("#runBtn", runQueue, "發佈中");
   bindAsyncButton("#profitRunBtn", runProfitEngine, "研究中");
   bindAsyncButton("#cycleRunBtn", runAutonomyCycle, "執行中");
-  bindAsyncButton("#generateBtn", () => generateDrafts(false), "產生中");
-  bindAsyncButton("#autoGenerateBtn", () => generateDrafts(true), "排程中");
-  bindAsyncButton("#topicGenerateBtn", () => generateDrafts(false), "產生中");
+  bindAsyncButton("#generateBtn", generateDrafts, "產生中");
+  bindAsyncButton("#topicGenerateBtn", generateDrafts, "產生中");
   $("#postRows").addEventListener("click", (event) => {
     handlePostAction(event).catch((error) => {
       showToast(error.message);
@@ -2185,7 +2347,7 @@ function bindEvents() {
   if (adminLoginForm) {
     adminLoginForm.addEventListener("submit", (event) => {
       adminLogin(event).catch((error) => {
-        setAuthGateVisible(true, error.message || "Admin login failed.");
+        setAuthGateVisible(true, error.message || "管理員登入失敗。");
       });
     });
   }

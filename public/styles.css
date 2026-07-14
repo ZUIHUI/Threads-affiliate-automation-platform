@@ -724,6 +724,53 @@ body {
   font-weight: 700;
 }
 
+.workspace-mode-switcher {
+  display: grid;
+  gap: 8px;
+  margin-top: 22px;
+  padding: 0 4px;
+}
+
+.workspace-mode-switcher > span {
+  color: #86868b;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.workspace-mode-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid #3a3a3c;
+  border-radius: 8px;
+  background: #1d1d1f;
+}
+
+.workspace-mode-options button {
+  min-width: 0;
+  min-height: 36px;
+  padding: 4px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #a1a1a6;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.workspace-mode-options button:hover {
+  color: #ffffff;
+}
+
+.workspace-mode-options button.is-active {
+  background: #ffffff;
+  color: #1d1d1f;
+}
+
 .brand-mark {
   width: 38px;
   height: 38px;
@@ -3878,9 +3925,19 @@ summary:focus-visible {
 }
 
 .view-title span {
+  display: block;
+  margin-top: 2px;
   color: var(--muted);
   font-size: 12px;
   font-weight: 400;
+}
+
+.view-title small {
+  display: block;
+  margin-top: 1px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .topbar-actions,
@@ -3980,6 +4037,106 @@ summary:focus-visible {
   border-right-color: transparent;
   border-radius: 50%;
   animation: ui-spin 700ms linear infinite;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.workflow-overview {
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.workflow-overview-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.workflow-overview-header h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.19;
+}
+
+.workflow-mode-badge {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 9999px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.workflow-mode-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  list-style: none;
+}
+
+.workflow-mode-steps li {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 80px;
+  padding: 14px 16px;
+  border-right: 1px solid var(--line);
+}
+
+.workflow-mode-steps li:last-child {
+  border-right: 0;
+}
+
+.workflow-mode-steps li > span {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--green);
+  border-radius: 50%;
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.workflow-mode-steps strong,
+.workflow-mode-steps small {
+  display: block;
+}
+
+.workflow-mode-steps strong {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.workflow-mode-steps small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.workflow-mode-steps b {
+  color: var(--ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 @keyframes ui-spin {
@@ -4087,6 +4244,13 @@ summary:focus-visible {
 .risk-panel,
 .revenue-panel {
   grid-column: auto;
+}
+
+body[data-workspace-mode="operate"] .risk-panel,
+body[data-workspace-mode="operate"] .compose-panel,
+body[data-workspace-mode="insights"] .revenue-panel,
+body[data-workspace-mode="system"] .prompt-panel {
+  grid-column: 1 / -1;
 }
 
 .campaign-panel {
@@ -4505,6 +4669,18 @@ tbody tr:hover td {
     grid-column: 1 / -1;
   }
 
+  .workflow-mode-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workflow-mode-steps li:nth-child(2) {
+    border-right: 0;
+  }
+
+  .workflow-mode-steps li:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
+  }
+
   .ops-grid,
   .lower-grid {
     padding: 16px;
@@ -4544,6 +4720,32 @@ tbody tr:hover td {
 
   .view-title span {
     font-size: 11px;
+  }
+
+  .view-title small {
+    display: none;
+  }
+
+  .workflow-overview {
+    padding: 18px 12px;
+  }
+
+  .workflow-overview-header {
+    align-items: flex-start;
+  }
+
+  .workflow-mode-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow-mode-steps li,
+  .workflow-mode-steps li:nth-child(2) {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .workflow-mode-steps li:last-child {
+    border-bottom: 0;
   }
 
   .topbar-secondary-actions {

@@ -36,7 +36,6 @@ const requiredHtml = [
   'id="affiliate"',
   'id="prompt"',
   'id="generateBtn"',
-  'id="autoGenerateBtn"',
   'id="cycleRunBtn"',
   'id="runBtn"',
   'id="profitRunBtn"',
@@ -53,6 +52,13 @@ const requiredHtml = [
   'id="profitBlockedScripts"',
   'id="sideConnectorList"',
   'id="commandStats"',
+  'id="workflow-overview"',
+  'id="workflowModeBadge"',
+  'data-workspace-mode="operate"',
+  'data-workspace-mode="insights"',
+  'data-workspace-mode="system"',
+  'data-workspace-section="operate"',
+  'data-mode-nav="operate"',
   'id="pipelineMode"',
   'id="pipelineSummary"',
   'id="pipelineSteps"',
@@ -85,12 +91,33 @@ const requiredHtml = [
   "內容工廠",
   "合規 / 風險審核",
   "聯盟收益管道",
-  '<link rel="stylesheet" href="/styles.css?v=20260714-operations" />',
-  '<script src="/console.js?v=20260714-operations"></script>'
+  '<link rel="stylesheet" href="/styles.css?v=20260714-workspace-modes" />',
+  '<script src="/console.js?v=20260714-workspace-modes"></script>'
 ];
 
 for (const marker of requiredHtml) {
   assert.equal(html.includes(marker), true, `Missing HTML marker: ${marker}`);
+}
+
+assert.equal(
+  (html.match(/data-workspace-mode=/g) || []).length,
+  3,
+  "Workspace must expose exactly three primary modes"
+);
+
+const forbiddenMixedLanguageCopy = [
+  ">Loading<",
+  ">Refresh<",
+  ">Compose<",
+  ">Create post<",
+  ">Admin access required<",
+  ">Unlock<",
+  ">Autonomy Mode<",
+  ">API Connectors<"
+];
+
+for (const marker of forbiddenMixedLanguageCopy) {
+  assert.equal(html.includes(marker), false, `Legacy mixed-language copy remains: ${marker}`);
 }
 
 const requiredJs = [
@@ -104,7 +131,7 @@ const requiredJs = [
   "sourceStatuses",
   "sourceRecovery",
   "opportunityScanner",
-  "Autonomous Opportunity Scanner",
+  "自主機會掃描",
   "opportunity-list",
   "automationAction",
   "nextRetryAt",
@@ -116,12 +143,12 @@ const requiredJs = [
   "script.freshness",
   "renderReadiness",
   "liveGate",
-  "Live gate",
-  "Missing env",
-  "live blocked",
+  "正式發佈",
+  "缺少設定",
+  "正式發佈阻擋",
   "connectorCenter",
   "connector-center-grid",
-  "API / AI Connector Center",
+  "API / AI 服務連線",
   "renderAutonomyPipeline",
   "buildPipelineFallback",
   "buildPolicyFallback",
@@ -180,6 +207,11 @@ const requiredJs = [
   "aria-disabled=\"true\"",
   "編輯後重新檢查",
   "arrangeDashboardSections",
+  "WORKSPACE_MODES",
+  "setWorkspaceMode",
+  "setupWorkspaceModes",
+  "renderWorkflowSummary",
+  "WORKSPACE_MODE_KEY",
   "setupNavigation",
   "runButtonAction",
   "已產生 5 則待審核草稿"
@@ -262,6 +294,10 @@ const requiredCss = [
   ".risk-panel",
   ".revenue-panel",
   ".workflow-strip",
+  ".workspace-mode-switcher",
+  ".workspace-mode-options",
+  ".workflow-overview",
+  ".workflow-mode-steps",
   ".fatigue-detail",
   ".action-block-reason",
   "z-index: 100",
