@@ -4,11 +4,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Threads 聯盟自動化</title>
-    <link rel="stylesheet" href="/styles.css?v=20260709-growth" />
+    <link rel="stylesheet" href="/styles.css?v=20260714-operations" />
   </head>
   <body>
     <div class="app-shell">
-      <aside class="sidebar" aria-label="Main navigation">
+      <aside class="sidebar" id="sidebar" aria-label="Main navigation">
         <div class="brand-block">
           <div class="brand-mark" aria-hidden="true">◎</div>
           <div>
@@ -17,25 +17,31 @@
           </div>
         </div>
 
-        <nav class="nav-list">
-          <a href="#control-tower" class="nav-item">Control</a>
-          <a href="#readiness" class="nav-item">Readiness</a>
-          <a href="#timeline" class="nav-item">Timeline</a>
-          <a href="#next-actions" class="nav-item">Actions</a>
-          <a href="#decision-brief" class="nav-item">Decision</a>
-          <a href="#worker-health" class="nav-item">Worker</a>
-          <a href="#experiments" class="nav-item">Experiments</a>
-          <a href="#operating-map" class="nav-item">Ops Map</a>
-          <a href="#growth-loop" class="nav-item">Growth</a>
-          <a href="#overview" class="nav-item is-active">總覽</a>
-          <a href="#profit-engine" class="nav-item">自主獲利</a>
-          <a href="#factory" class="nav-item">內容工廠</a>
-          <a href="#schedule" class="nav-item">發佈排程</a>
-          <a href="#risk" class="nav-item">合規審核</a>
-          <a href="#affiliate" class="nav-item">聯盟管理</a>
-          <a href="#analytics" class="nav-item">收益分析</a>
-          <a href="#prompt" class="nav-item">Prompt</a>
-          <a href="#settings" class="nav-item">設定</a>
+        <nav class="nav-list" aria-label="Dashboard sections">
+          <div class="nav-group">
+            <p class="nav-group-label">營運決策</p>
+            <a href="#overview" class="nav-item is-active">總覽</a>
+            <a href="#readiness" class="nav-item">上線檢查</a>
+            <a href="#next-actions" class="nav-item">待辦行動</a>
+            <a href="#decision-brief" class="nav-item">決策摘要</a>
+          </div>
+          <div class="nav-group">
+            <p class="nav-group-label">內容與收益</p>
+            <a href="#profit-engine" class="nav-item">獲利模式</a>
+            <a href="#factory" class="nav-item">內容審核</a>
+            <a href="#schedule" class="nav-item">發佈排程</a>
+            <a href="#risk" class="nav-item">合規風險</a>
+            <a href="#affiliate" class="nav-item">聯盟收益</a>
+          </div>
+          <div class="nav-group">
+            <p class="nav-group-label">系統監控</p>
+            <a href="#control-tower" class="nav-item">自動化流程</a>
+            <a href="#operating-map" class="nav-item">營運地圖</a>
+            <a href="#timeline" class="nav-item">營運紀錄</a>
+            <a href="#worker-health" class="nav-item">工作程序</a>
+            <a href="#experiments" class="nav-item">實驗優化</a>
+            <a href="#settings" class="nav-item">活動設定</a>
+          </div>
         </nav>
 
         <div class="workspace-card">
@@ -54,20 +60,28 @@
         </div>
       </aside>
 
+      <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="Close navigation"></button>
+
       <main class="main" id="overview">
         <header class="topbar">
-          <button class="icon-button" type="button" aria-label="Toggle sidebar">☰</button>
+          <button class="icon-button" id="sidebarToggle" type="button" aria-label="Toggle navigation" aria-controls="sidebar" aria-expanded="false">☰</button>
           <div class="view-title">
-            <h2>總覽</h2>
+            <h2>營運總覽</h2>
             <span>資料更新於 <strong id="updatedAt">--</strong></span>
           </div>
           <div class="topbar-actions">
-            <span class="runtime-pill" id="runtimePill">Loading</span>
-            <button class="button secondary" id="adminLogoutBtn" type="button">Logout</button>
-            <button class="button secondary" id="generateBtn" type="button">AI 產草稿</button>
-            <button class="button secondary" id="autoGenerateBtn" type="button">產生並排程</button>
-            <button class="button secondary" id="cycleRunBtn" type="button">自主循環</button>
-            <button class="button" id="runBtn" type="button">一鍵發佈</button>
+            <div class="topbar-status">
+              <span class="runtime-pill" id="runtimePill">Loading</span>
+            </div>
+            <div class="topbar-secondary-actions">
+              <button class="button secondary" id="generateBtn" type="button">AI 草稿</button>
+              <button class="button secondary" id="cycleRunBtn" type="button">自主循環</button>
+              <button class="button tertiary" id="adminLogoutBtn" type="button">登出</button>
+            </div>
+            <div class="topbar-primary-actions">
+              <button class="button secondary" id="autoGenerateBtn" type="button">產生並排程</button>
+              <button class="button" id="runBtn" type="button">立即發佈</button>
+            </div>
           </div>
         </header>
 
@@ -380,7 +394,7 @@
               </label>
               <label class="check-row">
                 <input id="approved" name="approved" type="checkbox" />
-                <span>直接進入排程</span>
+                <span>建立時標為已核准（仍需按排程）</span>
               </label>
               <button class="button compose-submit" type="submit">Create post</button>
             </form>
@@ -432,6 +446,6 @@
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="/console.js?v=20260709-growth"></script>
+    <script src="/console.js?v=20260714-operations"></script>
   </body>
 </html>

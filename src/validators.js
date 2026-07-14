@@ -1,5 +1,8 @@
 const URL_PATTERN = /https?:\/\/[^\s<>"')]+/gi;
 const HYPE_PATTERNS = [
+  /guaranteed\s+(profit|profits|income|earnings|revenue)/i,
+  /earn\s+\$?\d+[\d,]*(\.\d+)?\s*(per|a|every)\s*(day|week|month)/i,
+  /\$\d+[\d,]*(\.\d+)?\s*(per|a|every)\s*(day|week|month)\s*(guaranteed|passive)/i,
   /保證賺/i,
   /一定賺/i,
   /穩賺/i,
@@ -10,6 +13,8 @@ const HYPE_PATTERNS = [
   /財富自由/i
 ];
 const TESTIMONIAL_PATTERNS = [
+  /i\s+(made|earned)\s+\$?\d+[\d,]*/i,
+  /my\s+(student|client|customer)s?\s+(made|earned)\s+\$?\d+[\d,]*/i,
   /學員.*賺/i,
   /學生.*賺/i,
   /客戶.*賺/i,

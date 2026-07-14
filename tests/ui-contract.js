@@ -79,11 +79,14 @@ const requiredHtml = [
   'id="experimentCards"',
   'id="optimizationQueue"',
   'id="conversionEvents"',
+  'id="sidebarToggle"',
+  'id="sidebarBackdrop"',
+  'class="nav-group-label"',
   "內容工廠",
   "合規 / 風險審核",
   "聯盟收益管道",
-  '<link rel="stylesheet" href="/styles.css?v=20260709-growth" />',
-  '<script src="/console.js?v=20260709-growth"></script>'
+  '<link rel="stylesheet" href="/styles.css?v=20260714-operations" />',
+  '<script src="/console.js?v=20260714-operations"></script>'
 ];
 
 for (const marker of requiredHtml) {
@@ -112,6 +115,10 @@ const requiredJs = [
   "blockedScripts",
   "script.freshness",
   "renderReadiness",
+  "liveGate",
+  "Live gate",
+  "Missing env",
+  "live blocked",
   "connectorCenter",
   "connector-center-grid",
   "API / AI Connector Center",
@@ -157,7 +164,20 @@ const requiredJs = [
   "data.recentEvents",
   "readiness.summary",
   "status-${escapeHtml(check.status)}",
-  "已產生 5 則草稿"
+  "/approve",
+  "/reject",
+  "/schedule",
+  "method: \"PATCH\"",
+  "reviewStatusOf",
+  "disclosureBadge",
+  "fatigueBadge",
+  "fatigueSummary",
+  "fatigue-detail",
+  "編輯後重新檢查",
+  "arrangeDashboardSections",
+  "setupNavigation",
+  "runButtonAction",
+  "已產生 5 則待審核草稿"
 ];
 
 for (const marker of requiredJs) {
@@ -237,6 +257,10 @@ const requiredCss = [
   ".risk-panel",
   ".revenue-panel",
   ".workflow-strip",
+  ".fatigue-detail",
+  ".sidebar-backdrop",
+  ".nav-group-label",
+  ".button.is-busy",
   ".funnel-flow",
   ".attribution-grid",
   ".attribution-card",

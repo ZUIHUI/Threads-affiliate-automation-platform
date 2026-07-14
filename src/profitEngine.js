@@ -1,6 +1,8 @@
 const crypto = require("node:crypto");
 
 const { countThreadsUnits, validatePost } = require("./validators");
+const { STATUS, prepareGeneratedPostForReview } = require("./postReview");
+const { evaluateContentFatigue, evaluateProfitModelFatigue } = require("./contentFatigue");
 
 const PROFIT_MODELS = [
   {
@@ -181,7 +183,7 @@ function signalMatchCount(model, signals) {
   return count;
 }
 
-function scoreProfitModel(model, state, signals = []) {
+function scoreProfitModel(model, state, signals = [], config = {}) {
   const campaigns = state.campaigns || [];
   const products = state.products || [];
   const links = state.affiliateLinks || [];
@@ -206,12 +208,16 @@ function scoreProfitModel(model, state, signals = []) {
   const productBonus = products.some((product) => product.status === "active") ? 5 : -10;
   const signalBonus = Math.min(10, Math.round(clickCount / 30) + conversionCount);
   const revenueBonus = revenue > 0 ? 4 : 0;
-  const fatiguePenalty = Math.min(8, posts.filter((post) => post.funnelRatio === model.id).length);
+  const modelFatigue = evaluateProfitModelFatigue(model.id, posts, config);
+  const fatiguePenalty = Math.min(8, posts.filter((post) => post.funnelRatio === model.id).length) + modelFatigue.penalty;
   const marketSignalBonus = Math.min(12, signalMatchCount(model, signals) * 3);
+  const score = modelFatigue.status === "blocked"
+    ? 0
+    : Math.max(0, Math.min(100,
+      model.baseScore + activeCampaignBonus + productBonus + signalBonus + revenueBonus + marketSignalBonus - fatiguePenalty
+    ));
 
-  return Math.max(0, Math.min(100,
-    model.baseScore + activeCampaignBonus + productBonus + signalBonus + revenueBonus + marketSignalBonus - fatiguePenalty
-  ));
+  return { score, fatigue: modelFatigue };
 }
 
 function pickActiveContext(state, preferredSignal, syncedProducts = []) {
@@ -590,7 +596,7 @@ function findFreshnessConflict(post, posts, config) {
   const candidates = (posts || []).filter((item) => {
     if (item.id === post.id) return false;
     if (item.productId !== post.productId && item.campaignId !== post.campaignId) return false;
-    if (!["draft", "scheduled", "container_created", "published", "simulated"].includes(item.status)) return false;
+    if (![STATUS.draft, STATUS.needsReview, STATUS.approved, STATUS.scheduled, STATUS.containerCreated, STATUS.published, STATUS.simulated].includes(item.status)) return false;
     const createdAt = new Date(item.createdAt || item.scheduledAt || item.updatedAt || 0).getTime();
     return Number.isFinite(createdAt) && createdAt >= cutoff;
   });
@@ -607,32 +613,32 @@ function findFreshnessConflict(post, posts, config) {
 function guardAutonomousPost(post, config, existingPosts = []) {
   const repaired = repairPostText(post, config);
   const validation = validatePost(repaired, config);
-  const freshnessConflict = validation.valid && validation.risk.level !== "high"
-    ? findFreshnessConflict(repaired, existingPosts, config)
-    : null;
-  const blocked = !validation.valid || validation.risk.level === "high" || Boolean(freshnessConflict);
-  const freshnessReason = freshnessConflict
-    ? `Content freshness blocked this script: ${Math.round(freshnessConflict.score * 100)}% similar to ${freshnessConflict.post.id}.`
-    : "";
+  const fatigue = evaluateContentFatigue(repaired, existingPosts, config);
+  const similarityReason = fatigue.reasons.find((reason) => reason.id === "similarity");
+  const freshnessConflict = similarityReason ? {
+    matchedPostId: similarityReason.matchedPostId,
+    score: similarityReason.score
+  } : null;
+  const fatigueReasons = fatigue.reasons.map((reason) => reason.message);
+  const blocked = !validation.valid || validation.risk.level === "high" || fatigue.status === "blocked";
   return {
     post: repaired,
     validation,
+    fatigue,
     blocked,
     reason: blocked
-      ? [...validation.errors, ...validation.risk.warnings, freshnessReason].filter(Boolean).join(" ") || "High-risk content was blocked."
+      ? [...validation.errors, ...validation.risk.warnings, ...fatigueReasons].filter(Boolean).join(" ") || "High-risk or fatigued content was blocked."
       : "",
-    freshness: freshnessConflict ? {
-      matchedPostId: freshnessConflict.post.id,
-      score: Number(freshnessConflict.score.toFixed(3))
-    } : null
+    freshness: freshnessConflict
   };
 }
 
-function createAutonomousPosts(state, config, model, campaign, product, link, scripts, autoApprove) {
+function createAutonomousPosts(state, config, model, campaign, product, link, scripts, autoApprove, options = {}) {
   const created = [];
   const blocked = [];
   const baseTime = Date.now();
   const baseTrackingUrl = trackingUrl(config, link.slug);
+  const createdBy = String(options.createdBy || "").trim() || null;
   for (const script of scripts) {
     const scheduledAt = new Date(baseTime + (created.length + 1) * 45 * 60 * 1000).toISOString();
     const postId = makeId("post");
@@ -655,9 +661,10 @@ function createAutonomousPosts(state, config, model, campaign, product, link, sc
       riskNote: script.risk_note || "自動獲利引擎：有揭露聯盟關係，未承諾收益，使用問題式互動結尾。",
       topicTag: campaign.name.replace(/[.#&]/g, "").slice(0, 50),
       text: String(script.post || "").replaceAll(baseTrackingUrl, attributedUrl),
-      status: autoApprove ? "scheduled" : "draft",
-      approved: Boolean(autoApprove),
+      status: STATUS.needsReview,
+      approved: false,
       scheduledAt,
+      createdBy,
       linkAttachment: attributedUrl,
       trackingCode: postId,
       createdAt: nowIso(),
@@ -670,11 +677,18 @@ function createAutonomousPosts(state, config, model, campaign, product, link, sc
         type: script.type,
         reason: guarded.reason,
         validation: guarded.validation,
+        fatigue: guarded.fatigue,
         freshness: guarded.freshness,
         createdAt: nowIso()
       });
       continue;
     }
+    prepareGeneratedPostForReview(guarded.post, config, {
+      source: "profit_engine",
+      createdBy,
+      recentPosts: state.posts,
+      autoApproveRequested: autoApprove === true
+    });
     state.posts.push(guarded.post);
     created.push(guarded.post);
   }
@@ -687,16 +701,18 @@ function shouldSkipRun(engine, config, force) {
   return Date.now() - new Date(engine.lastRunAt).getTime() < interval;
 }
 
-function scoreModels(state, signals) {
+function scoreModels(state, signals, config = {}) {
   return PROFIT_MODELS
     .map((model) => {
-      const score = scoreProfitModel(model, state, signals);
+      const scored = scoreProfitModel(model, state, signals, config);
+      const score = scored.score;
       return {
         ...model,
         rawScore: score,
         score,
+        fatigue: scored.fatigue,
         optimizerAdjustment: 0,
-        recommendation: score >= 82 ? "primary" : "watch"
+        recommendation: scored.fatigue.status === "blocked" ? "blocked" : score >= 82 ? "primary" : "watch"
       };
     })
     .sort((a, b) => b.score - a.score);
@@ -774,7 +790,9 @@ function buildExperimentLoop(state, config, engine, scores) {
   const runs = engine.runs || [];
   const experiments = scores.map((model, index) => {
     const modelPosts = posts.filter((post) => post.funnelRatio === model.id);
-    const scheduledCount = modelPosts.filter((post) => ["draft", "scheduled", "container_created"].includes(post.status)).length;
+    const scheduledCount = modelPosts.filter((post) =>
+      [STATUS.draft, STATUS.needsReview, STATUS.approved, STATUS.scheduled, STATUS.containerCreated].includes(post.status)
+    ).length;
     const publishedCount = modelPosts.filter((post) => ["published", "simulated"].includes(post.status)).length;
     const linkIds = new Set(modelPosts.map((post) => post.affiliateLinkId).filter(Boolean));
     const modelLinks = [...linkIds].map((id) => linksById.get(id)).filter(Boolean);
@@ -1092,7 +1110,7 @@ function buildProfitRunPreview(state, config, options = {}) {
     };
   }
   const offerSync = syncOffersFromSignals(previewState, config, signals);
-  const rawScores = scoreModels(previewState, signals);
+  const rawScores = scoreModels(previewState, signals, config);
   const rawExperimentLoop = buildExperimentLoop(previewState, config, engine, rawScores);
   const optimizerPolicy = buildOptimizerPolicy(rawExperimentLoop, rawScores, signals, config);
   const scores = applyOptimizerPolicy(rawScores, optimizerPolicy);
@@ -1129,7 +1147,7 @@ function runProfitEngine(state, config, options = {}) {
     };
   }
 
-  const rawScores = scoreModels(state, signals);
+  const rawScores = scoreModels(state, signals, config);
   const rawExperimentLoop = buildExperimentLoop(state, config, engine, rawScores);
   const optimizerPolicy = buildOptimizerPolicy(rawExperimentLoop, rawScores, signals, config);
   const scores = applyOptimizerPolicy(rawScores, optimizerPolicy);
@@ -1146,7 +1164,17 @@ function runProfitEngine(state, config, options = {}) {
   const scriptSource = aiScripts.length ? (options.aiScriptSource || "openai") : "template";
   const postPlan = options.createPosts === false
     ? { created: [], blocked: [] }
-    : createAutonomousPosts(state, config, selected, campaign, product, link, scripts, options.autoApprove !== false);
+    : createAutonomousPosts(
+      state,
+      config,
+      selected,
+      campaign,
+      product,
+      link,
+      scripts,
+      options.autoApprove !== false,
+      { createdBy: options.createdBy }
+    );
   const createdPosts = postPlan.created;
   const blockedScripts = postPlan.blocked;
 
@@ -1238,9 +1266,10 @@ function buildProfitDashboard(state, config) {
   const signals = engine.externalSignals || [];
   const scores = engine.modelScores.length
     ? engine.modelScores
-    : scoreModels(state, signals);
+    : scoreModels(state, signals, config);
   const scheduledAutonomyPosts = (state.posts || []).filter((post) =>
-    post.contentType === "自然推薦腳本" && ["draft", "scheduled"].includes(post.status)
+    post.contentType === "自然推薦腳本"
+      && [STATUS.draft, STATUS.needsReview, STATUS.approved, STATUS.scheduled].includes(post.status)
   ).length;
   const syncedOfferProducts = (state.products || []).filter((product) => product.sourceSignalId);
   const statusById = new Map((engine.sourceStatuses || []).map((status) => [status.id, status]));

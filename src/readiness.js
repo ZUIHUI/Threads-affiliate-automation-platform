@@ -16,6 +16,19 @@ function makeCheck(id, label, status, detail, action) {
   return { id, label, status, detail, action };
 }
 
+const LIVE_GATE_ENV_KEYS = {
+  admin_auth: ["ADMIN_TOKEN", "ADMIN_PASSWORD"],
+  database: ["DATABASE_URL"],
+  public_base_url: ["PUBLIC_BASE_URL"],
+  worker: ["ENABLE_WORKER", "AUTONOMY_MODE"],
+  threads: ["THREADS_USER_ID", "THREADS_ACCESS_TOKEN", "THREADS_DRY_RUN"],
+  threads_user_id: ["THREADS_USER_ID"],
+  threads_access_token: ["THREADS_ACCESS_TOKEN"],
+  conversion_feedback: ["CONVERSION_WEBHOOK_SECRET"],
+  disclosure_guardrails: ["DEFAULT_DISCLOSURE_TEXT"],
+  offer_inventory: []
+};
+
 function activeItems(items) {
   return (items || []).filter((item) => item.status === "active");
 }
@@ -267,7 +280,122 @@ function summarizeChecks(checks, config) {
   };
 }
 
-function buildAutonomyReadiness(state, config) {
+function uniqueValues(values) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function gateReason(input) {
+  return {
+    id: input.id,
+    label: input.label,
+    status: input.status || "blocked",
+    detail: input.detail || "",
+    action: input.action || "",
+    envKeys: LIVE_GATE_ENV_KEYS[input.id] || input.envKeys || []
+  };
+}
+
+function buildLivePublishingGate(state, config, options = {}) {
+  const readiness = options.readiness || buildAutonomyReadiness(state, config, { includeLiveGate: false });
+  const checksById = new Map((readiness.checks || []).map((check) => [check.id, check]));
+  const reasons = [];
+  const seen = new Set();
+
+  function addReason(reason) {
+    if (!reason?.id || seen.has(reason.id)) return;
+    seen.add(reason.id);
+    reasons.push(gateReason(reason));
+  }
+
+  const localBaseUrl = isLocalPublicBaseUrl(config.publicBaseUrl);
+  const autonomyLiveMode = Boolean(config.enableWorker || config.autonomyMode || options.autonomy === true);
+
+  if (localBaseUrl) {
+    const check = checksById.get("public_base_url");
+    addReason({
+      id: "public_base_url",
+      label: check?.label || "Public tracking URL",
+      detail: check?.detail || "PUBLIC_BASE_URL must point to the deployed service before live publishing.",
+      action: check?.action || "Set PUBLIC_BASE_URL to the deployed Render/Railway service URL."
+    });
+  }
+
+  if (!hasValue(config.threadsUserId)) {
+    addReason({
+      id: "threads_user_id",
+      label: "Threads user id",
+      detail: "THREADS_USER_ID is required before creating live Threads containers.",
+      action: "Set THREADS_USER_ID from the Threads publishing account."
+    });
+  }
+
+  if (!hasValue(config.threadsAccessToken)) {
+    addReason({
+      id: "threads_access_token",
+      label: "Threads access token",
+      detail: "THREADS_ACCESS_TOKEN is required before publishing live Threads posts.",
+      action: "Set THREADS_ACCESS_TOKEN to a valid long-lived Threads token."
+    });
+  }
+
+  if (!hasValue(config.defaultDisclosureText)) {
+    const check = checksById.get("disclosure_guardrails");
+    addReason({
+      id: "disclosure_guardrails",
+      label: check?.label || "Disclosure guardrails",
+      detail: check?.detail || "Affiliate disclosure text is missing.",
+      action: check?.action || "Set DEFAULT_DISCLOSURE_TEXT before live publishing."
+    });
+  }
+
+  if (autonomyLiveMode && !hasValue(config.databaseUrl)) {
+    const check = checksById.get("database");
+    addReason({
+      id: "database",
+      label: check?.label || "Database persistence",
+      detail: "Autonomy live mode requires persistent Postgres storage.",
+      action: check?.action || "Set DATABASE_URL on the cloud service."
+    });
+  }
+
+  if (autonomyLiveMode && !hasValue(config.conversionWebhookSecret)) {
+    const check = checksById.get("conversion_feedback");
+    addReason({
+      id: "conversion_feedback",
+      label: check?.label || "Conversion feedback",
+      detail: "Autonomy live mode requires a protected conversion webhook for revenue feedback.",
+      action: check?.action || "Set CONVERSION_WEBHOOK_SECRET before live autonomy."
+    });
+  }
+
+  if (!config.threadsDryRun && readiness.summary?.mode === "blocked") {
+    for (const check of readiness.checks || []) {
+      if (check.status !== "blocked") continue;
+      addReason({
+        id: check.id,
+        label: check.label,
+        status: check.status,
+        detail: check.detail,
+        action: check.action
+      });
+    }
+  }
+
+  const missingEnv = uniqueValues(reasons.flatMap((reason) => reason.envKeys || []));
+  return {
+    allowed: reasons.length === 0,
+    enforced: !config.threadsDryRun,
+    dryRun: Boolean(config.threadsDryRun),
+    mode: reasons.length === 0 ? "allowed" : "blocked",
+    reasonCount: reasons.length,
+    blockedCheckIds: reasons.map((reason) => reason.id),
+    missingEnv,
+    nextAction: reasons[0]?.action || "Live publishing gate is clear.",
+    reasons
+  };
+}
+
+function buildAutonomyReadiness(state, config, options = {}) {
   const campaigns = activeItems(state.campaigns);
   const products = activeItems(state.products);
   const links = state.affiliateLinks || [];
@@ -374,12 +502,20 @@ function buildAutonomyReadiness(state, config) {
     )
   ];
 
-  return {
+  const summary = summarizeChecks(checks, config);
+  const result = {
     generatedAt: new Date().toISOString(),
-    summary: summarizeChecks(checks, config),
+    summary,
     connectorCenter: connectorCenter(state, config),
     checks
   };
+  if (options.includeLiveGate !== false) {
+    result.liveGate = buildLivePublishingGate(state, config, { readiness: result });
+    result.summary.liveModeAllowed = result.liveGate.allowed;
+    result.summary.liveModeEnforced = result.liveGate.enforced;
+    result.summary.liveBlockerCount = result.liveGate.reasonCount;
+  }
+  return result;
 }
 
-module.exports = { buildAutonomyReadiness };
+module.exports = { buildAutonomyReadiness, buildLivePublishingGate };

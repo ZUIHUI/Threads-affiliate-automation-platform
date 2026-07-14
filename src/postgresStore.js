@@ -37,6 +37,25 @@ function safeString(value, fallback = "") {
   return text.length ? text : fallback;
 }
 
+function safeJson(value, fallback = null) {
+  if (value == null) return fallback;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function safeNormalizedText(value, fallback = "") {
+  const normalized = safeString(value).toLowerCase();
+  return normalized.length ? normalized : fallback;
+}
+
+function isRoleValue(value, fallback = "admin") {
+  const role = String(value || "").trim().toLowerCase();
+  return role === "admin" || role === "operator" || role === "viewer" ? role : fallback;
+}
+
 function safeNumber(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -46,6 +65,10 @@ function safeDate(value, fallback) {
   if (!value) return fallback;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? fallback : date.toISOString();
+}
+
+function isUuid(value) {
+  return /^[0-9a-fA-F-]{36}$/.test(String(value || ""));
 }
 
 async function getExistingTables(client) {
@@ -75,7 +98,7 @@ async function ensureSeed(connection) {
   );
 }
 
-async function syncPostgresState(client, existingTables, state) {
+async function syncPostgresState(client, existingTables, state, options = {}) {
   const now = new Date().toISOString();
   const campaigns = state.campaigns || [];
   const products = state.products || [];
@@ -95,6 +118,41 @@ async function syncPostgresState(client, existingTables, state) {
   const postIdMap = new Map(posts.map((post) => [post.id, stableUuid(post.id)]));
   const clickIdMap = new Map(clickEvents.map((event) => [event.id, stableUuid(event.id)]));
   const accountIdMap = new Map(tracks.map((item) => [item.id, stableUuid(item.id)]));
+  const seedAdminUsers = Array.isArray(options.adminUsers) ? options.adminUsers : [];
+  const adminUserIdByKey = new Map();
+
+  if (existingTables.has("admin_users")) {
+    for (const adminUser of seedAdminUsers) {
+      const email = safeNormalizedText(adminUser?.email);
+      if (!email) continue;
+      const userId = stableUuid(`admin-user:${email}`);
+      await client.query(`
+        insert into admin_users (
+          id, email, display_name, role, updated_at
+        ) values (
+          $1, $2, $3, $4, now()
+        )
+        on conflict (email) do update set
+          display_name = excluded.display_name,
+          role = excluded.role,
+          updated_at = now()
+      `, [
+        userId,
+        email,
+        safeString(adminUser?.displayName, "Admin"),
+        isRoleValue(adminUser?.role, "admin")
+      ]);
+      adminUserIdByKey.set(email, userId);
+      adminUserIdByKey.set(userId, userId);
+    }
+  }
+
+  function resolveAdminUserId(value) {
+    const creator = safeString(value);
+    if (!creator) return null;
+    if (isUuid(creator)) return creator;
+    return adminUserIdByKey.get(safeNormalizedText(creator)) || null;
+  }
 
   const clearOrder = [
     "conversion_events",
@@ -251,11 +309,21 @@ async function syncPostgresState(client, existingTables, state) {
           insert into posts (
             id, account_id, campaign_id, product_id, affiliate_link_id, topic_tag, text,
             status, approved, scheduled_at, link_attachment, threads_container_id, publish_after,
-            threads_media_id, published_at, error, updated_at, created_at
+            threads_media_id, published_at, error, created_by, reviewed_at, reviewed_by,
+            rejected_at, rejected_by, rejection_reason, review_reset_at, review_reset_reason,
+            validation_result, risk_level, disclosure_status, claim_warnings, testimonial_risk,
+            fatigue_status, fatigue_reasons, similarity_score, similar_to_post_id,
+            commercial_intensity, last_fatigue_checked_at,
+            updated_at, created_at
           ) values (
             $1, $2, $3, $4, $5, $6, $7,
             $8, $9, $10, $11, $12, $13,
-            $14, $15, $16, $17, $18
+            $14, $15, $16, $17, $18, $19,
+            $20, $21, $22, $23, $24,
+            $25::jsonb, $26, $27, $28::jsonb, $29,
+            $30, $31::jsonb, $32, $33,
+            $34, $35,
+            $36, $37
           )
         `,
         [
@@ -275,6 +343,27 @@ async function syncPostgresState(client, existingTables, state) {
           post.threadsMediaId || null,
           post.publishedAt ? safeDate(post.publishedAt, null) : null,
           safeString(post.error, ""),
+          resolveAdminUserId(post.createdBy),
+          post.reviewedAt ? safeDate(post.reviewedAt, null) : null,
+          resolveAdminUserId(post.reviewedBy),
+          post.rejectedAt ? safeDate(post.rejectedAt, null) : null,
+          resolveAdminUserId(post.rejectedBy),
+          safeString(post.rejectionReason, ""),
+          post.reviewResetAt ? safeDate(post.reviewResetAt, null) : null,
+          safeString(post.reviewResetReason, ""),
+          safeJson(post.validationResult || post.validation || null),
+          safeString(post.riskLevel || post.review?.riskLevel, ""),
+          safeString(post.disclosureStatus || post.review?.disclosureStatus, ""),
+          safeJson(post.claimWarnings || post.review?.claimWarnings || []),
+          Boolean(post.testimonialRisk || post.review?.testimonialRisk),
+          safeString(post.fatigueStatus || post.fatigue?.status, ""),
+          safeJson(post.fatigueReasons || post.fatigue?.reasons || []),
+          safeNumber(post.similarityScore || post.fatigue?.similarityScore, 0),
+          safeString(post.similarToPostId || post.fatigue?.similarToPostId, ""),
+          safeString(post.commercialIntensity || post.fatigue?.commercialIntensity, ""),
+          post.lastFatigueCheckedAt || post.fatigue?.lastFatigueCheckedAt
+            ? safeDate(post.lastFatigueCheckedAt || post.fatigue?.lastFatigueCheckedAt, null)
+            : null,
           safeDate(post.updatedAt, now),
           safeDate(post.createdAt, now)
         ]
@@ -461,18 +550,19 @@ async function syncPostgresState(client, existingTables, state) {
 }
 
 function createPostgresStore(options) {
+  const normalizedOptions = options || {};
   const { Pool } = loadPg();
   const pool = new Pool({
-    connectionString: options.connectionString,
-    ssl: sslOptions(options.connectionString, options.ssl)
+    connectionString: normalizedOptions.connectionString,
+    ssl: sslOptions(normalizedOptions.connectionString, normalizedOptions.ssl)
   });
   let readyPromise = null;
 
   async function ensureReady() {
     if (!readyPromise) {
       readyPromise = (async () => {
-        if (options.autoMigrate && options.schemaPath) {
-          const schema = fs.readFileSync(options.schemaPath, "utf8");
+        if (normalizedOptions.autoMigrate && normalizedOptions.schemaPath) {
+          const schema = fs.readFileSync(normalizedOptions.schemaPath, "utf8");
           await pool.query(schema);
         } else {
           await pool.query(`
@@ -502,7 +592,7 @@ function createPostgresStore(options) {
       await client.query("begin");
       await writeAppSetting(client, state);
       const existingTables = await getExistingTables(client);
-      await syncPostgresState(client, existingTables, state);
+      await syncPostgresState(client, existingTables, state, normalizedOptions);
       await client.query("commit");
     } catch (error) {
       await client.query("rollback");
@@ -525,7 +615,7 @@ function createPostgresStore(options) {
       const mutationResult = mutator(state) || {};
       await writeAppSetting(client, state);
       const existingTables = await getExistingTables(client);
-      await syncPostgresState(client, existingTables, state);
+      await syncPostgresState(client, existingTables, state, normalizedOptions);
       await client.query("commit");
       return mutationResult;
     } catch (error) {

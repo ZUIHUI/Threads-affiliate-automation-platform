@@ -22,7 +22,18 @@ const { getPublishingLimit } = require("./src/threadsClient");
 const { buildProfitRunPreview, runProfitEngine } = require("./src/profitEngine");
 const { collectAdIntelligence } = require("./src/adIntelligenceClient");
 const { generateProfitScripts } = require("./src/profitScriptGenerator");
-const { buildAutonomyReadiness } = require("./src/readiness");
+const { buildAutonomyReadiness, buildLivePublishingGate } = require("./src/readiness");
+const {
+  STATUS,
+  applyPostPatch,
+  approvePost,
+  assertPublishable,
+  buildReviewSummary,
+  refreshReviewMetadata,
+  rejectPost,
+  schedulePost
+} = require("./src/postReview");
+const { evaluateContentFatigue } = require("./src/contentFatigue");
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
@@ -58,13 +69,37 @@ function sendNoContent(res) {
   res.end();
 }
 
+function sendRedirect(res, location) {
+  res.writeHead(302, {
+    location,
+    "cache-control": "no-store"
+  });
+  res.end();
+}
+
 function createConfiguredStore(runtimeConfig, options = {}) {
+  const adminUsers = [];
+  if (hasAdminCredential(runtimeConfig.adminToken)) {
+    adminUsers.push({
+      email: "admin-token@local",
+      displayName: "Token Admin",
+      role: normalizeAdminRole(runtimeConfig.adminTokenRole, "admin")
+    });
+  }
+  if (hasAdminCredential(runtimeConfig.adminPassword)) {
+    adminUsers.push({
+      email: "admin-password@local",
+      displayName: "Password Admin",
+      role: normalizeAdminRole(runtimeConfig.adminPasswordRole, normalizeAdminRole(runtimeConfig.adminTokenRole, "admin"))
+    });
+  }
   if (runtimeConfig.databaseUrl) {
     return createPostgresStore({
       connectionString: runtimeConfig.databaseUrl,
       autoMigrate: runtimeConfig.databaseAutoMigrate,
       ssl: runtimeConfig.databaseSsl,
-      schemaPath: options.schemaPath || SCHEMA_FILE
+      schemaPath: options.schemaPath || SCHEMA_FILE,
+      adminUsers
     });
   }
   return createStore(options.dataFile || DATA_FILE);
@@ -122,6 +157,21 @@ function isAdminAuthConfigured() {
   return hasAdminCredential(config.adminToken) || hasAdminCredential(config.adminPassword);
 }
 
+function isLocalPublicBaseUrl() {
+  try {
+    const host = new URL(config?.publicBaseUrl || "http://localhost").hostname;
+    return host === "localhost" || host === "127.0.0.1" || host === "::1";
+  } catch {
+    return true;
+  }
+}
+
+function isAdminAuthRequired() {
+  if (isAdminAuthConfigured()) return true;
+  if (String(process.env.NODE_ENV || "").toLowerCase() === "production") return true;
+  return !isLocalPublicBaseUrl();
+}
+
 function safeEqual(left, right) {
   const a = Buffer.from(String(left || ""));
   const b = Buffer.from(String(right || ""));
@@ -134,8 +184,21 @@ function normalizeAdminRole(value, fallback = "admin") {
   return ADMIN_ROLES.includes(role) ? role : fallback;
 }
 
+function resolveAdminActorByCredential(candidate) {
+  if (!isAdminAuthConfigured()) return "";
+  if (!hasAdminCredential(candidate)) return "";
+  const credential = String(candidate);
+  if (hasAdminCredential(config.adminToken) && safeEqual(credential, config.adminToken)) {
+    return "admin-token@local";
+  }
+  if (hasAdminCredential(config.adminPassword) && safeEqual(credential, config.adminPassword)) {
+    return "admin-password@local";
+  }
+  return "";
+}
+
 function resolveAdminRoleByCredential(candidate) {
-  if (!isAdminAuthConfigured()) return "admin";
+  if (!isAdminAuthConfigured()) return isAdminAuthRequired() ? "" : "admin";
   if (!hasAdminCredential(candidate)) return "";
   const credential = String(candidate);
   if (hasAdminCredential(config.adminToken) && safeEqual(credential, config.adminToken)) {
@@ -187,29 +250,40 @@ function clearAdminCookie(req) {
 function parseAdminSession(req) {
   const cookie = parseCookies(req)[ADMIN_SESSION_COOKIE_NAME] || "";
   const parts = cookie.split(".");
-  if (parts.length !== 3 && parts.length !== 4) return null;
+  if (parts.length !== 3 && parts.length !== 4 && parts.length !== 5) return null;
   const sessionId = parts[0];
   const signature = parts[parts.length - 1];
-  const expiresAt = parts.length === 4 ? parts[2] : parts[1];
-  const role = parts.length === 4 ? normalizeAdminRole(parts[1], "admin") : "admin";
+  const role = parts.length >= 4 ? normalizeAdminRole(parts[1], "admin") : "admin";
+  const expiresAt = parts.length === 5 ? parts[3] : parts.length === 4 ? parts[2] : parts[1];
+  const actor = parts.length === 5 ? (parts[2] || "") : "";
+  const encodedActor = actor ? encodeURIComponent(actor) : "";
   if (!sessionId || !expiresAt || !signature) return null;
   const secret = getAdminSecret();
   const expireTime = Number(expiresAt);
   if (!Number.isFinite(expireTime) || expireTime <= Date.now()) return null;
-  const payload = parts.length === 4 ? `${sessionId}.${parts[1]}.${expiresAt}` : `${sessionId}.${expiresAt}`;
+  const payload = parts.length === 5
+    ? `${sessionId}.${parts[1]}.${encodedActor}.${expiresAt}`
+    : parts.length === 4
+      ? `${sessionId}.${parts[1]}.${expiresAt}`
+      : `${sessionId}.${expiresAt}`;
   const expected = crypto.createHmac("sha256", secret || "threads-affiliate-admin").update(payload).digest("base64url");
   if (!safeEqual(signature, expected)) return null;
-  return { sessionId, role, expiresAt };
+  try {
+    return { sessionId, role, actor, expiresAt };
+  } catch {
+    return null;
+  }
 }
 
 function getAdminPrincipal(req) {
-  if (!isAdminAuthConfigured()) return { authenticated: true, role: "admin", source: "open" };
+  if (!isAdminAuthRequired()) return { authenticated: true, role: "admin", source: "open" };
   const headerSecret = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
   const credential = req.headers["x-admin-token"] || req.headers["x-admin-password"] || headerSecret || "";
   const role = resolveAdminRoleByCredential(credential);
-  if (role) return { authenticated: true, role, source: "credential" };
+  const actor = resolveAdminActorByCredential(credential);
+  if (role) return { authenticated: true, role, actor, source: "credential" };
   const session = parseAdminSession(req);
-  if (session) return { authenticated: true, role: session.role, source: "session" };
+  if (session) return { authenticated: true, role: session.role, actor: session.actor || "session", source: "session" };
   return null;
 }
 
@@ -229,12 +303,15 @@ function authorizeAdminRequest(req, options = {}) {
   return principal;
 }
 
-function buildAdminSession(req, role = "admin") {
+function buildAdminSession(req, role = "admin", actor = "") {
   const now = Date.now();
   const expiresAt = now + config.adminSessionTtlMs;
   const normalizedRole = normalizeAdminRole(role, "admin");
   const sessionId = crypto.randomBytes(12).toString("base64url");
-  const payload = `${sessionId}.${normalizedRole}.${expiresAt}`;
+  const normalizedActor = encodeURIComponent(String(actor || ""));
+  const payload = normalizedActor
+    ? `${sessionId}.${normalizedRole}.${normalizedActor}.${expiresAt}`
+    : `${sessionId}.${normalizedRole}.${expiresAt}`;
   const secret = getAdminSecret() || "threads-affiliate-admin";
   const signature = crypto.createHmac("sha256", secret).update(payload).digest("base64url");
   const cookieAttributes = [
@@ -252,6 +329,21 @@ function buildAdminSession(req, role = "admin") {
   };
 }
 
+function buildAdminAuthStatus(req) {
+  const principal = getAdminPrincipal(req);
+  return {
+    authRequired: isAdminAuthRequired(),
+    authenticated: !isAdminAuthRequired() || Boolean(principal),
+    role: principal?.role || null,
+    actor: principal?.actor || null,
+    source: principal?.source || null,
+    methods: {
+      token: hasAdminCredential(config.adminToken),
+      password: hasAdminCredential(config.adminPassword)
+    }
+  };
+}
+
 function authorizeConversionWebhook(req) {
   if (!config.conversionWebhookSecret) return;
   const bearer = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
@@ -261,6 +353,77 @@ function authorizeConversionWebhook(req) {
     error.statusCode = 401;
     throw error;
   }
+}
+
+function isDashboardPath(pathname) {
+  return pathname === "/" || pathname === "/console.html";
+}
+
+function serveLoginPage(req, res) {
+  if (isAdminAuthRequired() && getAdminPrincipal(req)) {
+    sendRedirect(res, "/");
+    return true;
+  }
+  const html = `<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin Login</title>
+    <style>
+      :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: #111827; color: #f9fafb; }
+      main { width: min(92vw, 420px); padding: 32px; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; background: #172033; box-shadow: 0 24px 70px rgba(0,0,0,.34); }
+      h1 { margin: 0 0 8px; font-size: 24px; }
+      p { margin: 0 0 24px; color: #cbd5e1; line-height: 1.5; }
+      label { display: grid; gap: 8px; margin-bottom: 16px; color: #e5e7eb; }
+      input { box-sizing: border-box; width: 100%; padding: 12px 14px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #f8fafc; font: inherit; }
+      button { width: 100%; padding: 12px 16px; border: 0; border-radius: 6px; background: #38bdf8; color: #082f49; font-weight: 700; cursor: pointer; }
+      small { display: block; min-height: 20px; margin-top: 14px; color: #fca5a5; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Admin access required</h1>
+      <p>Enter ADMIN_TOKEN or ADMIN_PASSWORD to open the dashboard.</p>
+      <form id="loginForm">
+        <label>
+          Admin credential
+          <input id="credential" type="password" autocomplete="current-password" autofocus />
+        </label>
+        <button type="submit">Unlock dashboard</button>
+        <small id="message"></small>
+      </form>
+    </main>
+    <script>
+      document.getElementById("loginForm").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const credential = document.getElementById("credential").value.trim();
+        const message = document.getElementById("message");
+        message.textContent = "";
+        if (!credential) return;
+        const response = await fetch("/api/login", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ token: credential, password: credential })
+        });
+        if (response.ok) {
+          window.location.assign("/");
+          return;
+        }
+        const payload = await response.json().catch(() => ({}));
+        message.textContent = payload.error || "Admin login failed.";
+      });
+    </script>
+  </body>
+</html>`;
+  res.writeHead(200, {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store"
+  });
+  res.end(html);
+  return true;
 }
 
 async function serveStatic(req, res, pathname) {
@@ -290,6 +453,25 @@ async function serveStatic(req, res, pathname) {
 async function readState() {
   await configureRuntime();
   return store.read();
+}
+
+function readinessBlockedError(gate, message = "Live publishing is blocked by readiness checks.") {
+  const error = new Error(message);
+  error.statusCode = 409;
+  error.code = "READINESS_BLOCKED";
+  error.readinessGate = gate;
+  return error;
+}
+
+function throwIfLivePublishingBlocked(state, options = {}) {
+  if (config.threadsDryRun || options.ignoreReadiness === true) return null;
+  const readiness = buildAutonomyReadiness(state, config);
+  const gate = buildLivePublishingGate(state, config, {
+    readiness,
+    autonomy: options.autonomy === true
+  });
+  if (!gate.allowed) throw readinessBlockedError(gate, options.message);
+  return gate;
 }
 
 async function sourceHealthSnapshot() {
@@ -325,7 +507,7 @@ async function buildProfitAiScripts(runOptions, requestOptions = {}) {
   }
 }
 
-async function runProfitEngineRequest(body = {}) {
+async function runProfitEngineRequest(body = {}, principal = {}) {
   const intelligence = body.ingest === false
     ? null
     : await collectAdIntelligence(config, { sourceHealth: await sourceHealthSnapshot() });
@@ -341,6 +523,7 @@ async function runProfitEngineRequest(body = {}) {
     force: body.force !== false,
     createPosts: body.createPosts !== false,
     autoApprove: body.autoApprove !== false,
+    createdBy: principal?.actor || principal?.role || "admin",
     intelligence,
     aiScripts: aiDraft.scripts,
     aiScriptSource: aiDraft.source,
@@ -353,14 +536,68 @@ async function runAutonomyCycle(options = {}) {
   await configureRuntime();
   const startedAt = new Date().toISOString();
   const source = options.source || "cycle";
-  const policy = buildAutonomyPolicy(await readState(), config);
+  const state = await readState();
+  const policy = buildAutonomyPolicy(state, config);
   const ignorePolicy = Boolean(options.ignorePolicy);
+  const actor = options.actor || "admin";
   const shouldRunProfit = options.profit !== false;
   const shouldRunQueue = options.publishQueue !== false && (ignorePolicy || policy.canPublishQueue);
   let intelligence = null;
   let aiDraft = { scripts: [], source: "template", error: "" };
   let profitResult = null;
   let automationResult = null;
+
+  if (options.publishQueue !== false && !config.threadsDryRun) {
+    const gate = buildLivePublishingGate(state, config, { autonomy: true });
+    if (!gate.allowed) {
+      const finishedAt = new Date().toISOString();
+      const cycle = {
+        id: `cycle_${Date.now()}`,
+        status: "blocked",
+        source,
+        startedAt,
+        finishedAt,
+        policyMode: policy.mode,
+        policyAction: gate.nextAction,
+        readinessGate: gate,
+        profitSkipped: true,
+        selectedModelId: "",
+        optimizerMode: "",
+        ingestedSignalCount: 0,
+        aiScriptSource: "skipped",
+        aiScriptError: "",
+        createdPostCount: 0,
+        blockedScriptCount: 0,
+        queueStatus: "blocked",
+        processed: 0,
+        simulated: 0,
+        published: 0,
+        failed: 0
+      };
+      await store.update((currentState) => {
+        currentState.events.unshift({
+          id: `evt_${Date.now()}`,
+          type: "autonomy.cycle.blocked",
+          cycleId: cycle.id,
+          status: cycle.status,
+          source: cycle.source,
+          policyMode: cycle.policyMode,
+          policyAction: cycle.policyAction,
+          readinessBlocked: true,
+          readinessReasons: gate.reasons,
+          createdAt: cycle.finishedAt
+        });
+        return {};
+      });
+      return {
+        cycle,
+        policy,
+        result: null,
+        automation: null,
+        dashboard: buildDashboard(await readState(), config)
+      };
+    }
+  }
 
   if (!policy.canRunCycle && !ignorePolicy) {
     const finishedAt = new Date().toISOString();
@@ -422,6 +659,7 @@ async function runAutonomyCycle(options = {}) {
       force: options.force !== false,
       createPosts: options.createPosts !== false && (ignorePolicy || policy.canCreatePosts),
       autoApprove: options.autoApprove !== false,
+      createdBy: actor,
       intelligence,
       aiScripts: aiDraft.scripts,
       aiScriptSource: aiDraft.source,
@@ -430,7 +668,7 @@ async function runAutonomyCycle(options = {}) {
   }
 
   if (shouldRunQueue) {
-    automationResult = await runAutomation(store, config, { source });
+    automationResult = await runAutomation(store, config, { source, autonomy: true });
   }
 
   const finishedAt = new Date().toISOString();
@@ -592,6 +830,7 @@ async function executeGrowthMission(mission, source) {
     ...(mission.request.body || {}),
     source: mission.request.body?.source || source
   };
+  const actor = body.actor || source || "growth-loop";
 
   if (mission.request.path === "/api/autonomy/cycle") {
     return runAutonomyCycle({
@@ -603,16 +842,24 @@ async function executeGrowthMission(mission, source) {
       autoApprove: body.autoApprove !== false,
       publishQueue: body.publishQueue !== false,
       profit: body.profit !== false,
-      ignorePolicy: body.ignorePolicy === true
+      ignorePolicy: body.ignorePolicy === true,
+      actor
     });
   }
 
   if (mission.request.path === "/api/profit-engine/run") {
-    return runProfitEngineRequest(body);
+    return runProfitEngineRequest(body, {
+      role: "admin",
+      actor: "growth-loop"
+    });
   }
 
   if (mission.request.path === "/api/automation/run") {
-    return runAutomation(store, config, body);
+    return runAutomation(store, config, {
+      ...body,
+      ignoreReadiness: false,
+      autonomy: true
+    });
   }
 
   const error = new Error(`Unsupported growth mission request: ${mission.request.path}`);
@@ -705,45 +952,43 @@ function findPost(state, postId) {
 async function handleApi(req, res, url) {
   await configureRuntime();
   const route = url.pathname;
-  const isAdminPublicRoute = route === "/api/admin/session" || route === "/api/admin/login" || route === "/api/admin/logout";
+  const isAdminPublicRoute = route === "/api/admin/session"
+    || route === "/api/admin/login"
+    || route === "/api/admin/logout"
+    || route === "/api/me"
+    || route === "/api/login"
+    || route === "/api/logout";
+  const isPublicReadinessRoute = route === "/api/readiness" && req.method === "GET";
   const isReadOnlyAdminRoute = (route === "/api/dashboard" && req.method === "GET")
-    || (route === "/api/readiness" && req.method === "GET")
     || (route === "/api/posts" && req.method === "GET")
     || (route === "/api/threads/publishing-limit" && req.method === "GET")
     || (route.match(/^\/api\/posts\/([^/]+)\/validate$/) && req.method === "GET");
 
-  if (!isAdminPublicRoute && route !== "/api/conversions" && req.method !== "OPTIONS") {
+  if (!isAdminPublicRoute && !isPublicReadinessRoute && route !== "/api/conversions" && req.method !== "OPTIONS") {
     authorizeAdminRequest(req, { requiredRoles: isReadOnlyAdminRoute ? ["admin", "operator", "viewer"] : ["admin"] });
   }
 
-  if (req.method === "GET" && route === "/api/admin/session") {
-    const session = parseAdminSession(req);
-    sendJson(res, 200, {
-      authRequired: isAdminAuthConfigured(),
-      authenticated: !isAdminAuthConfigured() || Boolean(session),
-      role: session?.role || null,
-      methods: {
-        token: hasAdminCredential(config.adminToken),
-        password: hasAdminCredential(config.adminPassword)
-      }
-    });
+  if (req.method === "GET" && (route === "/api/admin/session" || route === "/api/me")) {
+    sendJson(res, 200, buildAdminAuthStatus(req));
     return;
   }
 
-  if (req.method === "POST" && route === "/api/admin/login") {
+  if (req.method === "POST" && (route === "/api/admin/login" || route === "/api/login")) {
     const body = await parseBody(req);
     const candidate = body.password || body.token || "";
     const role = resolveAdminRoleByCredential(candidate);
+    const actor = resolveAdminActorByCredential(candidate);
     if (!role) {
       const error = new Error("Invalid admin credential.");
       error.statusCode = 401;
       throw error;
     }
-    const session = buildAdminSession(req, role);
+    const session = buildAdminSession(req, role, actor);
     sendJson(res, 200, {
       authRequired: true,
       authenticated: true,
       role,
+      actor,
       methods: {
         token: hasAdminCredential(config.adminToken),
         password: hasAdminCredential(config.adminPassword)
@@ -752,7 +997,7 @@ async function handleApi(req, res, url) {
     return;
   }
 
-  if (req.method === "POST" && route === "/api/admin/logout") {
+  if (req.method === "POST" && (route === "/api/admin/logout" || route === "/api/logout")) {
     sendJson(res, 200, {
       authRequired: isAdminAuthConfigured(),
       authenticated: false,
@@ -781,7 +1026,10 @@ async function handleApi(req, res, url) {
 
   if (req.method === "POST" && route === "/api/posts") {
     const body = await parseBody(req);
-    const result = await store.update((state) => createPost(state, body, config));
+    const principal = getAdminPrincipal(req);
+    const result = await store.update((state) => createPost(state, body, config, {
+      createdBy: principal?.actor || null
+    }));
     sendJson(res, 201, result);
     return;
   }
@@ -789,18 +1037,91 @@ async function handleApi(req, res, url) {
   const approveMatch = route.match(/^\/api\/posts\/([^/]+)\/approve$/);
   if (req.method === "POST" && approveMatch) {
     const postId = approveMatch[1];
+    const principal = getAdminPrincipal(req);
     const result = await store.update((state) => {
       const post = findPost(state, postId);
-      post.approved = true;
-      if (post.status === "draft") post.status = "scheduled";
-      post.updatedAt = new Date().toISOString();
+      const validation = approvePost(post, config, {
+        actor: principal?.actor || principal?.role || "admin",
+        recentPosts: state.posts
+      });
       state.events.unshift({
         id: `evt_${Date.now()}`,
         type: "post.approved",
         postId,
         createdAt: post.updatedAt
       });
-      return { post };
+      return { post, validation };
+    });
+    sendJson(res, 200, result);
+    return;
+  }
+
+  const rejectMatch = route.match(/^\/api\/posts\/([^/]+)\/reject$/);
+  if (req.method === "POST" && rejectMatch) {
+    const postId = rejectMatch[1];
+    const body = await parseBody(req);
+    const principal = getAdminPrincipal(req);
+    const result = await store.update((state) => {
+      const post = findPost(state, postId);
+      const validation = rejectPost(post, config, {
+        actor: principal?.actor || principal?.role || "admin",
+        recentPosts: state.posts,
+        reason: body.reason
+      });
+      state.events.unshift({
+        id: `evt_${Date.now()}`,
+        type: "post.rejected",
+        postId,
+        createdAt: post.updatedAt
+      });
+      return { post, validation };
+    });
+    sendJson(res, 200, result);
+    return;
+  }
+
+  const scheduleMatch = route.match(/^\/api\/posts\/([^/]+)\/schedule$/);
+  if (req.method === "POST" && scheduleMatch) {
+    const postId = scheduleMatch[1];
+    const body = await parseBody(req);
+    const principal = getAdminPrincipal(req);
+    const result = await store.update((state) => {
+      const post = findPost(state, postId);
+      const validation = schedulePost(post, config, {
+        actor: principal?.actor || principal?.role || "admin",
+        recentPosts: state.posts,
+        scheduledAt: body.scheduledAt
+      });
+      state.events.unshift({
+        id: `evt_${Date.now()}`,
+        type: "post.scheduled",
+        postId,
+        createdAt: post.updatedAt
+      });
+      return { post, validation };
+    });
+    sendJson(res, 200, result);
+    return;
+  }
+
+  const patchMatch = route.match(/^\/api\/posts\/([^/]+)$/);
+  if (req.method === "PATCH" && patchMatch) {
+    const postId = patchMatch[1];
+    const body = await parseBody(req);
+    const principal = getAdminPrincipal(req);
+    const result = await store.update((state) => {
+      const post = findPost(state, postId);
+      const validation = applyPostPatch(post, body, config, {
+        actor: principal?.actor || principal?.role || "admin",
+        recentPosts: state.posts
+      });
+      state.events.unshift({
+        id: `evt_${Date.now()}`,
+        type: "post.edited",
+        postId,
+        createdAt: post.updatedAt
+      });
+      return { post, validation };
     });
     sendJson(res, 200, result);
     return;
@@ -809,12 +1130,20 @@ async function handleApi(req, res, url) {
   const publishNowMatch = route.match(/^\/api\/posts\/([^/]+)\/publish-now$/);
   if (req.method === "POST" && publishNowMatch) {
     const postId = publishNowMatch[1];
+    const state = await readState();
+    throwIfLivePublishingBlocked(state, {
+      message: "Publish-now is blocked by readiness checks before live execution."
+    });
     await store.update((state) => {
       const post = findPost(state, postId);
-      post.approved = true;
-      post.scheduledAt = new Date().toISOString();
-      if (post.status === "draft") post.status = "scheduled";
-      post.updatedAt = post.scheduledAt;
+      const validation = refreshReviewMetadata(post, config, {
+        recentPosts: state.posts
+      });
+      assertPublishable(post, validation, config, { allowContainerCreated: true });
+      const now = new Date().toISOString();
+      if (post.status === STATUS.scheduled) post.scheduledAt = now;
+      if (post.status === STATUS.containerCreated) post.publishAfter = now;
+      post.updatedAt = now;
       return { post };
     });
     const result = await runAutomation(store, config, { onlyPostId: postId });
@@ -826,14 +1155,23 @@ async function handleApi(req, res, url) {
   if (req.method === "GET" && validateMatch) {
     const state = await readState();
     const post = findPost(state, validateMatch[1]);
-    sendJson(res, 200, validatePost(post, config));
+    const validation = validatePost(post, config);
+    const fatigue = evaluateContentFatigue(post, state.posts, config);
+    sendJson(res, 200, {
+      ...validation,
+      fatigue,
+      review: buildReviewSummary(post, validation, fatigue)
+    });
     return;
   }
 
   if (req.method === "POST" && route === "/api/automation/generate") {
     const body = await parseBody(req);
     const state = await readState();
-    const result = await generateDraftsAsync(state, body, config);
+    const principal = getAdminPrincipal(req);
+    const result = await generateDraftsAsync(state, body, config, {
+      createdBy: principal?.actor || principal?.role || "admin"
+    });
     await store.write(state);
     sendJson(res, 201, result);
     return;
@@ -841,13 +1179,17 @@ async function handleApi(req, res, url) {
 
   if (req.method === "POST" && route === "/api/automation/run") {
     const body = await parseBody(req);
-    const result = await runAutomation(store, config, body);
-    sendJson(res, 200, result);
+    const result = await runAutomation(store, config, {
+      ...body,
+      ignoreReadiness: false
+    });
+    sendJson(res, result.run?.status === "blocked" ? 409 : 200, result);
     return;
   }
 
   if (req.method === "POST" && route === "/api/autonomy/cycle") {
     const body = await parseBody(req);
+    const principal = getAdminPrincipal(req);
     const result = await runAutonomyCycle({
       source: body.source || "dashboard_cycle",
       force: body.force !== false,
@@ -857,9 +1199,10 @@ async function handleApi(req, res, url) {
       autoApprove: body.autoApprove !== false,
       publishQueue: body.publishQueue !== false,
       profit: body.profit !== false,
-      ignorePolicy: body.ignorePolicy === true
+      ignorePolicy: body.ignorePolicy === true,
+      actor: principal?.actor || principal?.role || "admin"
     });
-    sendJson(res, 200, result);
+    sendJson(res, result.cycle?.status === "blocked" ? 409 : 200, result);
     return;
   }
 
@@ -879,7 +1222,7 @@ async function handleApi(req, res, url) {
     const result = await runProfitEngineRequest({
       ...body,
       source: body.source || "dashboard"
-    });
+    }, getAdminPrincipal(req));
     sendJson(res, 200, result);
     return;
   }
@@ -987,13 +1330,25 @@ async function requestHandler(req, res) {
       await handleApi(req, res, url);
       return;
     }
+    if (url.pathname === "/login") {
+      serveLoginPage(req, res);
+      return;
+    }
+    if (isDashboardPath(url.pathname) && isAdminAuthRequired() && !getAdminPrincipal(req)) {
+      sendRedirect(res, "/login");
+      return;
+    }
     if (await serveStatic(req, res, url.pathname)) return;
     sendJson(res, 404, { error: "Not found" });
   } catch (error) {
     const status = error.statusCode || 500;
-    sendJson(res, status, {
+    const payload = {
+      code: error.code || undefined,
       error: error.message || "Unexpected server error."
-    });
+    };
+    if (error.readinessGate) payload.readinessGate = error.readinessGate;
+    if (error.fatigue) payload.fatigue = error.fatigue;
+    sendJson(res, status, payload);
   }
 }
 
@@ -1021,22 +1376,26 @@ async function runWorkerTick(source = "worker") {
 
   try {
     const result = config.autonomyMode
-      ? await runGrowthAutopilot({ source, force: false })
+      ? await runGrowthAutopilot({ source, force: false, actor: "worker" })
       : await runAutonomyCycle({
           source,
           force: false,
           profit: false,
           createPosts: true,
           autoApprove: true,
-          publishQueue: true
+          publishQueue: true,
+          actor: "worker"
         });
-    await heartbeatWorkerLease("completed", {
+    const tickStatus = result?.cycle?.status === "blocked" || result?.run?.status === "blocked"
+      ? "blocked"
+      : "completed";
+    await heartbeatWorkerLease(tickStatus, {
       source,
       missionId: result?.mission?.id || "",
       missionTitle: result?.mission?.title || ""
     });
     return {
-      status: "completed",
+      status: tickStatus,
       source,
       lease: lease.lease,
       result,
@@ -1090,7 +1449,7 @@ function startServer(port, options = {}) {
       server.on("error", reject);
       server.listen(listenPort, async () => {
         try {
-          await startWorker();
+          if (options.startWorker !== false) await startWorker();
         } catch (error) {
           reject(error);
           return;

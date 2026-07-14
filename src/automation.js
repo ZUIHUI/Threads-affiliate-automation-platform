@@ -5,7 +5,17 @@ const { createTextContainer, publishContainer } = require("./threadsClient");
 const { buildPrompt, generatePromptDrafts } = require("./contentTemplates");
 const { generateOpenAIDrafts, shouldUseOpenAI } = require("./openaiClient");
 const { buildProfitDashboard } = require("./profitEngine");
-const { buildAutonomyReadiness } = require("./readiness");
+const { buildAutonomyReadiness, buildLivePublishingGate } = require("./readiness");
+const {
+  STATUS,
+  approvePost,
+  assertPublishable,
+  buildReviewSummary,
+  effectiveReviewStatus,
+  prepareGeneratedPostForReview,
+  refreshReviewMetadata
+} = require("./postReview");
+const { evaluateContentFatigue } = require("./contentFatigue");
 
 function nowIso() {
   return new Date().toISOString();
@@ -79,6 +89,11 @@ function attachAttributedTracking(post, link, config, baseUrl = "") {
   return post;
 }
 
+function resolvePostCreator(value) {
+  const creator = String(value || "").trim();
+  return creator.length ? creator : null;
+}
+
 function pipelineStatusScore(status) {
   const scores = {
     active: 100,
@@ -109,7 +124,7 @@ function buildAutonomyPolicy(state, config) {
     post.contentType === "自然推薦腳本" && isWithinLastDay(post.createdAt)
   ).length;
   const queueDepth = (state.posts || []).filter((post) =>
-    post.approved && ["scheduled", "container_created"].includes(post.status)
+    post.approved && [STATUS.scheduled, STATUS.containerCreated].includes(post.status)
   ).length;
   const failedRuns = (state.automationRuns || []).slice(0, config.autonomyMaxFailedRuns)
     .filter((run) => run.status === "failed" || Number(run.failed || 0) > 0).length;
@@ -819,16 +834,20 @@ function buildWorkerLeaseStatus(state, config) {
 function buildDashboard(state, config) {
   const posts = state.posts;
   const affiliateLinks = state.affiliateLinks;
-  const published = posts.filter((post) => post.status === "published");
-  const simulated = posts.filter((post) => post.status === "simulated");
-  const queued = posts.filter((post) => ["scheduled", "container_created"].includes(post.status));
-  const blocked = posts.filter((post) => ["failed", "blocked_credentials"].includes(post.status));
+  const published = posts.filter((post) => post.status === STATUS.published);
+  const simulated = posts.filter((post) => post.status === STATUS.simulated);
+  const queued = posts.filter((post) => post.approved && [STATUS.scheduled, STATUS.containerCreated].includes(post.status));
+  const blocked = posts.filter((post) => [STATUS.failed, STATUS.blockedCredentials].includes(post.status));
+  const reviewable = posts.filter((post) => [STATUS.generated, STATUS.needsReview, STATUS.draft].includes(post.status));
   const disclosureCovered = posts.filter((post) => {
     const text = post.text || "";
     return text.includes(config.defaultDisclosureText) || /#ad\b/i.test(text);
   }).length;
   const metrics = {
-    drafts: posts.filter((post) => post.status === "draft").length,
+    drafts: reviewable.length,
+    needsReview: posts.filter((post) => effectiveReviewStatus(post) === STATUS.needsReview).length,
+    approved: posts.filter((post) => post.status === STATUS.approved && post.approved).length,
+    rejected: posts.filter((post) => post.status === STATUS.rejected).length,
     queued: queued.length,
     published: published.length,
     simulated: simulated.length,
@@ -869,10 +888,31 @@ function buildDashboard(state, config) {
     posts: posts
       .slice()
       .sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt)))
-      .map((post) => ({
-        ...post,
-        validation: validatePost(post, config)
-      })),
+      .map((post) => {
+        const validation = validatePost(post, config);
+        const fatigue = evaluateContentFatigue(post, posts, config);
+        const review = buildReviewSummary(post, validation, fatigue);
+        return {
+          ...post,
+          validation,
+          fatigue,
+          review: {
+            ...(post.review || {}),
+            ...review
+          },
+          reviewStatus: review.status,
+          riskLevel: review.riskLevel,
+          disclosureStatus: review.disclosureStatus,
+          claimWarnings: review.claimWarnings,
+          testimonialRisk: review.testimonialRisk,
+          fatigueStatus: fatigue.status,
+          fatigueReasons: fatigue.reasons,
+          similarityScore: fatigue.similarityScore,
+          similarToPostId: fatigue.similarToPostId,
+          commercialIntensity: fatigue.commercialIntensity,
+          lastFatigueCheckedAt: fatigue.lastFatigueCheckedAt
+        };
+      }),
     automationRuns: state.automationRuns.slice(0, 10),
     recentEvents: state.events.slice(0, 12),
     clickEvents: state.clickEvents.slice(0, 8),
@@ -929,7 +969,8 @@ function renderTemplate(product, campaign, link, config, index) {
   return variants[index % variants.length];
 }
 
-function createDraftPosts(state, input, config, drafts, campaign, product, link, topic) {
+function createDraftPosts(state, input, config, drafts, campaign, product, link, topic, options = {}) {
+  const createdBy = resolvePostCreator(options.createdBy);
   const now = new Date();
   const created = [];
   const baseTrackingUrl = trackingUrl(config, link.slug);
@@ -949,15 +990,22 @@ function createDraftPosts(state, input, config, drafts, campaign, product, link,
       riskNote: draft.risk_note,
       topicTag: String(topic).replace(/[.#&]/g, "").slice(0, 50),
       text: draft.post,
-      status: input.autoApprove ? "scheduled" : "draft",
-      approved: Boolean(input.autoApprove),
+      status: STATUS.needsReview,
+      approved: false,
       scheduledAt: scheduled.toISOString(),
+      createdBy,
       linkAttachment: isConversion ? baseTrackingUrl : "",
       createdAt: nowIso(),
       updatedAt: nowIso()
     };
     attachAttributedTracking(post, link, config, baseTrackingUrl);
     if (!isConversion && !draft.post.includes(baseTrackingUrl)) post.linkAttachment = "";
+    prepareGeneratedPostForReview(post, config, {
+      source: "automation_generate",
+      createdBy,
+      recentPosts: state.posts,
+      autoApproveRequested: input.autoApprove === true
+    });
     state.posts.push(post);
     created.push(post);
   }
@@ -993,7 +1041,7 @@ function resolveDraftContext(state, input, config) {
   return { campaign, product, link, topic };
 }
 
-function generateDrafts(state, input, config) {
+function generateDrafts(state, input, config, options = {}) {
   const { campaign, product, link, topic } = resolveDraftContext(state, input, config);
   const drafts = generatePromptDrafts({
     topic,
@@ -1001,7 +1049,7 @@ function generateDrafts(state, input, config) {
     trackingLink: trackingUrl(config, link.slug),
     disclosureText: config.defaultDisclosureText
   });
-  return createDraftPosts(state, input, config, drafts, campaign, product, link, topic);
+  return createDraftPosts(state, input, config, drafts, campaign, product, link, topic, options);
 }
 
 async function generateDraftsAsync(state, input, config, options = {}) {
@@ -1014,10 +1062,10 @@ async function generateDraftsAsync(state, input, config, options = {}) {
         trackingLink: trackingUrl(config, link.slug),
         disclosureText: config.defaultDisclosureText
       });
-  return createDraftPosts(state, input, config, drafts, campaign, product, link, topic);
+  return createDraftPosts(state, input, config, drafts, campaign, product, link, topic, options);
 }
 
-function createPost(state, input, config) {
+function createPost(state, input, config, options = {}) {
   const campaign = findById(state.campaigns, input.campaignId);
   const product = findById(state.products, input.productId);
   if (!campaign || !product) {
@@ -1046,20 +1094,24 @@ function createPost(state, input, config) {
     riskNote: input.riskNote || "",
     topicTag: input.topicTag || campaign.name.replace(/[.#&]/g, "").slice(0, 50),
     text: input.text || renderTemplate(product, campaign, link, config, state.posts.length),
-    status: input.approved ? "scheduled" : "draft",
-    approved: Boolean(input.approved),
+    status: STATUS.needsReview,
+    approved: false,
     scheduledAt: input.scheduledAt || nowIso(),
+    createdBy: resolvePostCreator(options.createdBy),
     linkAttachment: input.linkAttachment || trackingUrl(config, link.slug),
     createdAt: nowIso(),
     updatedAt: nowIso()
   };
   if (!input.linkAttachment) attachAttributedTracking(post, link, config);
-  const validation = validatePost(post, config);
+  const validation = refreshReviewMetadata(post, config, {
+    recentPosts: state.posts
+  });
   if (!validation.valid) {
     const error = new Error(validation.errors.join(" "));
     error.statusCode = 400;
     throw error;
   }
+  if (input.approved) approvePost(post, config, { actor: options.createdBy, recentPosts: state.posts });
   state.posts.push(post);
   return { post, validation };
 }
@@ -1227,21 +1279,6 @@ function capacityRemaining(state) {
   return Math.max(0, max - recentlyPublished);
 }
 
-function buildLivePublishBlockers(config, readinessChecks) {
-  if (config.threadsDryRun) return [];
-  const blockerIds = [
-    "threads",
-    "public_base_url",
-    "database",
-    "offer_inventory",
-    "disclosure_guardrails"
-  ];
-  return (readinessChecks || [])
-    .filter((check) => blockerIds.includes(check.id))
-    .filter((check) => check.status === "blocked")
-    .map((check) => `${check.label}: ${check.action}`);
-}
-
 async function runAutomation(store, config, options = {}) {
   const startedAt = nowIso();
   const state = await store.read();
@@ -1261,11 +1298,12 @@ async function runAutomation(store, config, options = {}) {
 
   if (!config.threadsDryRun && !ignoreReadiness) {
     const readiness = buildAutonomyReadiness(state, config);
-    const blockers = buildLivePublishBlockers(config, readiness.checks);
-    if (blockers.length > 0) {
+    const gate = buildLivePublishingGate(state, config, { readiness, autonomy: options.autonomy === true });
+    if (!gate.allowed) {
       run.status = "blocked";
+      run.readinessGate = gate;
       run.messages.push("Publishing is blocked by readiness checks before live execution.");
-      run.messages.push(...blockers.map((item) => `- ${item}`));
+      run.messages.push(...gate.reasons.map((item) => `- ${item.label}: ${item.action}`));
       run.finishedAt = nowIso();
       state.automationRuns.unshift(run);
       state.events.unshift({
@@ -1273,6 +1311,8 @@ async function runAutomation(store, config, options = {}) {
         type: "automation.run",
         runId: run.id,
         status: run.status,
+        readinessBlocked: true,
+        readinessReasons: gate.reasons,
         createdAt: run.finishedAt
       });
       await store.write(state);
@@ -1285,8 +1325,8 @@ async function runAutomation(store, config, options = {}) {
   const duePosts = state.posts.filter((post) => {
     if (options.onlyPostId && post.id !== options.onlyPostId) return false;
     if (!post.approved) return false;
-    if (!["scheduled", "container_created"].includes(post.status)) return false;
-    const dueTime = post.status === "container_created"
+    if (![STATUS.scheduled, STATUS.containerCreated].includes(post.status)) return false;
+    const dueTime = post.status === STATUS.containerCreated
       ? new Date(post.publishAfter || post.scheduledAt).getTime()
       : new Date(post.scheduledAt || 0).getTime();
     return dueTime <= now;
@@ -1298,19 +1338,23 @@ async function runAutomation(store, config, options = {}) {
       break;
     }
     run.processed += 1;
-    const validation = validatePost(post, config);
-    if (!validation.valid) {
-      post.status = "failed";
-      post.error = validation.errors.join(" ");
+    const validation = refreshReviewMetadata(post, config, {
+      recentPosts: state.posts
+    });
+    try {
+      assertPublishable(post, validation, config, { allowContainerCreated: true });
+    } catch (error) {
+      post.status = STATUS.failed;
+      post.error = error.message;
       post.updatedAt = nowIso();
       run.failed += 1;
-      run.messages.push(`${post.id}: validation failed.`);
+      run.messages.push(`${post.id}: ${error.message}`);
       continue;
     }
 
     try {
       if (config.threadsDryRun) {
-        post.status = "simulated";
+        post.status = STATUS.simulated;
         post.threadsMediaId = `dry_${Date.now()}`;
         post.publishedAt = nowIso();
         post.updatedAt = post.publishedAt;
@@ -1319,9 +1363,9 @@ async function runAutomation(store, config, options = {}) {
         continue;
       }
 
-      if (post.status === "scheduled") {
+      if (post.status === STATUS.scheduled) {
         const container = await createTextContainer(config, post);
-        post.status = "container_created";
+        post.status = STATUS.containerCreated;
         post.threadsContainerId = container.id;
         post.publishAfter = new Date(Date.now() + config.threadsPublishDelayMs).toISOString();
         post.updatedAt = nowIso();
@@ -1329,9 +1373,9 @@ async function runAutomation(store, config, options = {}) {
         continue;
       }
 
-      if (post.status === "container_created") {
+      if (post.status === STATUS.containerCreated) {
         const result = await publishContainer(config, post.threadsContainerId);
-        post.status = "published";
+        post.status = STATUS.published;
         post.threadsMediaId = result.id;
         post.publishedAt = nowIso();
         post.updatedAt = post.publishedAt;
@@ -1339,7 +1383,7 @@ async function runAutomation(store, config, options = {}) {
         remaining -= 1;
       }
     } catch (error) {
-      post.status = error.message.includes("THREADS_USER_ID") ? "blocked_credentials" : "failed";
+      post.status = error.message.includes("THREADS_USER_ID") ? STATUS.blockedCredentials : STATUS.failed;
       post.error = error.message;
       post.updatedAt = nowIso();
       run.failed += 1;

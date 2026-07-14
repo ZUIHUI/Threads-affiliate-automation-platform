@@ -158,7 +158,7 @@ function defaultState() {
         riskNote: "低風險：教育型內容，未承諾收益。",
         topicTag: "AI 自動化聯盟行銷",
         text: "很多人做 AI 自動化副業，第一步就做錯。\n\n不是先開帳號，也不是先找商品。\n\n而是先設計內容資料流：主題、來源、審稿、排程、成效。\n\n沒有這條流程，自動化只會變成自動製造垃圾內容。\n\n你覺得最難的是產文，還是穩定發文？",
-        status: "draft",
+        status: "needs_review",
         approved: false,
         scheduledAt: now,
         linkAttachment: "",

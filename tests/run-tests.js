@@ -6,6 +6,7 @@ const path = require("node:path");
 const { getRuntimeConfig } = require("../src/config");
 const { createStore } = require("../src/store");
 const { extractUniqueUrls, validatePost } = require("../src/validators");
+const { evaluateContentFatigue, similarityScore } = require("../src/contentFatigue");
 const { buildAutonomyPolicy, buildDashboard, generateDrafts, generateDraftsAsync, recordConversion, runAutomation } = require("../src/automation");
 const { buildProfitRunPreview, runProfitEngine } = require("../src/profitEngine");
 const { buildAutonomyReadiness } = require("../src/readiness");
@@ -39,6 +40,117 @@ async function main() {
   assert.equal(invalid.valid, false);
   assert.ok(invalid.errors.some((error) => error.includes("500")));
   assert.ok(invalid.errors.some((error) => error.includes("periods")));
+
+  const fatigueNow = new Date("2026-07-09T08:00:00.000Z").toISOString();
+  const fatigueHistory = [
+    {
+      id: "hist_product",
+      productId: "prd_a",
+      campaignId: "cmp_a",
+      funnelRatio: "model_trust_stack",
+      hook: "Original trust hook",
+      cta: "https://example.com/a",
+      text: "含聯盟連結：A simple automation workflow for creators https://example.com/a?",
+      linkAttachment: "https://example.com/a",
+      status: "published",
+      publishedAt: "2026-07-09T07:30:00.000Z"
+    }
+  ];
+  assert.equal(similarityScore("A simple automation workflow for creators", "A simple automation workflow for creators."), 1);
+  const similarityFatigue = evaluateContentFatigue({
+    id: "post_similar",
+    productId: "prd_b",
+    campaignId: "cmp_a",
+    funnelRatio: "model_conversion",
+    hook: "Fresh hook",
+    cta: "https://example.com/b",
+    text: "含聯盟連結：A simple automation workflow for creators https://example.com/b?",
+    linkAttachment: "https://example.com/b"
+  }, fatigueHistory, { ...config, now: fatigueNow });
+  assert.equal(similarityFatigue.status, "blocked");
+  assert.equal(similarityFatigue.reasons.some((reason) => reason.id === "similarity"), true);
+  assert.equal(similarityFatigue.similarToPostId, "hist_product");
+
+  const productFatigue = evaluateContentFatigue({
+    id: "post_product",
+    productId: "prd_a",
+    campaignId: "cmp_a",
+    funnelRatio: "model_conversion",
+    hook: "Different product hook",
+    cta: "https://example.com/product-new",
+    text: "含聯盟連結：Different content about testing a workflow https://example.com/product-new?",
+    linkAttachment: "https://example.com/product-new"
+  }, fatigueHistory, { ...config, now: fatigueNow });
+  assert.equal(productFatigue.status, "blocked");
+  assert.equal(productFatigue.reasons.some((reason) => reason.id === "same_product_frequency"), true);
+
+  const hookFatigue = evaluateContentFatigue({
+    id: "post_hook",
+    productId: "prd_b",
+    campaignId: "cmp_a",
+    funnelRatio: "model_conversion",
+    hook: "Original trust hook",
+    cta: "https://example.com/hook",
+    text: "含聯盟連結：Completely different body copy for hook repetition https://example.com/hook?",
+    linkAttachment: "https://example.com/hook"
+  }, fatigueHistory, { ...config, now: fatigueNow });
+  assert.equal(hookFatigue.status, "blocked");
+  assert.equal(hookFatigue.reasons.some((reason) => reason.id === "same_hook"), true);
+
+  const ctaHistory = [
+    { ...fatigueHistory[0], id: "hist_cta_1", productId: "prd_a", cta: "https://example.com/repeat", linkAttachment: "https://example.com/repeat", publishedAt: "2026-07-09T07:50:00.000Z" },
+    { ...fatigueHistory[0], id: "hist_cta_2", productId: "prd_b", cta: "https://example.com/repeat", linkAttachment: "https://example.com/repeat", publishedAt: "2026-07-09T07:40:00.000Z" }
+  ];
+  const ctaFatigue = evaluateContentFatigue({
+    id: "post_cta",
+    productId: "prd_c",
+    campaignId: "cmp_a",
+    funnelRatio: "model_conversion",
+    hook: "Unique CTA hook",
+    cta: "https://example.com/repeat",
+    text: "含聯盟連結：Unique CTA body https://example.com/repeat?",
+    linkAttachment: "https://example.com/repeat"
+  }, ctaHistory, { ...config, now: fatigueNow });
+  assert.equal(ctaFatigue.status, "blocked");
+  assert.equal(ctaFatigue.reasons.some((reason) => reason.id === "same_cta_consecutive"), true);
+
+  const modelHistory = Array.from({ length: 3 }, (_, index) => ({
+    ...fatigueHistory[0],
+    id: `hist_model_${index}`,
+    productId: `prd_model_${index}`,
+    funnelRatio: "model_conversion",
+    cta: `https://example.com/model-${index}`,
+    linkAttachment: `https://example.com/model-${index}`,
+    publishedAt: `2026-07-09T07:${String(20 + index).padStart(2, "0")}:00.000Z`
+  }));
+  const modelFatigue = evaluateContentFatigue({
+    id: "post_model",
+    productId: "prd_model_new",
+    campaignId: "cmp_a",
+    funnelRatio: "model_conversion",
+    hook: "Unique model hook",
+    cta: "https://example.com/model-new",
+    text: "含聯盟連結：Unique model body https://example.com/model-new?",
+    linkAttachment: "https://example.com/model-new"
+  }, modelHistory, { ...config, now: fatigueNow });
+  assert.equal(modelFatigue.status, "blocked");
+  assert.equal(modelFatigue.reasons.some((reason) => reason.id === "same_profit_model_daily_cap"), true);
+
+  const commercialFatigue = evaluateContentFatigue({
+    id: "post_commercial",
+    productId: "prd_commercial_new",
+    campaignId: "cmp_a",
+    funnelRatio: "model_soft",
+    hook: "Unique commercial hook",
+    cta: "https://example.com/commercial-new",
+    text: "含聯盟連結：Commercial body https://example.com/commercial-new?",
+    linkAttachment: "https://example.com/commercial-new"
+  }, [
+    { ...fatigueHistory[0], id: "hist_strong", productId: "prd_x", cta: "https://example.com/x", linkAttachment: "https://example.com/x", publishedAt: "2026-07-09T07:50:00.000Z" },
+    { ...fatigueHistory[0], id: "hist_soft", productId: "prd_y", funnelRatio: "trust", cta: "", linkAttachment: "", text: "Soft education post?", publishedAt: "2026-07-09T07:45:00.000Z" }
+  ], { ...config, now: fatigueNow });
+  assert.equal(commercialFatigue.status, "warning");
+  assert.equal(commercialFatigue.reasons.some((reason) => reason.id === "commercial_ratio"), true);
 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "threads-affiliate-ops-"));
   const store = createStore(path.join(tempDir, "store.json"));
@@ -80,9 +192,17 @@ async function main() {
   const liveReadiness = buildAutonomyReadiness(store.read(), liveReadyConfig);
   assert.equal(liveReadiness.summary.mode, "live_ready");
   assert.equal(liveReadiness.summary.blocked, 0);
+  assert.equal(liveReadiness.liveGate.allowed, true);
+  assert.equal(liveReadiness.summary.liveModeAllowed, true);
   const generated = store.update((state) => generateDrafts(state, { topic: "AI 自動化聯盟行銷", autoApprove: true }, config));
   assert.equal(generated.created.length, 5);
   assert.equal(generated.created[0].contentType, "教學型");
+  assert.equal(generated.created[0].status, "needs_review");
+  assert.equal(generated.created[0].approved, false);
+  assert.equal(generated.created[0].review.status, "needs_review");
+  assert.equal(generated.created[0].review.autoApproveIgnored, true);
+  assert.equal(Boolean(generated.created[0].validationResult), true);
+  assert.equal(["present", "missing", "not_required"].includes(generated.created[0].disclosureStatus), true);
 
   const intelligenceConfig = getRuntimeConfig({
     PUBLIC_BASE_URL: "http://localhost:4173",
@@ -185,6 +305,27 @@ async function main() {
   assert.equal(result.run.simulated > 0, true);
   assert.equal(result.dashboard.metrics.simulated > 0, true);
 
+  const blockedLiveConfig = getRuntimeConfig({
+    PUBLIC_BASE_URL: "https://threads-affiliate.example",
+    THREADS_DRY_RUN: "false",
+    ENABLE_WORKER: "true",
+    AUTONOMY_MODE: "true",
+    ADMIN_PASSWORD: "admin-secret"
+  });
+  blockedLiveConfig.defaultDisclosureText = "";
+  const blockedLiveStore = createStore(path.join(tempDir, "blocked-live-store.json"));
+  const blockedLiveReadiness = buildAutonomyReadiness(blockedLiveStore.read(), blockedLiveConfig);
+  assert.equal(blockedLiveReadiness.liveGate.allowed, false);
+  assert.equal(blockedLiveReadiness.liveGate.missingEnv.includes("THREADS_USER_ID"), true);
+  assert.equal(blockedLiveReadiness.liveGate.missingEnv.includes("THREADS_ACCESS_TOKEN"), true);
+  assert.equal(blockedLiveReadiness.liveGate.missingEnv.includes("DATABASE_URL"), true);
+  assert.equal(blockedLiveReadiness.liveGate.missingEnv.includes("CONVERSION_WEBHOOK_SECRET"), true);
+  assert.equal(blockedLiveReadiness.liveGate.missingEnv.includes("DEFAULT_DISCLOSURE_TEXT"), true);
+  const blockedLiveRun = await runAutomation(blockedLiveStore, blockedLiveConfig, { source: "live-gate-test" });
+  assert.equal(blockedLiveRun.run.status, "blocked");
+  assert.equal(blockedLiveRun.run.readinessGate.allowed, false);
+  assert.equal(blockedLiveRun.run.readinessGate.reasons.length > 0, true);
+
   const profitResult = store.update((state) => runProfitEngine(state, config, {
     source: "test",
     force: true,
@@ -193,6 +334,9 @@ async function main() {
   }));
   assert.equal(profitResult.skipped, false);
   assert.equal(profitResult.createdPosts.length > 0, true);
+  assert.equal(profitResult.createdPosts[0].status, "needs_review");
+  assert.equal(profitResult.createdPosts[0].approved, false);
+  assert.equal(profitResult.createdPosts[0].review.autoApproveIgnored, true);
   assert.equal(store.read().profitEngine.runs.length > 0, true);
   assert.equal(profitResult.run.experimentSnapshot.leaderModelId, profitResult.run.selectedModelId);
   assert.equal(profitResult.run.experimentSnapshot.optimizerMode, profitResult.run.optimizerPolicy.mode);
@@ -423,6 +567,8 @@ async function main() {
   });
   assert.equal(asyncGenerated.created.length, 5);
   assert.equal(asyncGenerated.created[0].hook, "Async hook 1");
+  assert.equal(asyncGenerated.created[0].status, "needs_review");
+  assert.equal(asyncGenerated.created[0].approved, false);
 
   const originalFetch = global.fetch;
   try {
@@ -585,18 +731,145 @@ async function main() {
   assert.equal(growthPayload.dashboard.recentEvents.some((event) => event.type === "growth_loop.executed"), true);
   assert.equal(Boolean(growthPayload.dashboard.growthLoop.summary.lastExecution), true);
 
+  const publicAuthConfig = getRuntimeConfig({
+    PUBLIC_BASE_URL: "https://threads-affiliate.example",
+    THREADS_DRY_RUN: "true"
+  });
+  const publicAuthStore = createStore(path.join(tempDir, "public-auth-store.json"));
+  const publicAuthServer = await startServer(0, { store: publicAuthStore, config: publicAuthConfig });
+  const publicAuthAddress = publicAuthServer.address();
+  const publicAuthBase = `http://127.0.0.1:${publicAuthAddress.port}`;
+  const publicAuthPage = await fetch(`${publicAuthBase}/`, { redirect: "manual" });
+  assert.equal(publicAuthPage.status, 302);
+  assert.equal(publicAuthPage.headers.get("location"), "/login");
+  const publicAuthMe = await fetch(`${publicAuthBase}/api/me`);
+  const publicAuthMePayload = await publicAuthMe.json();
+  assert.equal(publicAuthMe.status, 200);
+  assert.equal(publicAuthMePayload.authRequired, true);
+  assert.equal(publicAuthMePayload.authenticated, false);
+  assert.equal(publicAuthMePayload.methods.token, false);
+  const publicAuthDashboard = await fetch(`${publicAuthBase}/api/dashboard`);
+  assert.equal(publicAuthDashboard.status, 401);
+  const publicAuthReadiness = await fetch(`${publicAuthBase}/api/readiness`);
+  assert.equal(publicAuthReadiness.status, 200);
+  await new Promise((resolve, reject) => {
+    publicAuthServer.close((error) => error ? reject(error) : resolve());
+  });
+
+  const apiBlockedLiveConfig = getRuntimeConfig({
+    PUBLIC_BASE_URL: "https://threads-affiliate.example",
+    THREADS_DRY_RUN: "false",
+    ADMIN_PASSWORD: "admin-secret"
+  });
+  apiBlockedLiveConfig.defaultDisclosureText = "";
+  const apiBlockedLiveStore = createStore(path.join(tempDir, "api-blocked-live-store.json"));
+  const apiBlockedLiveServer = await startServer(0, { store: apiBlockedLiveStore, config: apiBlockedLiveConfig });
+  const apiBlockedLiveAddress = apiBlockedLiveServer.address();
+  const apiBlockedLiveBase = `http://127.0.0.1:${apiBlockedLiveAddress.port}`;
+  const apiBlockedReadiness = await fetch(`${apiBlockedLiveBase}/api/readiness`);
+  const apiBlockedReadinessPayload = await apiBlockedReadiness.json();
+  assert.equal(apiBlockedReadiness.status, 200);
+  assert.equal(apiBlockedReadinessPayload.liveGate.allowed, false);
+  assert.equal(apiBlockedReadinessPayload.liveGate.enforced, true);
+  assert.equal(apiBlockedReadinessPayload.liveGate.missingEnv.includes("THREADS_USER_ID"), true);
+
+  const apiBlockedAutomation = await fetch(`${apiBlockedLiveBase}/api/automation/run`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({ source: "blocked-live-api", ignoreReadiness: true })
+  });
+  const apiBlockedAutomationPayload = await apiBlockedAutomation.json();
+  assert.equal(apiBlockedAutomation.status, 409);
+  assert.equal(apiBlockedAutomationPayload.run.status, "blocked");
+  assert.equal(apiBlockedAutomationPayload.run.readinessGate.allowed, false);
+
+  const apiBlockedCycle = await fetch(`${apiBlockedLiveBase}/api/autonomy/cycle`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({ source: "blocked-live-cycle", force: true, publishQueue: true })
+  });
+  const apiBlockedCyclePayload = await apiBlockedCycle.json();
+  assert.equal(apiBlockedCycle.status, 409);
+  assert.equal(apiBlockedCyclePayload.cycle.status, "blocked");
+  assert.equal(apiBlockedCyclePayload.cycle.readinessGate.allowed, false);
+
+  const apiBlockedPublishNow = await fetch(`${apiBlockedLiveBase}/api/posts/post_seed_2/publish-now`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({})
+  });
+  const apiBlockedPublishNowPayload = await apiBlockedPublishNow.json();
+  assert.equal(apiBlockedPublishNow.status, 409);
+  assert.equal(apiBlockedPublishNowPayload.code, "READINESS_BLOCKED");
+  assert.equal(apiBlockedPublishNowPayload.readinessGate.allowed, false);
+
+  await new Promise((resolve, reject) => {
+    apiBlockedLiveServer.close((error) => error ? reject(error) : resolve());
+  });
+
   const roleConfig = getRuntimeConfig({
     PUBLIC_BASE_URL: "http://localhost:4173",
     THREADS_DRY_RUN: "true",
     ADMIN_TOKEN: "viewer-token",
     ADMIN_PASSWORD: "admin-secret",
     ADMIN_TOKEN_ROLE: "viewer",
-    ADMIN_PASSWORD_ROLE: "admin"
+    ADMIN_PASSWORD_ROLE: "admin",
+    CONVERSION_WEBHOOK_SECRET: "conversion-secret"
   });
   const roleServerStore = createStore(path.join(tempDir, "role-server-store.json"));
   const roleServer = await startServer(0, { store: roleServerStore, config: roleConfig });
   const roleAddress = roleServer.address();
   const roleBase = `http://127.0.0.1:${roleAddress.port}`;
+  const unauthDashboardPage = await fetch(`${roleBase}/`, { redirect: "manual" });
+  assert.equal(unauthDashboardPage.status, 302);
+  assert.equal(unauthDashboardPage.headers.get("location"), "/login");
+
+  const loginPage = await fetch(`${roleBase}/login`);
+  assert.equal(loginPage.status, 200);
+  assert.equal((await loginPage.text()).includes("Admin access required"), true);
+
+  const unauthMe = await fetch(`${roleBase}/api/me`);
+  const unauthMePayload = await unauthMe.json();
+  assert.equal(unauthMe.status, 200);
+  assert.equal(unauthMePayload.authRequired, true);
+  assert.equal(unauthMePayload.authenticated, false);
+
+  const unauthDashboardApi = await fetch(`${roleBase}/api/dashboard`);
+  assert.equal(unauthDashboardApi.status, 401);
+
+  const publicReadiness = await fetch(`${roleBase}/api/readiness`);
+  assert.equal(publicReadiness.status, 200);
+
+  const publicRedirect = await fetch(`${roleBase}/r/ai-affiliate-prompt-pack`, { redirect: "manual" });
+  assert.equal(publicRedirect.status, 302);
+
+  const blockedConversion = await fetch(`${roleBase}/api/conversions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      slug: "ai-affiliate-prompt-pack",
+      networkEventId: "blocked-order-1",
+      commissionValue: 8
+    })
+  });
+  assert.equal(blockedConversion.status, 401);
+
+  const allowedConversion = await fetch(`${roleBase}/api/conversions`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-webhook-secret": "conversion-secret" },
+    body: JSON.stringify({
+      slug: "ai-affiliate-prompt-pack",
+      networkEventId: "allowed-order-1",
+      commissionValue: 8,
+      orderValue: 49,
+      status: "approved"
+    })
+  });
+  assert.equal(allowedConversion.status, 201);
+
+  const blockedExport = await fetch(`${roleBase}/api/export`);
+  assert.equal(blockedExport.status, 401);
+
   const roleSession = await fetch(`${roleBase}/api/admin/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -605,11 +878,52 @@ async function main() {
   const roleSessionPayload = await roleSession.json();
   assert.equal(roleSession.status, 200);
   assert.equal(roleSessionPayload.role, "viewer");
+  const viewerCookie = String(roleSession.headers.get("set-cookie") || "").split(";")[0];
+  assert.equal(Boolean(viewerCookie), true);
+
+  const authedDashboardPage = await fetch(`${roleBase}/`, {
+    headers: { cookie: viewerCookie }
+  });
+  assert.equal(authedDashboardPage.status, 200);
+
+  const aliasLogin = await fetch(`${roleBase}/api/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ password: "admin-secret" })
+  });
+  const aliasLoginPayload = await aliasLogin.json();
+  assert.equal(aliasLogin.status, 200);
+  assert.equal(aliasLoginPayload.role, "admin");
+
+  const adminMe = await fetch(`${roleBase}/api/me`, {
+    headers: { authorization: "Bearer admin-secret" }
+  });
+  const adminMePayload = await adminMe.json();
+  assert.equal(adminMe.status, 200);
+  assert.equal(adminMePayload.authenticated, true);
+  assert.equal(adminMePayload.role, "admin");
 
   const roleDashboard = await fetch(`${roleBase}/api/dashboard`, {
     headers: { "x-admin-token": "viewer-token" }
   });
   assert.equal(roleDashboard.status, 200);
+
+  const roleViewerExport = await fetch(`${roleBase}/api/export`, {
+    headers: { "x-admin-token": "viewer-token" }
+  });
+  assert.equal(roleViewerExport.status, 403);
+
+  const roleAdminExport = await fetch(`${roleBase}/api/export`, {
+    headers: { "x-admin-password": "admin-secret" }
+  });
+  assert.equal(roleAdminExport.status, 200);
+
+  const roleUnauthRun = await fetch(`${roleBase}/api/automation/run`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ source: "role-test" })
+  });
+  assert.equal(roleUnauthRun.status, 401);
 
   const roleBlockedRun = await fetch(`${roleBase}/api/automation/run`, {
     method: "POST",
@@ -625,13 +939,386 @@ async function main() {
   });
   assert.equal(roleAdminRun.status, 200);
 
+  const unauthApprove = await fetch(`${roleBase}/api/posts/post_seed_1/approve`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({})
+  });
+  assert.equal(unauthApprove.status, 401);
+
+  const generatedReviewResponse = await fetch(`${roleBase}/api/automation/generate`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({
+      topic: "review workflow",
+      campaignId: "cmp_ai_affiliate",
+      productId: "prd_prompt_pack",
+      autoApprove: true
+    })
+  });
+  const generatedReviewPayload = await generatedReviewResponse.json();
+  assert.equal(generatedReviewResponse.status, 201);
+  assert.equal(generatedReviewPayload.created[0].status, "needs_review");
+  assert.equal(generatedReviewPayload.created[0].approved, false);
+  assert.equal(generatedReviewPayload.created[0].review.autoApproveIgnored, true);
+
+  const unapprovedSchedule = await fetch(`${roleBase}/api/posts/${generatedReviewPayload.created[0].id}/schedule`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({})
+  });
+  assert.equal(unapprovedSchedule.status, 409);
+
+  const approvedReview = await fetch(`${roleBase}/api/posts/${generatedReviewPayload.created[0].id}/approve`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({})
+  });
+  const approvedReviewPayload = await approvedReview.json();
+  assert.equal(approvedReview.status, 200);
+  assert.equal(approvedReviewPayload.post.status, "approved");
+
+  const unscheduledPublish = await fetch(`${roleBase}/api/posts/${generatedReviewPayload.created[0].id}/publish-now`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({})
+  });
+  const unscheduledPublishPayload = await unscheduledPublish.json();
+  assert.equal(unscheduledPublish.status, 409);
+  assert.equal(unscheduledPublishPayload.code, "POST_REVIEW_BLOCKED");
+
+  const scheduledReview = await fetch(`${roleBase}/api/posts/${generatedReviewPayload.created[0].id}/schedule`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({ scheduledAt: new Date(Date.now() - 1000).toISOString() })
+  });
+  const scheduledReviewPayload = await scheduledReview.json();
+  assert.equal(scheduledReview.status, 200);
+  assert.equal(scheduledReviewPayload.post.status, "scheduled");
+
+  const simulatedPublish = await fetch(`${roleBase}/api/posts/${generatedReviewPayload.created[0].id}/publish-now`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({})
+  });
+  const simulatedPublishPayload = await simulatedPublish.json();
+  assert.equal(simulatedPublish.status, 200);
+  assert.equal(simulatedPublishPayload.run.simulated >= 1, true);
+
+  const editedReview = await fetch(`${roleBase}/api/posts/${generatedReviewPayload.created[1].id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({ text: `${roleConfig.defaultDisclosureText}：Edited safe review copy https://example.com/review\n\nWhich workflow would you test first?` })
+  });
+  const editedReviewPayload = await editedReview.json();
+  assert.equal(editedReview.status, 200);
+  assert.equal(editedReviewPayload.post.status, "needs_review");
+  assert.equal(editedReviewPayload.validation.valid, true);
+
+  const rejectedReview = await fetch(`${roleBase}/api/posts/${generatedReviewPayload.created[1].id}/reject`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({ reason: "Not suitable for campaign." })
+  });
+  const rejectedReviewPayload = await rejectedReview.json();
+  assert.equal(rejectedReview.status, 200);
+  assert.equal(rejectedReviewPayload.post.status, "rejected");
+
+  const rejectedSchedule = await fetch(`${roleBase}/api/posts/${generatedReviewPayload.created[1].id}/schedule`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({})
+  });
+  assert.equal(rejectedSchedule.status, 409);
+
+  const viewerReject = await fetch(`${roleBase}/api/posts/${generatedReviewPayload.created[2].id}/reject`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-token": "viewer-token" },
+    body: JSON.stringify({})
+  });
+  assert.equal(viewerReject.status, 403);
+
+  const highRiskCreate = await fetch(`${roleBase}/api/posts`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({
+      campaignId: "cmp_ai_affiliate",
+      productId: "prd_prompt_pack",
+      topicTag: "review",
+      text: `${roleConfig.defaultDisclosureText}：Guaranteed profit $1000 every day with this affiliate tool https://example.com/risk?`
+    })
+  });
+  const highRiskCreatePayload = await highRiskCreate.json();
+  assert.equal(highRiskCreate.status, 201);
+  assert.equal(highRiskCreatePayload.validation.risk.level, "high");
+  const highRiskApprove = await fetch(`${roleBase}/api/posts/${highRiskCreatePayload.post.id}/approve`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({})
+  });
+  const highRiskApprovePayload = await highRiskApprove.json();
+  assert.equal(highRiskApprove.status, 409);
+  assert.equal(highRiskApprovePayload.code, "HIGH_RISK_REVIEW_REQUIRED");
+
+  const fatigueProductCreate = await fetch(`${roleBase}/api/posts`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({
+      campaignId: "cmp_threads_ops",
+      productId: "prd_n8n_course",
+      topicTag: "review",
+      hook: "Different product fatigue hook",
+      text: `${roleConfig.defaultDisclosureText}：Different safe body for same product fatigue https://example.com/product-fatigue?`
+    })
+  });
+  const fatigueProductPayload = await fatigueProductCreate.json();
+  assert.equal(fatigueProductCreate.status, 201);
+  assert.equal(fatigueProductPayload.post.fatigueStatus, "blocked");
+  assert.equal(fatigueProductPayload.post.fatigueReasons.some((reason) => reason.id === "same_product_frequency"), true);
+
+  const fatigueApprove = await fetch(`${roleBase}/api/posts/${fatigueProductPayload.post.id}/approve`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({})
+  });
+  const fatigueApprovePayload = await fatigueApprove.json();
+  assert.equal(fatigueApprove.status, 409);
+  assert.equal(fatigueApprovePayload.code, "CONTENT_FATIGUE_BLOCKED");
+  assert.equal(fatigueApprovePayload.fatigue.status, "blocked");
+
+  roleServerStore.update((state) => {
+    state.posts.unshift({
+      id: "post_fatigue_approved",
+      accountId: "acct_primary",
+      campaignId: "cmp_threads_ops",
+      productId: "prd_n8n_course",
+      affiliateLinkId: "aff_n8n_course",
+      contentType: "manual",
+      funnelRatio: "manual",
+      hook: "Approved fatigue schedule",
+      cta: "https://example.com/schedule-fatigue",
+      riskNote: "low",
+      topicTag: "review",
+      text: `${roleConfig.defaultDisclosureText}：Approved but product fatigued https://example.com/schedule-fatigue?`,
+      status: "approved",
+      approved: true,
+      scheduledAt: new Date().toISOString(),
+      linkAttachment: "https://example.com/schedule-fatigue",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+  });
+  const fatigueSchedule = await fetch(`${roleBase}/api/posts/post_fatigue_approved/schedule`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({})
+  });
+  const fatigueSchedulePayload = await fatigueSchedule.json();
+  assert.equal(fatigueSchedule.status, 409);
+  assert.equal(fatigueSchedulePayload.code, "CONTENT_FATIGUE_BLOCKED");
+
+  roleServerStore.update((state) => {
+    state.products.push({
+      id: "prd_hook_tool",
+      campaignId: "cmp_ai_affiliate",
+      name: "Hook Tool",
+      offer: "Hook testing utility",
+      network: "internal",
+      commissionModel: "CPS",
+      commissionValue: 10,
+      currency: "USD",
+      landingUrl: "https://example.com/hook-tool",
+      status: "active",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    state.posts.unshift({
+      id: "post_hook_history",
+      accountId: "acct_primary",
+      campaignId: "cmp_ai_affiliate",
+      productId: "prd_hook_tool",
+      affiliateLinkId: "aff_prompt_pack",
+      contentType: "manual",
+      funnelRatio: "manual",
+      hook: "Repeat review hook",
+      cta: "",
+      riskNote: "low",
+      topicTag: "review",
+      text: `${roleConfig.defaultDisclosureText}：Existing review hook body https://example.com/hook-history?`,
+      status: "needs_review",
+      approved: false,
+      scheduledAt: new Date().toISOString(),
+      linkAttachment: "https://example.com/hook-history",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+  });
+  const fatigueHookCreate = await fetch(`${roleBase}/api/posts`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({
+      campaignId: "cmp_ai_affiliate",
+      productId: "prd_hook_tool",
+      topicTag: "review",
+      hook: "Repeat review hook",
+      text: `${roleConfig.defaultDisclosureText}：A different post body but repeated hook https://example.com/hook-repeat?`
+    })
+  });
+  const fatigueHookPayload = await fatigueHookCreate.json();
+  assert.equal(fatigueHookCreate.status, 201);
+  assert.equal(fatigueHookPayload.post.fatigueStatus, "blocked");
+  assert.equal(fatigueHookPayload.post.fatigueReasons.some((reason) => reason.id === "same_hook"), true);
+
+  const fatigueEdit = await fetch(`${roleBase}/api/posts/${fatigueHookPayload.post.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({
+      hook: "Unique rewritten hook",
+      text: `${roleConfig.defaultDisclosureText}：A rewritten body with a unique review hook https://example.com/hook-rewrite?`
+    })
+  });
+  const fatigueEditPayload = await fatigueEdit.json();
+  assert.equal(fatigueEdit.status, 200);
+  assert.notEqual(fatigueEditPayload.post.fatigueStatus, "blocked");
+  const fatigueEditedApprove = await fetch(`${roleBase}/api/posts/${fatigueHookPayload.post.id}/approve`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({})
+  });
+  assert.equal(fatigueEditedApprove.status, 200);
+
   await new Promise((resolve, reject) => {
     roleServer.close((error) => error ? reject(error) : resolve());
+  });
+
+  const automationFatigueStore = createStore(path.join(tempDir, "automation-fatigue-store.json"));
+  automationFatigueStore.update((state) => {
+    state.posts = [
+      {
+        id: "hist_product_published",
+        accountId: "acct_primary",
+        campaignId: "cmp_ai_affiliate",
+        productId: "prd_prompt_pack",
+        affiliateLinkId: "aff_prompt_pack",
+        contentType: "manual",
+        funnelRatio: "manual",
+        hook: "History product",
+        cta: "https://example.com/history",
+        riskNote: "low",
+        topicTag: "review",
+        text: `${config.defaultDisclosureText}：History product post https://example.com/history?`,
+        status: "published",
+        approved: true,
+        scheduledAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        publishedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        linkAttachment: "https://example.com/history",
+        createdAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        updatedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString()
+      },
+      {
+        id: "post_fatigue_due",
+        accountId: "acct_primary",
+        campaignId: "cmp_ai_affiliate",
+        productId: "prd_prompt_pack",
+        affiliateLinkId: "aff_prompt_pack",
+        contentType: "manual",
+        funnelRatio: "manual",
+        hook: "Due product fatigue",
+        cta: "https://example.com/due",
+        riskNote: "low",
+        topicTag: "review",
+        text: `${config.defaultDisclosureText}：Due product fatigue post https://example.com/due?`,
+        status: "scheduled",
+        approved: true,
+        scheduledAt: new Date(Date.now() - 1000).toISOString(),
+        linkAttachment: "https://example.com/due",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+    ];
+  });
+  const automationFatigueRun = await runAutomation(automationFatigueStore, config, { source: "fatigue-skip-test" });
+  assert.equal(automationFatigueRun.run.status, "completed_with_errors");
+  assert.equal(automationFatigueRun.run.simulated, 0);
+  assert.equal(automationFatigueRun.run.failed, 1);
+  assert.equal(automationFatigueStore.read().posts.find((post) => post.id === "post_fatigue_due").status, "failed");
+  assert.equal(automationFatigueRun.run.messages.some((message) => message.includes("Same product")), true);
+
+  const liveDisclosureConfig = getRuntimeConfig({
+    PUBLIC_BASE_URL: "https://threads-affiliate.example",
+    THREADS_DRY_RUN: "false",
+    THREADS_USER_ID: "threads-user",
+    THREADS_ACCESS_TOKEN: "threads-token",
+    ADMIN_PASSWORD: "admin-secret",
+    ENABLE_WORKER: "true",
+    AUTONOMY_MODE: "true",
+    DATABASE_URL: "postgresql://user:pass@db.example:5432/app?sslmode=require",
+    CONVERSION_WEBHOOK_SECRET: "secret",
+    DEFAULT_DISCLOSURE_TEXT: "含聯盟連結"
+  });
+  const liveDisclosureStore = createStore(path.join(tempDir, "live-disclosure-store.json"));
+  liveDisclosureStore.update((state) => {
+    state.posts = [{
+      id: "post_missing_disclosure",
+      accountId: "acct_primary",
+      campaignId: "cmp_ai_affiliate",
+      productId: "prd_prompt_pack",
+      affiliateLinkId: "aff_prompt_pack",
+      contentType: "manual",
+      funnelRatio: "conversion",
+      hook: "Missing disclosure",
+      cta: "https://example.com/review",
+      riskNote: "low",
+      topicTag: "review",
+      text: "This affiliate tool can help organize your workflow https://example.com/review?",
+      status: "scheduled",
+      approved: true,
+      scheduledAt: new Date(Date.now() - 1000).toISOString(),
+      linkAttachment: "https://example.com/review",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }];
+  });
+  const liveDisclosureServer = await startServer(0, { store: liveDisclosureStore, config: liveDisclosureConfig, startWorker: false });
+  const liveDisclosureAddress = liveDisclosureServer.address();
+  const liveDisclosureBase = `http://127.0.0.1:${liveDisclosureAddress.port}`;
+  const missingDisclosurePublish = await fetch(`${liveDisclosureBase}/api/posts/post_missing_disclosure/publish-now`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-password": "admin-secret" },
+    body: JSON.stringify({})
+  });
+  const missingDisclosurePublishPayload = await missingDisclosurePublish.json();
+  assert.equal(missingDisclosurePublish.status, 409);
+  assert.equal(missingDisclosurePublishPayload.code, "MISSING_DISCLOSURE");
+
+  const missingDisclosureRun = await runAutomation(liveDisclosureStore, liveDisclosureConfig, { source: "missing-disclosure-test" });
+  assert.equal(missingDisclosureRun.run.status, "completed_with_errors");
+  assert.equal(missingDisclosureRun.run.failed, 1);
+  assert.equal(liveDisclosureStore.read().posts.find((post) => post.id === "post_missing_disclosure").status, "failed");
+
+  await new Promise((resolve, reject) => {
+    liveDisclosureServer.close((error) => error ? reject(error) : resolve());
   });
 
   await new Promise((resolve, reject) => {
     server.close((error) => error ? reject(error) : resolve());
   });
+
+  const blockedWorkerStore = createStore(path.join(tempDir, "blocked-worker-store.json"));
+  const blockedWorkerConfig = getRuntimeConfig({
+    PUBLIC_BASE_URL: "https://threads-affiliate.example",
+    THREADS_DRY_RUN: "false",
+    ENABLE_WORKER: "true",
+    AUTONOMY_MODE: "false",
+    ADMIN_PASSWORD: "admin-secret"
+  });
+  blockedWorkerConfig.defaultDisclosureText = "";
+  await configureRuntime({ store: blockedWorkerStore, config: blockedWorkerConfig });
+  const blockedWorkerTick = await runWorkerTick("blocked-live-worker");
+  assert.equal(blockedWorkerTick.status, "blocked");
+  assert.equal(blockedWorkerTick.result.cycle.status, "blocked");
+  assert.equal(blockedWorkerTick.result.cycle.readinessGate.allowed, false);
+  assert.equal(blockedWorkerTick.dashboard.workerLease.status, "blocked");
 
   const workerStore = createStore(path.join(tempDir, "worker-store.json"));
   const workerConfig = getRuntimeConfig({

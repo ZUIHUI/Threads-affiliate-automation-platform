@@ -41,6 +41,13 @@ AUTONOMY_MODE=true
 AUTONOMY_INTERVAL_MS=21600000
 AUTONOMY_MAX_SCRIPTS_PER_RUN=3
 AUTONOMY_MAX_OFFERS_PER_RUN=3
+CONTENT_SIMILARITY_THRESHOLD=0.88
+CONTENT_FATIGUE_PRODUCT_WINDOW_HOURS=24
+CONTENT_FATIGUE_MAX_PRODUCT_POSTS_PER_WINDOW=1
+CONTENT_FATIGUE_HOOK_WINDOW_DAYS=14
+CONTENT_FATIGUE_MODEL_DAILY_CAP=3
+CONTENT_FATIGUE_COMMERCIAL_WINDOW_POSTS=3
+CONTENT_FATIGUE_MAX_COMMERCIAL_POSTS_PER_WINDOW=1
 AD_INTELLIGENCE_MAX_ITEMS=24
 AD_INTELLIGENCE_TIMEOUT_MS=8000
 CONVERSION_WEBHOOK_SECRET=your_random_webhook_secret
@@ -208,7 +215,7 @@ docker run --env-file .env -p 4173:4173 threads-affiliate-ops
 
 ## Production runbook
 
-Use `docs/runbook.md` for the full pre-launch and dry-run -> live sequence, plus endpoint-level smoke checks.
+Use `docs/PRODUCTION_RUNBOOK.md` for the full pre-launch and dry-run -> live sequence, plus endpoint-level smoke checks.
 
 ## Verification
 

@@ -101,10 +101,75 @@ create table if not exists posts (
   published_at timestamptz,
   error text,
   created_by uuid references admin_users(id),
+  reviewed_at timestamptz,
+  reviewed_by uuid references admin_users(id),
+  rejected_at timestamptz,
+  rejected_by uuid references admin_users(id),
+  rejection_reason text,
+  review_reset_at timestamptz,
+  review_reset_reason text,
+  validation_result jsonb,
+  risk_level text,
+  disclosure_status text,
+  claim_warnings jsonb not null default '[]'::jsonb,
+  testimonial_risk boolean not null default false,
+  fatigue_status text,
+  fatigue_reasons jsonb not null default '[]'::jsonb,
+  similarity_score numeric(5, 3),
+  similar_to_post_id text,
+  commercial_intensity text,
+  last_fatigue_checked_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint posts_status_check check (
-    status in ('draft', 'scheduled', 'container_created', 'published', 'simulated', 'failed', 'blocked_credentials')
+    status in (
+      'generated',
+      'needs_review',
+      'approved',
+      'scheduled',
+      'container_created',
+      'published',
+      'simulated',
+      'failed',
+      'rejected',
+      'blocked_credentials',
+      'draft'
+    )
+  )
+);
+
+alter table if exists posts add column if not exists reviewed_at timestamptz;
+alter table if exists posts add column if not exists reviewed_by uuid references admin_users(id);
+alter table if exists posts add column if not exists rejected_at timestamptz;
+alter table if exists posts add column if not exists rejected_by uuid references admin_users(id);
+alter table if exists posts add column if not exists rejection_reason text;
+alter table if exists posts add column if not exists review_reset_at timestamptz;
+alter table if exists posts add column if not exists review_reset_reason text;
+alter table if exists posts add column if not exists validation_result jsonb;
+alter table if exists posts add column if not exists risk_level text;
+alter table if exists posts add column if not exists disclosure_status text;
+alter table if exists posts add column if not exists claim_warnings jsonb not null default '[]'::jsonb;
+alter table if exists posts add column if not exists testimonial_risk boolean not null default false;
+alter table if exists posts add column if not exists fatigue_status text;
+alter table if exists posts add column if not exists fatigue_reasons jsonb not null default '[]'::jsonb;
+alter table if exists posts add column if not exists similarity_score numeric(5, 3);
+alter table if exists posts add column if not exists similar_to_post_id text;
+alter table if exists posts add column if not exists commercial_intensity text;
+alter table if exists posts add column if not exists last_fatigue_checked_at timestamptz;
+alter table if exists posts drop constraint if exists posts_status_check;
+alter table if exists posts add constraint posts_status_check check (
+  status in (
+    'generated',
+    'needs_review',
+    'approved',
+    'scheduled',
+    'container_created',
+    'published',
+    'simulated',
+    'failed',
+    'rejected',
+    'blocked_credentials',
+    'draft'
   )
 );
 

@@ -9,6 +9,120 @@ const state = {
 
 const $ = (selector) => document.querySelector(selector);
 
+function setButtonBusy(button, busy, busyLabel = "處理中") {
+  if (!button) return;
+  if (busy) {
+    button.dataset.idleLabel = button.textContent;
+    button.textContent = busyLabel;
+    button.classList.add("is-busy");
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    return;
+  }
+  button.textContent = button.dataset.idleLabel || button.textContent;
+  delete button.dataset.idleLabel;
+  button.classList.remove("is-busy");
+  button.disabled = false;
+  button.removeAttribute("aria-busy");
+}
+
+async function runButtonAction(button, action, busyLabel) {
+  setButtonBusy(button, true, busyLabel);
+  try {
+    await action();
+  } finally {
+    setButtonBusy(button, false);
+  }
+}
+
+function setNavigationOpen(open) {
+  document.body.classList.toggle("nav-open", open);
+  const toggle = $("#sidebarToggle");
+  if (toggle) toggle.setAttribute("aria-expanded", String(open));
+}
+
+function setActiveNavigation(link) {
+  document.querySelectorAll(".nav-item").forEach((item) => {
+    const active = item === link;
+    item.classList.toggle("is-active", active);
+    if (active) item.setAttribute("aria-current", "page");
+    else item.removeAttribute("aria-current");
+  });
+}
+
+function arrangeDashboardSections() {
+  const main = $(".main");
+  const operationsGrid = $(".ops-grid");
+  if (!main || !operationsGrid) return;
+
+  ["#factory", "#risk", "#affiliate", "#profit-engine"].forEach((selector) => {
+    const section = $(selector);
+    if (section) operationsGrid.appendChild(section);
+  });
+
+  [
+    ".topbar",
+    ".command-strip",
+    "#readiness",
+    "#next-actions",
+    ".ops-grid",
+    "#decision-brief",
+    "#control-tower",
+    "#operating-map",
+    "#growth-loop",
+    "#timeline",
+    "#worker-health",
+    "#experiments",
+    ".lower-grid",
+    "#settings"
+  ].forEach((selector) => {
+    const section = $(selector);
+    if (section) main.appendChild(section);
+  });
+}
+
+function setupNavigation() {
+  const toggle = $("#sidebarToggle");
+  const backdrop = $("#sidebarBackdrop");
+  const links = [...document.querySelectorAll('.nav-item[href^="#"]')];
+
+  toggle?.addEventListener("click", () => {
+    setNavigationOpen(!document.body.classList.contains("nav-open"));
+  });
+  backdrop?.addEventListener("click", () => setNavigationOpen(false));
+  links.forEach((link) => {
+    link.addEventListener("click", () => {
+      setActiveNavigation(link);
+      setNavigationOpen(false);
+    });
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") setNavigationOpen(false);
+  });
+
+  if (!("IntersectionObserver" in window)) return;
+  const targets = links
+    .map((link) => ({
+      link,
+      section: link.getAttribute("href") === "#overview"
+        ? document.querySelector(".command-strip")
+        : document.querySelector(link.getAttribute("href"))
+    }))
+    .filter((item) => item.section);
+  const observer = new IntersectionObserver((entries) => {
+    const visible = entries
+      .filter((entry) => entry.isIntersecting)
+      .sort((a, b) => Math.abs(a.boundingClientRect.top) - Math.abs(b.boundingClientRect.top));
+    if (!visible.length) return;
+    const match = targets.find((item) => item.section === visible[0].target);
+    if (match) setActiveNavigation(match.link);
+  }, { rootMargin: "-18% 0px -72% 0px" });
+  targets.forEach((item) => observer.observe(item.section));
+  window.addEventListener("resize", () => {
+    if (window.innerWidth > 1180) setNavigationOpen(false);
+  });
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -127,12 +241,16 @@ async function adminLogout() {
 
 function statusBadge(status) {
   const map = {
+    generated: ["已生成", "info"],
+    needs_review: ["待審核", "warn"],
     draft: ["草稿", "warn"],
-    scheduled: ["待審核", "info"],
+    approved: ["已核准", "good"],
+    scheduled: ["已排程", "info"],
     container_created: ["待發佈", "info"],
     published: ["已發佈", "good"],
-    simulated: ["已排程", "good"],
+    simulated: ["已模擬", "good"],
     failed: ["失敗", "bad"],
+    rejected: ["已拒絕", "bad"],
     blocked_credentials: ["缺憑證", "bad"],
     completed: ["完成", "good"],
     completed_with_errors: ["有錯誤", "warn"]
@@ -149,6 +267,60 @@ function riskBadge(level) {
   };
   const [label, tone] = map[level] || ["未知", "info"];
   return `<span class="badge ${tone}">${label}</span>`;
+}
+
+function reviewStatusOf(post) {
+  if (post.reviewStatus) return post.reviewStatus;
+  if (post.status === "draft") return "needs_review";
+  if (post.status === "container_created") return "scheduled";
+  if (post.status === "blocked_credentials") return "failed";
+  return post.status || (post.approved ? "approved" : "needs_review");
+}
+
+function isReviewable(post) {
+  return ["generated", "needs_review", "draft"].includes(post.status || post.reviewStatus);
+}
+
+function disclosureBadge(status) {
+  const map = {
+    present: ["揭露已存在", "good"],
+    missing: ["缺揭露", "bad"],
+    not_required: ["無商業連結", "info"],
+    unknown: ["未知", "warn"]
+  };
+  const [label, tone] = map[status || "unknown"] || [status || "unknown", "info"];
+  return `<span class="badge ${tone}">${escapeHtml(label)}</span>`;
+}
+
+function fatigueBadge(status) {
+  const map = {
+    clear: ["疲勞檢查通過", "good"],
+    warning: ["疲勞提醒", "warn"],
+    blocked: ["疲勞阻擋", "bad"]
+  };
+  const [label, tone] = map[status || "clear"] || [status || "clear", "info"];
+  return `<span class="badge ${tone}">${escapeHtml(label)}</span>`;
+}
+
+function fatigueSummary(post) {
+  const fatigue = post.fatigue || {};
+  const status = post.fatigueStatus || fatigue.status || "clear";
+  const reasons = post.fatigueReasons || fatigue.reasons || [];
+  const score = Number(post.similarityScore ?? fatigue.similarityScore ?? 0);
+  const similarTo = post.similarToPostId || fatigue.similarToPostId || "";
+  const lines = reasons.map((reason) => reason.message || reason.id).filter(Boolean);
+  if (score > 0 && similarTo) {
+    lines.unshift(`與 ${similarTo} 相似度 ${Math.round(score * 100)}%`);
+  }
+  return { status, reasons, lines, score, similarTo };
+}
+
+function firstClaimWarning(post) {
+  const warnings = post.claimWarnings || post.review?.claimWarnings || [];
+  if (warnings.length) return warnings[0];
+  return (post.validation?.warnings || []).find((warning) =>
+    /exaggerated|earnings claim|guaranteed-profit|guaranteed profit|testimonial/i.test(String(warning || ""))
+  ) || "";
 }
 
 function renderRuntime(data) {
@@ -675,6 +847,11 @@ function renderAutonomyPipeline(data) {
 function renderReadiness(data) {
   const readiness = data.readiness || {};
   const summary = readiness.summary || {};
+  const liveGate = readiness.liveGate || {};
+  const liveAllowed = liveGate.allowed === true;
+  const liveGateLabel = liveAllowed ? "Allowed" : "Blocked";
+  const liveGateHint = liveGate.enforced ? "enforced now" : "dry-run can continue";
+  const missingEnv = (liveGate.missingEnv || []).join(", ") || "none";
   const modeLabels = {
     blocked: "Blocked",
     dry_run_ready: "Dry-run ready",
@@ -686,9 +863,11 @@ function renderReadiness(data) {
 
   $("#readinessSummary").innerHTML = [
     ["Score", `${summary.score || 0}%`, "autonomy readiness"],
+    ["Live gate", liveGateLabel, liveGateHint],
     ["Ready", summary.ready || 0, "checks passing"],
     ["Warnings", summary.warning || 0, "safe but incomplete"],
     ["Blocked", summary.blocked || 0, "must fix"],
+    ["Missing env", missingEnv, "required before live mode"],
     ["Next", summary.nextAction || "-", "highest priority"]
   ].map(([label, value, hint]) => `
     <article>
@@ -731,7 +910,18 @@ function renderReadiness(data) {
     </div>
   `;
 
-  $("#readinessChecks").innerHTML = (readiness.checks || []).map((check) => `
+  const liveGateRows = (liveGate.reasons || []).map((reason) => `
+    <article class="readiness-check status-blocked">
+      <span>live blocked</span>
+      <div>
+        <strong>${escapeHtml(reason.label)}</strong>
+        <p>${escapeHtml(reason.detail)}</p>
+        <small>${escapeHtml(reason.action)}${(reason.envKeys || []).length ? ` · ${reason.envKeys.map((key) => escapeHtml(key)).join(", ")}` : ""}</small>
+      </div>
+    </article>
+  `).join("");
+
+  $("#readinessChecks").innerHTML = `${liveGateRows}${(readiness.checks || []).map((check) => `
     <article class="readiness-check status-${escapeHtml(check.status)}">
       <span>${escapeHtml(check.status)}</span>
       <div>
@@ -740,7 +930,7 @@ function renderReadiness(data) {
         <small>${escapeHtml(check.action)}</small>
       </div>
     </article>
-  `).join("");
+  `).join("")}`;
 }
 
 function timelineBadge(label, tone = "info") {
@@ -1179,7 +1369,7 @@ function buildExperimentLoopFallback(data) {
       hypothesis: model.adAngle,
       stage: model.stage,
       postCount: modelPosts.length,
-      scheduledCount: modelPosts.filter((post) => ["draft", "scheduled", "container_created"].includes(post.status)).length,
+      scheduledCount: modelPosts.filter((post) => ["draft", "needs_review", "approved", "scheduled", "container_created"].includes(post.status)).length,
       clicks,
       conversions,
       revenue,
@@ -1489,11 +1679,11 @@ function renderProfitEngine(data) {
 function renderFactoryMetrics(data) {
   const metrics = data.metrics;
   const rows = [
-    ["草稿", metrics.drafts],
-    ["AI 生成中", data.posts.filter((post) => post.status === "draft" && post.contentType).length],
-    ["待審核", data.posts.filter((post) => post.approved === false).length],
+    ["待審核", metrics.needsReview ?? metrics.drafts],
+    ["已核准", metrics.approved || 0],
     ["待發佈", metrics.queued],
-    ["已排程", metrics.published + metrics.simulated]
+    ["已拒絕", metrics.rejected || 0],
+    ["已發佈/模擬", metrics.published + metrics.simulated]
   ];
   $("#factoryMetrics").innerHTML = rows.map(([label, value]) => `
     <div class="mini-kpi">
@@ -1510,31 +1700,59 @@ function linkById(data, id) {
 function renderPosts(data) {
   const rows = data.posts.slice(0, 8).map((post) => {
     const link = linkById(data, post.affiliateLinkId);
-    const approveDisabled = post.approved ? "disabled" : "";
-    const publishDisabled = ["published", "simulated", "failed"].includes(post.status) ? "disabled" : "";
+    const reviewStatus = reviewStatusOf(post);
+    const validation = post.validation || post.validationResult || {};
+    const riskLevel = post.riskLevel || post.review?.riskLevel || validation.risk?.level || "unknown";
+    const disclosureStatus = post.disclosureStatus || post.review?.disclosureStatus || "unknown";
+    const fatigue = fatigueSummary(post);
+    const warning = firstClaimWarning(post);
+    const fatigueBlocked = fatigue.status === "blocked";
+    const approveDisabled = !isReviewable(post) || !validation.valid || riskLevel === "high" || warning || fatigueBlocked ? "disabled" : "";
+    const rejectDisabled = ["rejected", "published", "simulated", "failed"].includes(post.status) ? "disabled" : "";
+    const scheduleDisabled = post.status === "approved" && post.approved && !fatigueBlocked ? "" : "disabled";
+    const publishDisabled = post.status === "scheduled" && !fatigueBlocked ? "" : "disabled";
     return `
       <tr>
         <td>
           <p class="post-copy">${escapeHtml(post.hook || post.text)}</p>
           <div class="post-meta">
             <span>${escapeHtml(post.contentType || "手動")}</span>
-            <span>${escapeHtml(post.validation.threadsUnits)} units</span>
+            <span>${escapeHtml(validation.threadsUnits || 0)} units</span>
+            ${riskBadge(riskLevel)}
+            ${disclosureBadge(disclosureStatus)}
+            ${fatigueBadge(fatigue.status)}
           </div>
+          ${warning ? `<p class="claim-warning">${escapeHtml(warning)}</p>` : ""}
+          ${fatigue.lines.length ? `
+            <div class="fatigue-detail">
+              ${fatigue.lines.slice(0, 3).map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
+            </div>
+          ` : ""}
+          <details class="post-review-editor">
+            <summary>編輯後重新檢查</summary>
+            <textarea data-edit-text="${escapeHtml(post.id)}" rows="4">${escapeHtml(post.text || "")}</textarea>
+            <button class="button secondary" data-action="save" data-id="${escapeHtml(post.id)}" type="button">儲存修改</button>
+          </details>
         </td>
-        <td>${statusBadge(post.status)}</td>
+        <td>
+          ${statusBadge(post.status)}
+          <small class="review-status">審核：${escapeHtml(reviewStatus)}</small>
+        </td>
         <td>${escapeHtml(post.topicTag || "-")}</td>
         <td>${escapeHtml(link ? link.slug : "-")}</td>
         <td>${escapeHtml(formatDate(post.scheduledAt))}</td>
         <td>
           <div class="row-actions">
             <button class="button secondary" data-action="approve" data-id="${post.id}" ${approveDisabled}>審核</button>
+            <button class="button secondary" data-action="reject" data-id="${post.id}" ${rejectDisabled}>拒絕</button>
+            <button class="button secondary" data-action="schedule" data-id="${post.id}" ${scheduleDisabled}>排程</button>
             <button class="button" data-action="publish" data-id="${post.id}" ${publishDisabled}>發佈</button>
           </div>
         </td>
       </tr>
     `;
   }).join("");
-  $("#postRows").innerHTML = rows || `<tr><td colspan="6">No posts</td></tr>`;
+  $("#postRows").innerHTML = rows || `<tr><td colspan="6"><div class="empty-state">目前沒有貼文</div></td></tr>`;
 }
 
 function renderRisk(data) {
@@ -1746,13 +1964,13 @@ async function generateDrafts(autoApprove) {
     method: "POST",
     body: {
       topic,
-      autoApprove,
+      autoApprove: false,
       campaignId: $("#campaignSelect").value,
       productId: $("#productSelect").value
     }
   });
   await refresh();
-  showToast(autoApprove ? "已產生 5 則並排程" : "已產生 5 則草稿");
+  showToast(autoApprove ? "已產生 5 則待審核內容" : "已產生 5 則待審核草稿");
 }
 
 async function runProfitEngine() {
@@ -1762,12 +1980,12 @@ async function runProfitEngine() {
       source: "dashboard",
       force: true,
       createPosts: true,
-      autoApprove: true
+      autoApprove: false
     }
   });
   render(result.dashboard);
   const created = result.result.createdPosts?.length || 0;
-  showToast(`自主獲利引擎完成，建立 ${created} 則排程文案`);
+  showToast(`自主獲利引擎完成，建立 ${created} 則待審核文案`);
 }
 
 async function runAutonomyCycle() {
@@ -1777,7 +1995,7 @@ async function runAutonomyCycle() {
       source: "dashboard_cycle",
       force: true,
       createPosts: true,
-      autoApprove: true,
+      autoApprove: false,
       publishQueue: true
     }
   });
@@ -1796,6 +2014,26 @@ async function handlePostAction(event) {
     await api(`/api/posts/${id}/approve`, { method: "POST", body: {} });
     await refresh();
     showToast("Post approved");
+  }
+  if (action === "reject") {
+    await api(`/api/posts/${id}/reject`, { method: "POST", body: { reason: "Rejected from dashboard review queue." } });
+    await refresh();
+    showToast("Post rejected");
+  }
+  if (action === "schedule") {
+    await api(`/api/posts/${id}/schedule`, { method: "POST", body: {} });
+    await refresh();
+    showToast("Post scheduled");
+  }
+  if (action === "save") {
+    const row = button.closest("tr");
+    const textarea = row ? row.querySelector("textarea[data-edit-text]") : null;
+    await api(`/api/posts/${id}`, {
+      method: "PATCH",
+      body: { text: textarea ? textarea.value : "" }
+    });
+    await refresh();
+    showToast("Post saved for review");
   }
   if (action === "publish") {
     const result = await api(`/api/posts/${id}/publish-now`, { method: "POST", body: {} });
@@ -1865,17 +2103,22 @@ async function handleGrowthMission(event) {
 }
 
 function bindEvents() {
-  $("#refreshBtn").addEventListener("click", refresh);
-  $("#runBtn").addEventListener("click", runQueue);
-  $("#profitRunBtn").addEventListener("click", () => {
-    runProfitEngine().catch((error) => showToast(error.message));
-  });
-  $("#cycleRunBtn").addEventListener("click", () => {
-    runAutonomyCycle().catch((error) => showToast(error.message));
-  });
-  $("#generateBtn").addEventListener("click", () => generateDrafts(false));
-  $("#autoGenerateBtn").addEventListener("click", () => generateDrafts(true));
-  $("#topicGenerateBtn").addEventListener("click", () => generateDrafts(false));
+  const bindAsyncButton = (selector, action, busyLabel) => {
+    const button = $(selector);
+    button?.addEventListener("click", () => {
+      runButtonAction(button, action, busyLabel).catch((error) => showToast(error.message));
+    });
+  };
+
+  arrangeDashboardSections();
+  setupNavigation();
+  bindAsyncButton("#refreshBtn", refresh, "更新中");
+  bindAsyncButton("#runBtn", runQueue, "發佈中");
+  bindAsyncButton("#profitRunBtn", runProfitEngine, "研究中");
+  bindAsyncButton("#cycleRunBtn", runAutonomyCycle, "執行中");
+  bindAsyncButton("#generateBtn", () => generateDrafts(false), "產生中");
+  bindAsyncButton("#autoGenerateBtn", () => generateDrafts(true), "排程中");
+  bindAsyncButton("#topicGenerateBtn", () => generateDrafts(false), "產生中");
   $("#postRows").addEventListener("click", (event) => {
     handlePostAction(event).catch((error) => {
       showToast(error.message);

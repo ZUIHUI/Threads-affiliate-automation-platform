@@ -1,5 +1,7 @@
 # Production Runbook
 
+Note: the current production dry-run and live-readiness procedure is maintained in `docs/PRODUCTION_RUNBOOK.md`. Use that file for new deployments.
+
 Use this runbook after your first successful Render deployment from `main` to move safely from dry-run to live.
 
 ## 0) Before deployment
