@@ -9,7 +9,8 @@
   },
   "scripts": {
     "start": "node server.js",
-    "test": "node tests/run-tests.js && node tests/ui-contract.js",
+    "test": "node tests/postgres-store-regression.js && node tests/run-tests.js && node tests/ui-contract.js",
+    "test:postgres": "node tests/postgres-store-regression.js",
     "test:browser": "node tests/browser-smoke.js"
   },
   "engines": {

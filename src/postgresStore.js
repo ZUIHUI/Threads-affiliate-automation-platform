@@ -110,14 +110,30 @@ async function syncPostgresState(client, existingTables, state, options = {}) {
   const automationRuns = state.automationRuns || [];
   const profitRuns = state.profitEngine?.runs || [];
   const adInsights = state.profitEngine?.adInsights || [];
-  const tracks = state.threadsAccounts || [];
+  const accounts = Array.isArray(state.threadsAccounts) ? [...state.threadsAccounts] : [];
+  const accountIds = new Set(accounts.map((account) => account?.id).filter(Boolean));
+  for (const post of posts) {
+    if (!post?.accountId || accountIds.has(post.accountId)) continue;
+    accounts.push({
+      id: post.accountId,
+      displayName: post.accountId === "acct_primary" ? "Primary Threads Account" : "Threads account",
+      threadsUserId: "",
+      status: "needs_credentials",
+      quotaUsage: 0,
+      quotaTotal: 250,
+      createdAt: post.createdAt || now,
+      updatedAt: post.updatedAt || now
+    });
+    accountIds.add(post.accountId);
+  }
+  const configuredThreadsUserId = safeString(options.threadsUserId);
 
   const campaignIdMap = new Map(campaigns.map((campaign) => [campaign.id, stableUuid(campaign.id)]));
   const productIdMap = new Map(products.map((product) => [product.id, stableUuid(product.id)]));
   const linkIdMap = new Map(links.map((link) => [link.id, stableUuid(link.id)]));
   const postIdMap = new Map(posts.map((post) => [post.id, stableUuid(post.id)]));
   const clickIdMap = new Map(clickEvents.map((event) => [event.id, stableUuid(event.id)]));
-  const accountIdMap = new Map(tracks.map((item) => [item.id, stableUuid(item.id)]));
+  const accountIdMap = new Map(accounts.map((item) => [item.id, stableUuid(item.id)]));
   const seedAdminUsers = Array.isArray(options.adminUsers) ? options.adminUsers : [];
   const adminUserIdByKey = new Map();
 
@@ -174,8 +190,11 @@ async function syncPostgresState(client, existingTables, state, options = {}) {
   }
 
   if (existingTables.has("threads_accounts")) {
-    for (const account of tracks) {
-      if (!account?.id || !account.threadsUserId) continue;
+    for (const account of accounts) {
+      if (!account?.id) continue;
+      const threadsUserId = account.id === "acct_primary" && configuredThreadsUserId
+        ? configuredThreadsUserId
+        : safeString(account.threadsUserId, null);
       await client.query(
         `
           insert into threads_accounts (
@@ -189,7 +208,7 @@ async function syncPostgresState(client, existingTables, state, options = {}) {
         [
           accountIdMap.get(account.id),
           safeString(account.displayName, "Threads account"),
-          safeString(account.threadsUserId, "threads-user"),
+          threadsUserId,
           account.tokenSecretRef || null,
           safeString(account.status, "needs_credentials"),
           safeNumber(account.quotaUsage, 0),
@@ -636,4 +655,4 @@ function createPostgresStore(options) {
   };
 }
 
-module.exports = { createPostgresStore, STATE_KEY };
+module.exports = { createPostgresStore, syncPostgresState, STATE_KEY };

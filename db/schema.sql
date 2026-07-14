@@ -21,7 +21,7 @@ create table if not exists admin_users (
 create table if not exists threads_accounts (
   id uuid primary key default gen_random_uuid(),
   display_name text not null,
-  threads_user_id text not null unique,
+  threads_user_id text unique,
   token_secret_ref text,
   status text not null default 'needs_credentials',
   quota_usage integer not null default 0,
@@ -30,6 +30,9 @@ create table if not exists threads_accounts (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table if exists threads_accounts
+  alter column threads_user_id drop not null;
 
 create table if not exists campaigns (
   id uuid primary key default gen_random_uuid(),

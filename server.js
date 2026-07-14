@@ -99,7 +99,8 @@ function createConfiguredStore(runtimeConfig, options = {}) {
       autoMigrate: runtimeConfig.databaseAutoMigrate,
       ssl: runtimeConfig.databaseSsl,
       schemaPath: options.schemaPath || SCHEMA_FILE,
-      adminUsers
+      adminUsers,
+      threadsUserId: runtimeConfig.threadsUserId
     });
   }
   return createStore(options.dataFile || DATA_FILE);
