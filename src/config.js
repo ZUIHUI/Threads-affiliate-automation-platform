@@ -17,10 +17,11 @@ function asList(value, fallback = []) {
 }
 
 function getRuntimeConfig(env) {
+  const production = String(env.NODE_ENV || "").toLowerCase() === "production";
   return {
     port: asNumber(env.PORT, 4173),
     publicBaseUrl: env.PUBLIC_BASE_URL || "http://localhost:4173",
-    enableWorker: asBoolean(env.ENABLE_WORKER, false),
+    enableWorker: asBoolean(env.ENABLE_WORKER, production),
     automationIntervalMs: Math.max(10_000, asNumber(env.AUTOMATION_INTERVAL_MS, 60_000)),
     workerLeaseMs: Math.max(30_000, asNumber(env.WORKER_LEASE_MS, 180_000)),
     threadsGraphBase: env.THREADS_GRAPH_BASE || "https://graph.threads.net/v1.0",
@@ -34,7 +35,7 @@ function getRuntimeConfig(env) {
     threadsPublishDelayMs: Math.max(0, asNumber(env.THREADS_PUBLISH_DELAY_MS, 30_000)),
     adminTokenRole: env.ADMIN_TOKEN_ROLE || "admin",
     adminPasswordRole: env.ADMIN_PASSWORD_ROLE || env.ADMIN_TOKEN_ROLE || "admin",
-    allowDemoOffers: asBoolean(env.ALLOW_DEMO_OFFERS, env.NODE_ENV !== "production"),
+    allowDemoOffers: asBoolean(env.ALLOW_DEMO_OFFERS, !production),
     aiDraftProvider: env.AI_DRAFT_PROVIDER || "openai",
     profitScriptProvider: env.PROFIT_SCRIPT_PROVIDER || env.AI_DRAFT_PROVIDER || "openai",
     openaiBaseUrl: env.OPENAI_BASE_URL || "https://api.openai.com/v1",
@@ -43,7 +44,7 @@ function getRuntimeConfig(env) {
     databaseUrl: env.DATABASE_URL || "",
     databaseAutoMigrate: asBoolean(env.DATABASE_AUTO_MIGRATE, true),
     databaseSsl: asBoolean(env.DATABASE_SSL, false),
-    autonomyMode: asBoolean(env.AUTONOMY_MODE, false),
+    autonomyMode: asBoolean(env.AUTONOMY_MODE, production),
     autonomyIntervalMs: Math.max(15 * 60_000, asNumber(env.AUTONOMY_INTERVAL_MS, 6 * 60 * 60_000)),
     autonomyMaxScriptsPerRun: Math.max(1, Math.min(asNumber(env.AUTONOMY_MAX_SCRIPTS_PER_RUN, 3), 5)),
     autonomyMaxOffersPerRun: Math.max(0, Math.min(asNumber(env.AUTONOMY_MAX_OFFERS_PER_RUN, 3), 10)),

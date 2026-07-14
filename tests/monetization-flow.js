@@ -27,6 +27,10 @@ async function main() {
     DEFAULT_DISCLOSURE_TEXT: "含聯盟連結"
   });
   assert.equal(config.allowDemoOffers, false);
+  const productionDefaults = getRuntimeConfig({ NODE_ENV: "production" });
+  assert.equal(productionDefaults.enableWorker, true);
+  assert.equal(productionDefaults.autonomyMode, true);
+  assert.equal(productionDefaults.threadsDryRun, true);
   assert.equal(isPlaceholderUrl("https://example.com/offer"), true);
   assert.equal(isPlaceholderUrl("https://hop.clickbank.net/?affiliate=demo"), false);
 
