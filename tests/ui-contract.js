@@ -6,6 +6,7 @@ const root = path.join(__dirname, "..");
 const html = fs.readFileSync(path.join(root, "public", "console.html"), "utf8");
 const js = fs.readFileSync(path.join(root, "public", "console.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
+const server = fs.readFileSync(path.join(root, "server.js"), "utf8");
 
 const requiredHtml = [
   "Threads 聯盟自動化",
@@ -118,6 +119,14 @@ const forbiddenMixedLanguageCopy = [
 
 for (const marker of forbiddenMixedLanguageCopy) {
   assert.equal(html.includes(marker), false, `Legacy mixed-language copy remains: ${marker}`);
+}
+
+for (const marker of ["管理員登入", "管理員憑證", "登入管理介面", "管理員憑證錯誤。"]) {
+  assert.equal(server.includes(marker), true, `Missing localized login marker: ${marker}`);
+}
+
+for (const marker of ["Admin access required", "Unlock dashboard", "Admin credential"]) {
+  assert.equal(server.includes(marker), false, `Legacy English login copy remains: ${marker}`);
 }
 
 const requiredJs = [

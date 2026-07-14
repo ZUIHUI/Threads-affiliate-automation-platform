@@ -826,7 +826,7 @@ async function main() {
 
   const loginPage = await fetch(`${roleBase}/login`);
   assert.equal(loginPage.status, 200);
-  assert.equal((await loginPage.text()).includes("Admin access required"), true);
+  assert.equal((await loginPage.text()).includes("管理員登入"), true);
 
   const unauthMe = await fetch(`${roleBase}/api/me`);
   const unauthMePayload = await unauthMe.json();

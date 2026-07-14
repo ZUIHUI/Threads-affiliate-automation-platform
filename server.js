@@ -370,29 +370,35 @@ function serveLoginPage(req, res) {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Admin Login</title>
+    <title>管理員登入 | Threads 聯盟自動化</title>
     <style>
-      :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-      body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: #111827; color: #f9fafb; }
-      main { width: min(92vw, 420px); padding: 32px; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; background: #172033; box-shadow: 0 24px 70px rgba(0,0,0,.34); }
-      h1 { margin: 0 0 8px; font-size: 24px; }
-      p { margin: 0 0 24px; color: #cbd5e1; line-height: 1.5; }
-      label { display: grid; gap: 8px; margin-bottom: 16px; color: #e5e7eb; }
-      input { box-sizing: border-box; width: 100%; padding: 12px 14px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #f8fafc; font: inherit; }
-      button { width: 100%; padding: 12px 16px; border: 0; border-radius: 6px; background: #38bdf8; color: #082f49; font-weight: 700; cursor: pointer; }
-      small { display: block; min-height: 20px; margin-top: 14px; color: #fca5a5; }
+      :root { color-scheme: light; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      * { box-sizing: border-box; }
+      body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; background: #f5f5f7; color: #1d1d1f; }
+      main { width: min(100%, 420px); padding: 32px; border: 1px solid #d2d2d7; border-radius: 8px; background: #ffffff; }
+      .brand { display: block; margin-bottom: 28px; color: #6e6e73; font-size: 13px; font-weight: 600; }
+      h1 { margin: 0 0 8px; font-size: 24px; line-height: 1.2; }
+      p { margin: 0 0 24px; color: #6e6e73; line-height: 1.5; }
+      label { display: grid; gap: 8px; margin-bottom: 16px; color: #1d1d1f; font-size: 14px; font-weight: 600; }
+      input { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #86868b; border-radius: 8px; background: #ffffff; color: #1d1d1f; font: inherit; }
+      input:focus-visible { outline: 2px solid #0071e3; outline-offset: 2px; }
+      button { width: 100%; min-height: 44px; padding: 11px 22px; border: 0; border-radius: 9999px; background: #0066cc; color: #ffffff; font: inherit; font-weight: 600; cursor: pointer; }
+      button:active { transform: scale(.98); }
+      button:focus-visible { outline: 2px solid #0071e3; outline-offset: 2px; }
+      small { display: block; min-height: 20px; margin-top: 14px; color: #b42318; line-height: 1.4; }
     </style>
   </head>
   <body>
     <main>
-      <h1>Admin access required</h1>
-      <p>Enter ADMIN_TOKEN or ADMIN_PASSWORD to open the dashboard.</p>
+      <span class="brand">Threads 聯盟自動化</span>
+      <h1>管理員登入</h1>
+      <p>請輸入管理員權杖或密碼以開啟營運介面。</p>
       <form id="loginForm">
         <label>
-          Admin credential
+          管理員憑證
           <input id="credential" type="password" autocomplete="current-password" autofocus />
         </label>
-        <button type="submit">Unlock dashboard</button>
+        <button type="submit">登入管理介面</button>
         <small id="message"></small>
       </form>
     </main>
@@ -414,7 +420,7 @@ function serveLoginPage(req, res) {
           return;
         }
         const payload = await response.json().catch(() => ({}));
-        message.textContent = payload.error || "Admin login failed.";
+        message.textContent = response.status === 401 ? "管理員憑證錯誤。" : payload.error || "管理員登入失敗。";
       });
     </script>
   </body>
