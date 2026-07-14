@@ -35,6 +35,7 @@ const {
 } = require("./src/postReview");
 const { evaluateContentFatigue } = require("./src/contentFatigue");
 const { upsertRealOffer } = require("./src/offerManagement");
+const { importOffers } = require("./src/offerImport");
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
@@ -1251,6 +1252,20 @@ async function handleApi(req, res, url) {
     const body = await parseBody(req);
     const result = await store.update((state) => upsertRealOffer(state, body, config));
     sendJson(res, result.created.link ? 201 : 200, result);
+    return;
+  }
+
+  if (req.method === "POST" && route === "/api/offers/import/preview") {
+    const body = await parseBody(req);
+    const result = importOffers(await readState(), body, config, { dryRun: true });
+    sendJson(res, 200, result);
+    return;
+  }
+
+  if (req.method === "POST" && route === "/api/offers/import") {
+    const body = await parseBody(req);
+    const result = await store.update((state) => importOffers(state, body, config));
+    sendJson(res, 200, result);
     return;
   }
 

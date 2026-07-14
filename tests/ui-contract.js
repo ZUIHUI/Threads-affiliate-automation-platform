@@ -7,6 +7,7 @@ const html = fs.readFileSync(path.join(root, "public", "console.html"), "utf8");
 const js = fs.readFileSync(path.join(root, "public", "console.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const server = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const offerTemplate = fs.readFileSync(path.join(root, "public", "affiliate-offer-template.csv"), "utf8");
 
 const requiredHtml = [
   "Threads 聯盟自動化",
@@ -88,14 +89,20 @@ const requiredHtml = [
   'id="conversionEvents"',
   'id="offerForm"',
   'id="offerSaveBtn"',
+  'id="offerImportFile"',
+  'id="offerImportPreviewBtn"',
+  'id="offerImportConfirmBtn"',
+  'id="offerImportSummary"',
+  'id="offerImportRows"',
+  '/affiliate-offer-template.csv',
   'id="sidebarToggle"',
   'id="sidebarBackdrop"',
   'class="nav-group-label"',
   "內容工廠",
   "合規 / 風險審核",
   "聯盟收益管道",
-  '<link rel="stylesheet" href="/styles.css?v=20260714-monetization" />',
-  '<script src="/console.js?v=20260714-monetization"></script>'
+  '<link rel="stylesheet" href="/styles.css?v=20260714-offer-import" />',
+  '<script src="/console.js?v=20260714-offer-import"></script>'
 ];
 
 for (const marker of requiredHtml) {
@@ -226,6 +233,11 @@ const requiredJs = [
   "setupNavigation",
   "runButtonAction",
   "/api/offers",
+  "/api/offers/import/preview",
+  "/api/offers/import",
+  "OFFER_IMPORT_MAX_BYTES",
+  "previewOfferImport",
+  "confirmOfferImport",
   "submitOffer",
   "formatRevenueTotals",
   "尚未建立真實聯盟追蹤連結",
@@ -310,6 +322,10 @@ const requiredCss = [
   ".blocked-script-row small",
   ".conversion-feed",
   ".offer-form",
+  ".offer-import-section",
+  ".offer-import-controls",
+  ".offer-import-summary",
+  ".offer-import-table",
   ".content-factory",
   ".risk-panel",
   ".revenue-panel",
@@ -333,6 +349,14 @@ const requiredCss = [
 
 for (const marker of requiredCss) {
   assert.equal(css.includes(marker), true, `Missing CSS marker: ${marker}`);
+}
+
+for (const marker of ["/api/offers/import/preview", "/api/offers/import"]) {
+  assert.equal(server.includes(marker), true, `Missing server route: ${marker}`);
+}
+
+for (const header of ["campaignName", "productName", "network", "targetUrl", "subIdParam"]) {
+  assert.equal(offerTemplate.includes(header), true, `Missing offer import template field: ${header}`);
 }
 
 console.log("UI contract passed.");

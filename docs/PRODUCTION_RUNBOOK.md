@@ -74,6 +74,15 @@ curl -X POST https://<domain>/api/offers \
 
 The response returns the campaign, product, affiliate link, and public `/r/{slug}` tracking URL. Demo, local, and `example.com` links never satisfy the live publishing gate or revenue totals.
 
+For an initial catalog or a manual network export, use **System Settings > Batch import affiliate offers**. Download the CSV template, select a CSV or JSON file, run preview validation, then confirm the import. The preview never writes data. Import accepts up to 500 rows and 256 KB per file; valid rows are committed while invalid rows are reported without leaving partial campaign, product, or link records. Re-importing the same network URL updates the existing offer instead of creating a duplicate.
+
+The same workflow is available through the authenticated endpoints:
+
+- `POST /api/offers/import/preview`
+- `POST /api/offers/import`
+
+Send `{ "fileName": "offers.csv", "format": "csv", "content": "..." }`, or send structured JSON as `{ "offers": [...] }`. Required offer fields are `campaignName`, `targetPersona`, `productName`, `network`, and an HTTPS `targetUrl`; optional columns use the defaults shown in `public/affiliate-offer-template.csv`. Automated affiliate-network synchronization remains configured separately through `AFFILIATE_OFFER_FEED_URLS`.
+
 Notes:
 
 - `ADMIN_TOKEN` or `ADMIN_PASSWORD` is required before exposing the dashboard.

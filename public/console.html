@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Threads 聯盟自動化</title>
-    <link rel="stylesheet" href="/styles.css?v=20260714-monetization" />
+    <link rel="stylesheet" href="/styles.css?v=20260714-offer-import" />
   </head>
   <body>
     <div class="app-shell">
@@ -504,6 +504,35 @@
             </label>
             <button class="button compose-submit" id="offerSaveBtn" type="submit">建立聯盟優惠</button>
           </form>
+          <section class="offer-import-section" aria-labelledby="offerImportTitle">
+            <div class="settings-subhead import-heading">
+              <h4 id="offerImportTitle">批次匯入聯盟優惠</h4>
+              <a class="button secondary import-template" href="/affiliate-offer-template.csv" download>CSV 範本</a>
+            </div>
+            <div class="offer-import-controls">
+              <label class="import-file-control">
+                <span>CSV 或 JSON 檔案</span>
+                <input id="offerImportFile" type="file" accept=".csv,.json,text/csv,application/json" />
+                <small id="offerImportFileMeta">尚未選擇檔案</small>
+              </label>
+              <button class="button secondary" id="offerImportPreviewBtn" type="button" disabled>預覽驗證</button>
+              <button class="button" id="offerImportConfirmBtn" type="button" disabled>確認匯入</button>
+            </div>
+            <div class="offer-import-summary" id="offerImportSummary" role="status" aria-live="polite" hidden></div>
+            <div class="offer-import-table-wrap" id="offerImportTableWrap" hidden>
+              <table class="offer-import-table">
+                <thead>
+                  <tr>
+                    <th scope="col">列</th>
+                    <th scope="col">產品</th>
+                    <th scope="col">聯盟平台</th>
+                    <th scope="col">狀態</th>
+                  </tr>
+                </thead>
+                <tbody id="offerImportRows"></tbody>
+              </table>
+            </div>
+          </section>
           <div class="settings-subhead">
             <h4>現有活動與產品</h4>
           </div>
@@ -528,6 +557,6 @@
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="/console.js?v=20260714-monetization"></script>
+    <script src="/console.js?v=20260714-offer-import"></script>
   </body>
 </html>

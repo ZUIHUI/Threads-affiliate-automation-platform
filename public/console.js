@@ -4,10 +4,18 @@ const state = {
     authRequired: false,
     authenticated: false,
     methods: { token: false, password: false }
+  },
+  offerImport: {
+    fileName: "",
+    format: "",
+    content: "",
+    preview: null,
+    canImport: false
   }
 };
 
 const $ = (selector) => document.querySelector(selector);
+const OFFER_IMPORT_MAX_BYTES = 256 * 1024;
 
 const WORKSPACE_MODE_KEY = "threads-affiliate-workspace-mode";
 const WORKSPACE_MODES = {
@@ -2337,6 +2345,121 @@ async function submitOffer(event) {
   }
 }
 
+function offerImportStatus(status) {
+  const statuses = {
+    ready_create: { label: "可新增", badge: "good" },
+    ready_update: { label: "可更新", badge: "warn" },
+    create: { label: "已新增", badge: "good" },
+    update: { label: "已更新", badge: "good" },
+    error: { label: "錯誤", badge: "bad" }
+  };
+  return statuses[status] || { label: status || "未知", badge: "warn" };
+}
+
+function renderOfferImportResult(result) {
+  const summary = result?.summary || {};
+  const summaryNode = $("#offerImportSummary");
+  const tableWrap = $("#offerImportTableWrap");
+  summaryNode.hidden = false;
+  tableWrap.hidden = false;
+  summaryNode.classList.toggle("has-errors", Number(summary.failed || 0) > 0);
+  summaryNode.innerHTML = `
+    <strong>${result.dryRun ? "預覽完成" : "匯入完成"}</strong>
+    <span>共 ${Number(summary.total || 0)} 列</span>
+    <span>${result.dryRun ? "有效" : "已匯入"} ${Number(result.dryRun ? summary.valid : (summary.imported || 0))} 列</span>
+    <span>錯誤 ${Number(summary.failed || 0)} 列</span>
+  `;
+  $("#offerImportRows").innerHTML = (result.rows || []).map((row) => {
+    const status = offerImportStatus(row.status);
+    const detail = row.error || row.slug || row.trackingUrl || "";
+    return `
+      <tr class="status-${escapeHtml(row.status)}">
+        <td>${Number(row.rowNumber || 0)}</td>
+        <td>
+          <strong>${escapeHtml(row.productName || "未命名產品")}</strong>
+          <small>${escapeHtml(row.campaignName || "")}</small>
+        </td>
+        <td>${escapeHtml(row.network || "-")}</td>
+        <td>
+          <span class="badge ${status.badge}">${status.label}</span>
+          <small>${escapeHtml(detail)}</small>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function renderOfferImportError(message) {
+  const summaryNode = $("#offerImportSummary");
+  summaryNode.hidden = false;
+  summaryNode.classList.add("has-errors");
+  summaryNode.innerHTML = `<strong>無法讀取檔案</strong><span>${escapeHtml(message)}</span>`;
+  $("#offerImportTableWrap").hidden = true;
+}
+
+function resetOfferImportSelection(file) {
+  state.offerImport = {
+    fileName: file?.name || "",
+    format: file?.name?.toLowerCase().endsWith(".json") ? "json" : "csv",
+    content: "",
+    preview: null,
+    canImport: false
+  };
+  $("#offerImportFileMeta").textContent = file
+    ? `${file.name} · ${(file.size / 1024).toFixed(1)} KB`
+    : "尚未選擇檔案";
+  $("#offerImportPreviewBtn").disabled = !file;
+  $("#offerImportConfirmBtn").disabled = true;
+  $("#offerImportSummary").hidden = true;
+  $("#offerImportTableWrap").hidden = true;
+}
+
+async function readOfferImportFile() {
+  const file = $("#offerImportFile").files?.[0];
+  if (!file) throw new Error("請先選擇 CSV 或 JSON 檔案。");
+  if (file.size > OFFER_IMPORT_MAX_BYTES) throw new Error("匯入檔案不可超過 256 KB。");
+  const content = await file.text();
+  state.offerImport.fileName = file.name;
+  state.offerImport.format = file.name.toLowerCase().endsWith(".json") ? "json" : "csv";
+  state.offerImport.content = content;
+  return {
+    fileName: state.offerImport.fileName,
+    format: state.offerImport.format,
+    content
+  };
+}
+
+async function previewOfferImport() {
+  const payload = await readOfferImportFile();
+  const result = await api("/api/offers/import/preview", {
+    method: "POST",
+    body: payload
+  });
+  state.offerImport.preview = result;
+  state.offerImport.canImport = Number(result.summary?.valid || 0) > 0;
+  $("#offerImportConfirmBtn").disabled = !state.offerImport.canImport;
+  renderOfferImportResult(result);
+}
+
+async function confirmOfferImport() {
+  if (!state.offerImport.canImport || !state.offerImport.content) {
+    throw new Error("請先完成預覽驗證。");
+  }
+  const result = await api("/api/offers/import", {
+    method: "POST",
+    body: {
+      fileName: state.offerImport.fileName,
+      format: state.offerImport.format,
+      content: state.offerImport.content
+    }
+  });
+  state.offerImport.preview = result;
+  state.offerImport.canImport = false;
+  renderOfferImportResult(result);
+  await refresh();
+  showToast(`已匯入 ${Number(result.summary?.imported || 0)} 個聯盟優惠`);
+}
+
 async function handleNextAction(event) {
   const button = event.target.closest("button[data-next-action]");
   if (!button) return;
@@ -2403,6 +2526,29 @@ function bindEvents() {
   });
   $("#offerForm").addEventListener("submit", (event) => {
     submitOffer(event).catch((error) => showToast(error.message));
+  });
+  $("#offerImportFile").addEventListener("change", (event) => {
+    resetOfferImportSelection(event.currentTarget.files?.[0]);
+  });
+  const offerImportPreviewBtn = $("#offerImportPreviewBtn");
+  offerImportPreviewBtn.addEventListener("click", () => {
+    runButtonAction(offerImportPreviewBtn, previewOfferImport, "驗證中").catch((error) => {
+      state.offerImport.canImport = false;
+      $("#offerImportConfirmBtn").disabled = true;
+      renderOfferImportError(error.message);
+      showToast(error.message);
+    });
+  });
+  const offerImportConfirmBtn = $("#offerImportConfirmBtn");
+  offerImportConfirmBtn.addEventListener("click", () => {
+    runButtonAction(offerImportConfirmBtn, confirmOfferImport, "匯入中")
+      .catch((error) => {
+        renderOfferImportError(error.message);
+        showToast(error.message);
+      })
+      .finally(() => {
+        offerImportConfirmBtn.disabled = !state.offerImport.canImport;
+      });
   });
   const adminLoginForm = $("#adminLoginForm");
   if (adminLoginForm) {
