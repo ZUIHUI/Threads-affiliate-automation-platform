@@ -4275,6 +4275,22 @@ tbody tr:hover td {
   font-size: 12px;
 }
 
+.row-actions .button[aria-disabled="true"] {
+  border-color: #d2d2d7;
+  background: #e8e8ed;
+  color: #6e6e73;
+  cursor: not-allowed;
+}
+
+.action-block-reason {
+  display: block;
+  max-width: 220px;
+  margin-top: 8px;
+  color: #6e4b00;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .risk-tab {
   border: 1px solid var(--line);
   background: var(--surface);

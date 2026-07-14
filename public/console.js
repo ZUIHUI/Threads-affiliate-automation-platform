@@ -323,6 +323,21 @@ function firstClaimWarning(post) {
   ) || "";
 }
 
+function approvalBlockReason(post, validation, riskLevel, warning, fatigue) {
+  if (!isReviewable(post)) return "此貼文已離開待審核狀態。";
+  if (!validation.valid) return validation.errors?.[0] || "內容驗證未通過，請先編輯後重新檢查。";
+  if (riskLevel === "high") return "高風險內容不可直接核准，請先編輯或拒絕。";
+  if (warning) return `嚴重聲明警告：${warning}`;
+  if (fatigue.status === "blocked") return fatigue.lines[0] || "內容疲勞規則阻擋核准，請先改寫。";
+  return "";
+}
+
+function blockedActionAttributes(reason) {
+  if (!reason) return "";
+  const escapedReason = escapeHtml(reason);
+  return `aria-disabled="true" data-blocked-reason="${escapedReason}" title="${escapedReason}"`;
+}
+
 function renderRuntime(data) {
   $("#updatedAt").textContent = formatDate(data.generatedAt);
   $("#runtimePill").textContent = data.runtime.dryRun ? "DRY RUN" : "LIVE";
@@ -1707,10 +1722,21 @@ function renderPosts(data) {
     const fatigue = fatigueSummary(post);
     const warning = firstClaimWarning(post);
     const fatigueBlocked = fatigue.status === "blocked";
-    const approveDisabled = !isReviewable(post) || !validation.valid || riskLevel === "high" || warning || fatigueBlocked ? "disabled" : "";
-    const rejectDisabled = ["rejected", "published", "simulated", "failed"].includes(post.status) ? "disabled" : "";
-    const scheduleDisabled = post.status === "approved" && post.approved && !fatigueBlocked ? "" : "disabled";
-    const publishDisabled = post.status === "scheduled" && !fatigueBlocked ? "" : "disabled";
+    const approveBlockReason = approvalBlockReason(post, validation, riskLevel, warning, fatigue);
+    const rejectBlockReason = ["rejected", "published", "simulated", "failed"].includes(post.status)
+      ? "此貼文目前狀態不可拒絕。"
+      : "";
+    const scheduleBlockReason = post.status === "approved" && post.approved && !fatigueBlocked
+      ? ""
+      : fatigueBlocked
+        ? fatigue.lines[0] || "內容疲勞規則阻擋排程，請先改寫。"
+        : "請先完成審核核准。";
+    const publishBlockReason = post.status === "scheduled" && !fatigueBlocked
+      ? ""
+      : fatigueBlocked
+        ? fatigue.lines[0] || "內容疲勞規則阻擋發佈，請先改寫。"
+        : "請先完成審核並排程。";
+    const visibleBlockReason = isReviewable(post) ? approveBlockReason : "";
     return `
       <tr>
         <td>
@@ -1743,11 +1769,12 @@ function renderPosts(data) {
         <td>${escapeHtml(formatDate(post.scheduledAt))}</td>
         <td>
           <div class="row-actions">
-            <button class="button secondary" data-action="approve" data-id="${post.id}" ${approveDisabled}>審核</button>
-            <button class="button secondary" data-action="reject" data-id="${post.id}" ${rejectDisabled}>拒絕</button>
-            <button class="button secondary" data-action="schedule" data-id="${post.id}" ${scheduleDisabled}>排程</button>
-            <button class="button" data-action="publish" data-id="${post.id}" ${publishDisabled}>發佈</button>
+            <button class="button secondary" type="button" data-action="approve" data-id="${post.id}" ${blockedActionAttributes(approveBlockReason)}>審核</button>
+            <button class="button secondary" type="button" data-action="reject" data-id="${post.id}" ${blockedActionAttributes(rejectBlockReason)}>拒絕</button>
+            <button class="button secondary" type="button" data-action="schedule" data-id="${post.id}" ${blockedActionAttributes(scheduleBlockReason)}>排程</button>
+            <button class="button" type="button" data-action="publish" data-id="${post.id}" ${blockedActionAttributes(publishBlockReason)}>發佈</button>
           </div>
+          ${visibleBlockReason ? `<small class="action-block-reason">${escapeHtml(visibleBlockReason)}</small>` : ""}
         </td>
       </tr>
     `;
@@ -2009,36 +2036,51 @@ async function handlePostAction(event) {
   if (!button) return;
   const id = button.dataset.id;
   const action = button.dataset.action;
-  button.disabled = true;
-  if (action === "approve") {
-    await api(`/api/posts/${id}/approve`, { method: "POST", body: {} });
-    await refresh();
-    showToast("Post approved");
+  if (button.dataset.blockedReason) {
+    showToast(button.dataset.blockedReason);
+    return;
   }
-  if (action === "reject") {
-    await api(`/api/posts/${id}/reject`, { method: "POST", body: { reason: "Rejected from dashboard review queue." } });
-    await refresh();
-    showToast("Post rejected");
-  }
-  if (action === "schedule") {
-    await api(`/api/posts/${id}/schedule`, { method: "POST", body: {} });
-    await refresh();
-    showToast("Post scheduled");
-  }
-  if (action === "save") {
-    const row = button.closest("tr");
-    const textarea = row ? row.querySelector("textarea[data-edit-text]") : null;
-    await api(`/api/posts/${id}`, {
-      method: "PATCH",
-      body: { text: textarea ? textarea.value : "" }
-    });
-    await refresh();
-    showToast("Post saved for review");
-  }
-  if (action === "publish") {
-    const result = await api(`/api/posts/${id}/publish-now`, { method: "POST", body: {} });
-    render(result.dashboard);
-    showToast(`Publish flow: ${result.run.status}`);
+  const busyLabels = {
+    approve: "核准中",
+    reject: "拒絕中",
+    schedule: "排程中",
+    save: "儲存中",
+    publish: "發佈中"
+  };
+  setButtonBusy(button, true, busyLabels[action] || "處理中");
+  try {
+    if (action === "approve") {
+      await api(`/api/posts/${id}/approve`, { method: "POST", body: {} });
+      await refresh();
+      showToast("Post approved");
+    }
+    if (action === "reject") {
+      await api(`/api/posts/${id}/reject`, { method: "POST", body: { reason: "Rejected from dashboard review queue." } });
+      await refresh();
+      showToast("Post rejected");
+    }
+    if (action === "schedule") {
+      await api(`/api/posts/${id}/schedule`, { method: "POST", body: {} });
+      await refresh();
+      showToast("Post scheduled");
+    }
+    if (action === "save") {
+      const row = button.closest("tr");
+      const textarea = row ? row.querySelector("textarea[data-edit-text]") : null;
+      await api(`/api/posts/${id}`, {
+        method: "PATCH",
+        body: { text: textarea ? textarea.value : "" }
+      });
+      await refresh();
+      showToast("Post saved for review");
+    }
+    if (action === "publish") {
+      const result = await api(`/api/posts/${id}/publish-now`, { method: "POST", body: {} });
+      render(result.dashboard);
+      showToast(`Publish flow: ${result.run.status}`);
+    }
+  } finally {
+    if (button.isConnected) setButtonBusy(button, false);
   }
 }
 
