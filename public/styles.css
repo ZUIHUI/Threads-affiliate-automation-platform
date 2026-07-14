@@ -598,6 +598,7 @@ th:nth-child(5) {
   position: fixed;
   right: 20px;
   bottom: 20px;
+  z-index: 100;
   max-width: min(420px, calc(100vw - 40px));
   padding: 14px 16px;
   border-radius: 8px;

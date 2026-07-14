@@ -332,6 +332,16 @@ function approvalBlockReason(post, validation, riskLevel, warning, fatigue) {
   return "";
 }
 
+function terminalPostHint(post) {
+  const hints = {
+    simulated: "此貼文已完成模擬發佈，不需再次審核；若要重跑，請建立新草稿。",
+    published: "此貼文已正式發佈，不可再次審核。",
+    rejected: "此貼文已拒絕；請修改內容或建立新草稿後重新送審。",
+    failed: "此貼文處理失敗；請先檢查錯誤原因，再建立新草稿重新送審。"
+  };
+  return hints[post.status] || "";
+}
+
 function blockedActionAttributes(reason) {
   if (!reason) return "";
   const escapedReason = escapeHtml(reason);
@@ -1722,7 +1732,8 @@ function renderPosts(data) {
     const fatigue = fatigueSummary(post);
     const warning = firstClaimWarning(post);
     const fatigueBlocked = fatigue.status === "blocked";
-    const approveBlockReason = approvalBlockReason(post, validation, riskLevel, warning, fatigue);
+    const terminalHint = terminalPostHint(post);
+    const approveBlockReason = terminalHint || approvalBlockReason(post, validation, riskLevel, warning, fatigue);
     const rejectBlockReason = ["rejected", "published", "simulated", "failed"].includes(post.status)
       ? "此貼文目前狀態不可拒絕。"
       : "";
@@ -1736,7 +1747,7 @@ function renderPosts(data) {
       : fatigueBlocked
         ? fatigue.lines[0] || "內容疲勞規則阻擋發佈，請先改寫。"
         : "請先完成審核並排程。";
-    const visibleBlockReason = isReviewable(post) ? approveBlockReason : "";
+    const visibleBlockReason = isReviewable(post) ? approveBlockReason : terminalHint;
     return `
       <tr>
         <td>
