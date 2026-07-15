@@ -22,6 +22,10 @@ services:
         value: "true"
       - key: AUTONOMY_MODE
         value: "true"
+      - key: AUTOMATION_INTERVAL_MS
+        value: "60000"
+      - key: WORKER_LEASE_MS
+        value: "180000"
       - key: ALLOW_DEMO_OFFERS
         value: "false"
       - key: AUTONOMY_INTERVAL_MS

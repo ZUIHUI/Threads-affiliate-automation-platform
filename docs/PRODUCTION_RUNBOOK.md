@@ -50,6 +50,8 @@ CONVERSION_WEBHOOK_SECRET=<long-random-webhook-secret>
 
 ENABLE_WORKER=false
 AUTONOMY_MODE=false
+AUTOMATION_INTERVAL_MS=60000
+WORKER_LEASE_MS=180000
 AUTONOMY_INTERVAL_MS=21600000
 ALLOW_DEMO_OFFERS=false
 
@@ -92,6 +94,8 @@ Notes:
 - `ADMIN_SESSION_SECRET` signs the dashboard login cookie.
 - `THREADS_USER_ID` and `THREADS_ACCESS_TOKEN` may be configured during dry-run, but live publishing must stay off until readiness passes.
 - `ENABLE_WORKER=true` and `AUTONOMY_MODE=true` should be enabled only after dry-run verification is complete.
+- `AUTOMATION_INTERVAL_MS` controls how often the worker checks for an executable mission. `AUTONOMY_INTERVAL_MS` remains the slower research/AI cadence, so a one-minute heartbeat does not imply a one-minute OpenAI request.
+- `WORKER_LEASE_MS` prevents overlapping workers from executing the same mission during deploys or horizontal scaling.
 - `CONTENT_FATIGUE_*` controls product, hook, CTA, model, similarity, and commercial-ratio guardrails. Keep conservative defaults until review queue quality is proven.
 
 ## 3. Initial Safe Deployment

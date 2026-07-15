@@ -167,6 +167,54 @@ async function main() {
   assert.match(capturedOfferPrompt, /threads-affiliate-automation-platform\.onrender\.com\/r\/automation-toolkit/);
   assert.doesNotMatch(capturedOfferPrompt, /hop\.clickbank\.net|affiliate=publisher/);
 
+  const autonomousState = defaultState();
+  upsertRealOffer(autonomousState, {
+    campaignName: "Autonomous creator tools",
+    targetPersona: "需要減少重複工作的內容創作者",
+    productName: "Autonomous workflow toolkit",
+    offer: "排程、審核與轉換追蹤工具",
+    network: "ClickBank",
+    commissionModel: "CPS",
+    commissionValue: 25,
+    currency: "USD",
+    targetUrl: "https://hop.clickbank.net/?affiliate=worker&vendor=workflow",
+    slug: "autonomous-workflow-toolkit",
+    subIdParam: "tid",
+    appendUtm: false
+  }, config);
+  const autonomousSource = {
+    status: "ready",
+    sourceDomain: "merchant.example",
+    title: "Autonomous workflow toolkit",
+    characterCount: 320
+  };
+  const autonomousRun = runProfitEngine(autonomousState, {
+    ...config,
+    autonomyMaxScriptsPerRun: 1
+  }, {
+    force: true,
+    createPosts: true,
+    autoApprove: true,
+    createdBy: "worker",
+    aiScriptSource: "openai",
+    sourceContext: autonomousSource,
+    aiScripts: [{
+      hook: "先保留人工審核，再談自動化",
+      post: "自動化工具最重要的不是省下幾次點擊，而是錯誤發生前仍有人可以停下流程。你最想先減少哪個重複步驟？",
+      cta: "查看工作流程",
+      risk_note: "只使用已驗證商品資料，未承諾成效。"
+    }]
+  });
+  assert.equal(autonomousRun.createdPosts.length, 1);
+  const autonomousPost = autonomousRun.createdPosts[0];
+  assert.match(autonomousPost.text, /^含聯盟連結：/);
+  assert.match(autonomousPost.text, /\/r\/autonomous-workflow-toolkit/);
+  assert.match(autonomousPost.linkAttachment, new RegExp(`post=${autonomousPost.id}`));
+  assert.equal(autonomousPost.sourceContext.status, "ready");
+  assert.equal(autonomousPost.status, "needs_review");
+  assert.equal(autonomousPost.approved, false);
+  assert.equal(autonomousPost.review.autoApproveIgnored, true);
+
   state.posts.push({
     id: "post_real_1",
     campaignId: created.campaign.id,

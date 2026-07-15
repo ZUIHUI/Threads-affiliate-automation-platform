@@ -564,15 +564,20 @@ function truncateThreadsText(text, maxUnits) {
 
 function repairPostText(post, config) {
   const maxUnits = Number(config.postCharacterLimitBytes || 500);
-  if (countThreadsUnits(post.text) <= maxUnits) return post;
   const cta = post.linkAttachment || post.cta || "";
   const disclosure = config.defaultDisclosureText || "含聯盟連結";
-  const suffix = cta ? `\n\n延伸資源：${cta}` : "";
-  const prefix = post.text.includes(disclosure) || /#ad\b/i.test(post.text)
+  const sourceText = String(post.text || "").trim();
+  const suffix = cta && !sourceText.includes(cta) ? `\n\n延伸資源：${cta}` : "";
+  const prefix = sourceText.includes(disclosure) || /#ad\b/i.test(sourceText)
     ? ""
     : `${disclosure}：`;
+  const completeText = `${prefix}${sourceText}${suffix}`.trim();
+  if (countThreadsUnits(completeText) <= maxUnits) {
+    post.text = completeText;
+    return post;
+  }
   const allowedBodyUnits = Math.max(80, maxUnits - countThreadsUnits(`${prefix}${suffix}`) - 12);
-  const body = truncateThreadsText(post.text.replace(cta, "").trim(), allowedBodyUnits);
+  const body = truncateThreadsText(sourceText.replace(cta, "").trim(), allowedBodyUnits);
   post.text = `${prefix}${body}${suffix}`.trim();
   return post;
 }
@@ -683,6 +688,7 @@ function createAutonomousPosts(state, config, model, campaign, product, link, sc
       createdBy,
       linkAttachment: attributedUrl,
       trackingCode: postId,
+      sourceContext: options.sourceContext || {},
       createdAt: nowIso(),
       updatedAt: nowIso()
     };
@@ -1196,7 +1202,7 @@ function runProfitEngine(state, config, options = {}) {
       link,
       scripts,
       options.autoApprove !== false,
-      { createdBy: options.createdBy }
+      { createdBy: options.createdBy, sourceContext: options.sourceContext }
     );
   const createdPosts = postPlan.created;
   const blockedScripts = postPlan.blocked;
