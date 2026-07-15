@@ -228,6 +228,7 @@ const requiredJs = [
   "fatigueSummary",
   "fatigue-detail",
   "approvalBlockReason",
+  '["scheduled", "container_created"].includes(post.status)',
   "terminalPostHint",
   "已完成模擬發佈",
   "data-blocked-reason",

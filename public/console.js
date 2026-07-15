@@ -2033,7 +2033,7 @@ function renderPosts(data) {
       : fatigueBlocked
         ? fatigue.lines[0] || "內容疲勞規則阻擋排程，請先改寫。"
         : "請先完成審核核准。";
-    const publishBlockReason = post.status === "scheduled" && !fatigueBlocked
+    const publishBlockReason = ["scheduled", "container_created"].includes(post.status) && !fatigueBlocked
       ? ""
       : fatigueBlocked
         ? fatigue.lines[0] || "內容疲勞規則阻擋發佈，請先改寫。"
