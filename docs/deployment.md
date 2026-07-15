@@ -70,9 +70,12 @@ OFFER_PAGE_CONTEXT_ENABLED=true
 OFFER_PAGE_TIMEOUT_MS=8000
 OFFER_PAGE_MAX_BYTES=524288
 OFFER_PAGE_MAX_CHARS=6000
+AI_WEB_RESEARCH_ENABLED=true
+AI_WEB_RESEARCH_TIMEOUT_MS=45000
+AI_WEB_RESEARCH_MAX_SOURCES=6
 ```
 
-When `OFFER_PAGE_CONTEXT_ENABLED=true`, AI draft generation follows the selected affiliate link to its public HTTPS landing page and extracts bounded product evidence before writing. Redirects are revalidated, private and local networks are blocked, and webpage text is treated as untrusted data rather than instructions. If the merchant blocks automated reading or returns a non-HTML response, generation continues with the verified campaign and product fields already stored in the database. `OPENAI_TIMEOUT_MS` bounds the complete AI request and returns a retryable gateway timeout instead of leaving the dashboard waiting indefinitely.
+When `OFFER_PAGE_CONTEXT_ENABLED=true`, AI draft generation follows the selected affiliate link to its public HTTPS landing page and extracts bounded product evidence before writing. Redirects are revalidated, private and local networks are blocked, and webpage text is treated as untrusted data rather than instructions. If the merchant blocks automated reading or returns a non-HTML response, `AI_WEB_RESEARCH_ENABLED=true` allows one OpenAI `web_search` fallback. Research is accepted only for an exact product match with source provenance; otherwise generation continues with the verified campaign and product fields already stored in the database. This fallback sends the public affiliate URL and offer fields to OpenAI and incurs an additional API request. `OPENAI_TIMEOUT_MS` bounds copy generation, while `AI_WEB_RESEARCH_TIMEOUT_MS` separately bounds research.
 
 For offline demos, set `AI_DRAFT_PROVIDER=template` and
 `PROFIT_SCRIPT_PROVIDER=template`.

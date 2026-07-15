@@ -383,12 +383,20 @@ async function loadOfferPageContext(targetUrl, options = {}) {
 }
 
 function publicContextSummary(context) {
+  const sources = Array.isArray(context?.sources) ? context.sources.slice(0, 6).map((source) => ({
+    title: String(source?.title || "").slice(0, 180),
+    url: String(source?.url || "").slice(0, 500),
+    domain: String(source?.domain || "").slice(0, 180)
+  })).filter((source) => source.url) : [];
   return {
     status: context?.status || "unavailable",
+    researchMode: String(context?.researchMode || ""),
     sourceDomain: String(context?.sourceDomain || ""),
     title: String(context?.title || ""),
     characterCount: Number(context?.characterCount || 0),
     fetchedAt: String(context?.fetchedAt || ""),
+    sourceCount: sources.length,
+    sources,
     error: String(context?.error || "").slice(0, 240)
   };
 }

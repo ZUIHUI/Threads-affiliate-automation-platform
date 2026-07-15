@@ -36,7 +36,8 @@ const {
 const { evaluateContentFatigue } = require("./src/contentFatigue");
 const { upsertRealOffer } = require("./src/offerManagement");
 const { importOffers } = require("./src/offerImport");
-const { publicContextSummary, resolveOfferPageContext } = require("./src/offerPageContext");
+const { publicContextSummary } = require("./src/offerPageContext");
+const { resolveOfferResearchContext } = require("./src/offerWebResearch");
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
@@ -507,7 +508,14 @@ async function buildProfitAiScripts(runOptions, requestOptions = {}) {
     };
   }
   const pageContext = shouldUseProfitAI(config, { disabled: requestOptions.ai === false })
-    ? await resolveOfferPageContext(preview.link?.targetUrl, config)
+    ? await resolveOfferResearchContext(preview.link?.targetUrl, {
+        campaignName: preview.campaign?.name,
+        productName: preview.product?.name,
+        offer: preview.product?.offer,
+        network: preview.product?.network,
+        merchant: preview.product?.merchant,
+        currency: preview.product?.currency
+      }, config)
     : { status: "ai_unavailable", contextText: "" };
   preview.pageContext = pageContext;
   try {

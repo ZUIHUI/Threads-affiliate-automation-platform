@@ -442,7 +442,8 @@ function postSourceBadge(post) {
   const context = post.sourceContext || {};
   if (context.status === "ready") {
     const detail = context.title || context.sourceDomain || "已讀取商品頁";
-    return `<span class="badge good" title="${escapeHtml(detail)}">商品頁依據</span>`;
+    const label = context.researchMode === "openai_web_search" ? "AI 查證資料" : "商品頁依據";
+    return `<span class="badge good" title="${escapeHtml(detail)}">${label}</span>`;
   }
   if (context.status === "unavailable") {
     const detail = context.error || "商品頁無法讀取，使用資料表優惠內容";
@@ -585,9 +586,12 @@ function renderContentWorkflow(data) {
     sourceDetail.textContent = "Render 尚未設定 OPENAI_API_KEY";
   } else if (sourceContext.status === "ready") {
     status = "completed";
-    statusLabel = "資料已讀取";
+    statusLabel = sourceContext.researchMode === "openai_web_search" ? "AI 已查證" : "資料已讀取";
     sourceTitle.textContent = sourceContext.title || product.name;
-    sourceDetail.textContent = `${sourceContext.sourceDomain || link?.network || "商品頁"} · ${Number(sourceContext.characterCount || 0)} 字元資料`;
+    const sourceCount = Number(sourceContext.sourceCount || 0);
+    sourceDetail.textContent = sourceContext.researchMode === "openai_web_search"
+      ? `${sourceCount} 個網路來源 · ${Number(sourceContext.characterCount || 0)} 字元證據`
+      : `${sourceContext.sourceDomain || link?.network || "商品頁"} · ${Number(sourceContext.characterCount || 0)} 字元資料`;
   } else if (sourceContext.status === "unavailable") {
     status = "warning";
     statusLabel = "使用備援";
@@ -2298,7 +2302,9 @@ async function runQueue() {
 function sourceContextMessage(context, completedMessage) {
   if (context?.status === "ready") {
     const source = context.title || context.sourceDomain || "聯盟商品頁";
-    return `${completedMessage}，AI 已讀取「${source}」`;
+    return context.researchMode === "openai_web_search"
+      ? `${completedMessage}，AI 已用 ${Number(context.sourceCount || 0)} 個來源查證「${source}」`
+      : `${completedMessage}，AI 已讀取「${source}」`;
   }
   if (context?.status === "unavailable") {
     return `${completedMessage}；商品頁無法讀取，已使用資料表中的優惠內容`;

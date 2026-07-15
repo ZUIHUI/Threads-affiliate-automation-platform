@@ -17,7 +17,8 @@ const {
 } = require("./postReview");
 const { evaluateContentFatigue } = require("./contentFatigue");
 const { assertMonetizablePost, isMonetizableLink } = require("./offerQuality");
-const { publicContextSummary, resolveOfferPageContext } = require("./offerPageContext");
+const { publicContextSummary } = require("./offerPageContext");
+const { resolveOfferResearchContext } = require("./offerWebResearch");
 
 function nowIso() {
   return new Date().toISOString();
@@ -868,7 +869,9 @@ function buildContentWorkflow(state, config, metrics, monetizableLinks) {
       detail: !hasOffers
         ? "尚未建立真實聯盟商品"
         : sourceContext.status === "ready"
-          ? `已讀取 ${sourceContext.title || sourceContext.sourceDomain || "商品頁"}`
+          ? sourceContext.researchMode === "openai_web_search"
+            ? `AI 已查證 ${sourceContext.title || sourceContext.sourceDomain || "商品資料"}`
+            : `已讀取 ${sourceContext.title || sourceContext.sourceDomain || "商品頁"}`
           : sourceContext.status === "unavailable"
             ? "商品頁無法讀取，使用已存優惠資料"
             : "真實商品連結已就緒"
@@ -1182,9 +1185,6 @@ function generateDrafts(state, input, config, options = {}) {
 async function generateDraftsAsync(state, input, config, options = {}) {
   const { campaign, product, link, topic } = resolveDraftContext(state, input, config);
   const useOpenAI = shouldUseOpenAI(config, input);
-  const pageContext = useOpenAI
-    ? await resolveOfferPageContext(link.targetUrl, config, { loader: options.offerPageLoader })
-    : { status: "ai_unavailable", contextText: "" };
   const offerContext = {
     campaignName: campaign.name,
     targetPersona: campaign.targetPersona,
@@ -1195,9 +1195,16 @@ async function generateDraftsAsync(state, input, config, options = {}) {
     commissionValue: product.commissionValue,
     currency: product.currency,
     disclosureText: config.defaultDisclosureText,
-    trackingUrl: trackingUrl(config, link.slug),
-    pageContext: pageContext.contextText
+    trackingUrl: trackingUrl(config, link.slug)
   };
+  const pageContext = useOpenAI
+    ? await resolveOfferResearchContext(link.targetUrl, offerContext, config, {
+        offerPageLoader: options.offerPageLoader,
+        offerPageLoaderOptions: options.offerPageLoaderOptions,
+        fetchImpl: options.researchFetchImpl
+      })
+    : { status: "ai_unavailable", contextText: "" };
+  offerContext.pageContext = pageContext.contextText;
   const drafts = useOpenAI
     ? await generateOpenAIDrafts({ topic, offerContext, config, fetchImpl: options.fetchImpl })
     : generatePromptDrafts({

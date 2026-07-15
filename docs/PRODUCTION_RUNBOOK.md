@@ -45,6 +45,9 @@ PROFIT_SCRIPT_PROVIDER=openai
 OPENAI_MODEL=gpt-5.2
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_TIMEOUT_MS=90000
+AI_WEB_RESEARCH_ENABLED=true
+AI_WEB_RESEARCH_TIMEOUT_MS=45000
+AI_WEB_RESEARCH_MAX_SOURCES=6
 
 CONVERSION_WEBHOOK_SECRET=<long-random-webhook-secret>
 
@@ -86,7 +89,9 @@ The same workflow is available through the authenticated endpoints:
 
 Send `{ "fileName": "offers.csv", "format": "csv", "content": "..." }`, or send structured JSON as `{ "offers": [...] }`. Required offer fields are `campaignName`, `targetPersona`, `productName`, `network`, and an HTTPS `targetUrl`; optional columns use the defaults shown in `public/affiliate-offer-template.csv`. Automated affiliate-network synchronization remains configured separately through `AFFILIATE_OFFER_FEED_URLS`.
 
-With `OFFER_PAGE_CONTEXT_ENABLED=true` (the default), manual AI draft generation and autonomous profit scripts read bounded product evidence from the selected affiliate landing page before writing. The server validates every HTTPS redirect and blocks local, private, metadata, oversized, unsupported, and non-text responses. Page content is marked as untrusted prompt data. A failed page read is reported to the dashboard but falls back to the verified offer fields, so reviewable draft generation can continue.
+With `OFFER_PAGE_CONTEXT_ENABLED=true` (the default), manual AI draft generation and autonomous profit scripts read bounded product evidence from the selected affiliate landing page before writing. The server validates every HTTPS redirect and blocks local, private, metadata, oversized, unsupported, and non-text responses. Page content is marked as untrusted prompt data.
+
+When `AI_WEB_RESEARCH_ENABLED=true`, an unreadable dynamic merchant page triggers a second research layer through the OpenAI Responses API `web_search` tool. The model must verify an exact product match, return at least two facts, and expose at least one HTTPS source before the evidence can be used for copy. Otherwise the system reports the failure and uses only verified database fields. Enabling this sends the public affiliate URL and offer fields to OpenAI and adds one paid API request when direct page extraction fails.
 
 Notes:
 
@@ -96,6 +101,7 @@ Notes:
 - `ENABLE_WORKER=true` and `AUTONOMY_MODE=true` should be enabled only after dry-run verification is complete.
 - `AUTOMATION_INTERVAL_MS` controls how often the worker checks for an executable mission. `AUTONOMY_INTERVAL_MS` remains the slower research/AI cadence, so a one-minute heartbeat does not imply a one-minute OpenAI request.
 - `WORKER_LEASE_MS` prevents overlapping workers from executing the same mission during deploys or horizontal scaling.
+- `AI_WEB_RESEARCH_TIMEOUT_MS` bounds the fallback research request; `AI_WEB_RESEARCH_MAX_SOURCES` limits stored source provenance.
 - `CONTENT_FATIGUE_*` controls product, hook, CTA, model, similarity, and commercial-ratio guardrails. Keep conservative defaults until review queue quality is proven.
 
 ## 3. Initial Safe Deployment

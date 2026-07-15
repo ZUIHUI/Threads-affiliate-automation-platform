@@ -78,6 +78,12 @@ services:
         value: https://api.openai.com/v1
       - key: OPENAI_TIMEOUT_MS
         value: "90000"
+      - key: AI_WEB_RESEARCH_ENABLED
+        value: "true"
+      - key: AI_WEB_RESEARCH_TIMEOUT_MS
+        value: "45000"
+      - key: AI_WEB_RESEARCH_MAX_SOURCES
+        value: "6"
       - key: DEFAULT_DISCLOSURE_TEXT
         value: 含聯盟連結
       - key: DEFAULT_UTM_SOURCE
