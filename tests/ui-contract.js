@@ -258,7 +258,7 @@ const requiredJs = [
   "submitOffer",
   "formatRevenueTotals",
   "尚未建立真實聯盟追蹤連結",
-  "已產生 5 則待審核草稿"
+  "已產生 A／B／C 三版待審核草稿"
 ];
 
 for (const marker of requiredJs) {

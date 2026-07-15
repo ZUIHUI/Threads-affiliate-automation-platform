@@ -205,8 +205,8 @@ async function main() {
   assert.equal(liveReadiness.liveGate.allowed, true);
   assert.equal(liveReadiness.summary.liveModeAllowed, true);
   const generated = store.update((state) => generateDrafts(state, { topic: "AI 自動化聯盟行銷", autoApprove: true }, config));
-  assert.equal(generated.created.length, 5);
-  assert.equal(generated.created[0].contentType, "教學型");
+  assert.equal(generated.created.length, 3);
+  assert.equal(generated.created[0].contentType, "版本 A：日常自然版");
   assert.equal(generated.created[0].status, "needs_review");
   assert.equal(generated.created[0].approved, false);
   assert.equal(generated.created[0].review.status, "needs_review");
@@ -485,8 +485,8 @@ async function main() {
   assert.equal(aiProfitResult.scripts[0].hook, "AI profit hook 1");
   assert.equal(aiProfitResult.profitEngine.generatedScripts[0].source, "openai");
 
-  const postCountBeforeBlocked = signalStore.read().posts.length;
-  const blockedResult = signalStore.update((state) => runProfitEngine(state, aiProfitConfig, {
+  const postCountBeforeSanitized = signalStore.read().posts.length;
+  const sanitizedResult = signalStore.update((state) => runProfitEngine(state, aiProfitConfig, {
     source: "test",
     force: true,
     createPosts: true,
@@ -500,21 +500,27 @@ async function main() {
     }],
     aiScriptSource: "openai"
   }));
-  assert.equal(blockedResult.createdPosts.length, 0);
-  assert.equal(blockedResult.run.blockedScriptCount, 1);
-  assert.equal(blockedResult.blockedScripts[0].reason.includes("unique links"), true);
-  assert.equal(signalStore.read().posts.length, postCountBeforeBlocked);
+  assert.equal(sanitizedResult.createdPosts.length, 1);
+  assert.equal(sanitizedResult.run.blockedScriptCount, 0);
+  assert.doesNotMatch(sanitizedResult.createdPosts[0].text, /a[1-6]\.test|含有?聯盟連結/);
+  assert.equal((sanitizedResult.createdPosts[0].text.match(/https:\/\//g) || []).length, 1);
+  assert.equal(signalStore.read().posts.length, postCountBeforeSanitized + 1);
 
   const normalized = normalizeDrafts({
-    drafts: Array.from({ length: 5 }, (_, index) => ({
+    drafts: Array.from({ length: 3 }, (_, index) => ({
       hook: `hook ${index + 1}`,
       post: `post ${index + 1}?`,
       cta: `cta ${index + 1}`,
       risk_note: "low"
     }))
   });
-  assert.equal(normalized.length, 5);
-  assert.equal(normalized[4].ratio, "conversion");
+  assert.equal(normalized.length, 3);
+  assert.equal(normalized.every((draft) => draft.ratio === "conversion"), true);
+  assert.deepEqual(normalized.map((draft) => draft.type), [
+    "版本 A：日常自然版",
+    "版本 B：活潑有梗版",
+    "版本 C：互動討論版"
+  ]);
 
   const openAiDrafts = await generateOpenAIDrafts({
     topic: "AI 自動化聯盟行銷",
@@ -533,7 +539,7 @@ async function main() {
         async json() {
           return {
             output_text: JSON.stringify({
-              drafts: Array.from({ length: 5 }, (_, index) => ({
+              drafts: Array.from({ length: 3 }, (_, index) => ({
                 hook: `AI hook ${index + 1}`,
                 post: `AI post ${index + 1}?`,
                 cta: `AI cta ${index + 1}`,
@@ -545,7 +551,7 @@ async function main() {
       };
     }
   });
-  assert.equal(openAiDrafts.length, 5);
+  assert.equal(openAiDrafts.length, 3);
   assert.equal(openAiDrafts[0].hook, "AI hook 1");
 
   const openAiStore = createStore(path.join(tempDir, "openai-store.json"));
@@ -565,7 +571,7 @@ async function main() {
       async json() {
         return {
           output_text: JSON.stringify({
-            drafts: Array.from({ length: 5 }, (_, index) => ({
+            drafts: Array.from({ length: 3 }, (_, index) => ({
               hook: `Async hook ${index + 1}`,
               post: `Async post ${index + 1}?`,
               cta: `Async cta ${index + 1}`,
@@ -576,7 +582,7 @@ async function main() {
       }
     })
   });
-  assert.equal(asyncGenerated.created.length, 5);
+  assert.equal(asyncGenerated.created.length, 3);
   assert.equal(asyncGenerated.created[0].hook, "Async hook 1");
   assert.equal(asyncGenerated.created[0].status, "needs_review");
   assert.equal(asyncGenerated.created[0].approved, false);

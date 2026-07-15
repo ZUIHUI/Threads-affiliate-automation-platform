@@ -35,6 +35,24 @@ const validation = validatePost({
 assert.equal(validation.valid, true);
 assert.equal(validation.warnings.some((warning) => /disclosure/i.test(warning)), false);
 
+const aiStyleValidation = validatePost({
+  text: "在這個快速變化的時代，讓我們一起看看這項商品？",
+  linkAttachment: "",
+  funnelRatio: "trust",
+  topicTag: ""
+}, config);
+assert.equal(aiStyleValidation.valid, false);
+assert.match(aiStyleValidation.errors.join(" "), /AI-style template language/);
+
+const emojiValidation = validatePost({
+  text: "四個表情會太多了 😀 😄 😎 🤩？",
+  linkAttachment: "",
+  funnelRatio: "trust",
+  topicTag: ""
+}, config);
+assert.equal(emojiValidation.valid, false);
+assert.match(emojiValidation.errors.join(" "), /4 emoji/);
+
 const editorial = editorialPostText({
   post: `不導購的選購提醒。\n\n${wrongUrl}\n\n含聯盟連結：先確認尺寸。`
 }, config);

@@ -47,7 +47,7 @@ async function main() {
   assert.equal(await page.locator("#postRows tr").count() > 0, true);
 
   await page.click("#generateBtn");
-  await page.waitForSelector("text=已產生 5 則草稿");
+  await page.waitForSelector("text=已產生 A／B／C 三版草稿");
   const rowsAfterGenerate = await page.locator("#postRows tr").count();
   assert.equal(rowsAfterGenerate >= 5, true);
 

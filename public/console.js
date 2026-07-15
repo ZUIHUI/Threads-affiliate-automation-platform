@@ -2332,7 +2332,7 @@ async function generateDrafts() {
     }
   });
   await refresh();
-  showToast(sourceContextMessage(result.sourceContext, "已產生 5 則待審核草稿"));
+  showToast(sourceContextMessage(result.sourceContext, "已產生 A／B／C 三版待審核草稿"));
 }
 
 async function runProfitEngine() {

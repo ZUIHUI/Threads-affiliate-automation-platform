@@ -144,7 +144,7 @@ async function main() {
         async json() {
           return {
             output_text: JSON.stringify({
-              drafts: Array.from({ length: 5 }, (_, index) => ({
+              drafts: Array.from({ length: 3 }, (_, index) => ({
                 hook: `Verified offer hook ${index + 1}`,
                 post: `含聯盟連結：Automation toolkit for creators ${created.trackingUrl}\n\n你會先測哪一步？`,
                 cta: "查看已驗證優惠",
@@ -156,7 +156,7 @@ async function main() {
       };
     }
   });
-  assert.equal(generated.created.length, 5);
+  assert.equal(generated.created.length, 3);
   assert.equal(generated.sourceContext.status, "ready");
   assert.equal(generated.sourceContext.title, "Creator Automation Suite");
   assert.match(capturedOfferPrompt, /Automation toolkit/);
@@ -166,11 +166,17 @@ async function main() {
   assert.match(capturedOfferPrompt, /Taiwanese creators building a side income/);
   assert.doesNotMatch(capturedOfferPrompt, /threads-affiliate-automation-platform\.onrender\.com\/r\/automation-toolkit/);
   assert.doesNotMatch(capturedOfferPrompt, /hop\.clickbank\.net|affiliate=publisher/);
-  const generatedConversionPost = generated.created[4];
+  const generatedConversionPost = generated.created[0];
   assert.equal(generatedConversionPost.linkAttachment, created.link.targetUrl);
   assert.match(generatedConversionPost.text, /#廣告/);
   assert.doesNotMatch(generatedConversionPost.text, /含有?聯盟連結|\/r\/automation-toolkit/);
   assert.equal((generatedConversionPost.text.match(/https:\/\/hop\.clickbank\.net\/\?affiliate=publisher&vendor=toolkit/g) || []).length, 1);
+  assert.equal(generated.created.every((post) => post.linkAttachment === created.link.targetUrl), true);
+  assert.deepEqual(generated.created.map((post) => post.contentType), [
+    "版本 A：日常自然版",
+    "版本 B：活潑有梗版",
+    "版本 C：互動討論版"
+  ]);
 
   const autonomousState = defaultState();
   upsertRealOffer(autonomousState, {

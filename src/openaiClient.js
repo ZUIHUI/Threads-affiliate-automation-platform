@@ -6,8 +6,8 @@ const DRAFT_SCHEMA = {
   properties: {
     drafts: {
       type: "array",
-      minItems: 5,
-      maxItems: 5,
+      minItems: 3,
+      maxItems: 3,
       items: {
         type: "object",
         additionalProperties: false,
@@ -46,9 +46,17 @@ function normalizeDrafts(value) {
   if (!parsed || !Array.isArray(parsed.drafts)) {
     throw new Error("OpenAI response did not contain a drafts array.");
   }
-  return parsed.drafts.slice(0, 5).map((draft, index) => ({
-    type: draft.type || `AI 草稿 ${index + 1}`,
-    ratio: draft.ratio || (index === 4 ? "conversion" : "trust"),
+  if (parsed.drafts.length !== 3) {
+    throw new Error("OpenAI response must contain exactly three Threads draft versions.");
+  }
+  const versionTypes = [
+    "版本 A：日常自然版",
+    "版本 B：活潑有梗版",
+    "版本 C：互動討論版"
+  ];
+  return parsed.drafts.slice(0, 3).map((draft, index) => ({
+    type: versionTypes[index],
+    ratio: "conversion",
     hook: String(draft.hook || "").trim(),
     post: String(draft.post || "").trim(),
     cta: String(draft.cta || "").trim(),

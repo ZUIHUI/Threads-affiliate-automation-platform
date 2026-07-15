@@ -1170,7 +1170,9 @@ function generateDrafts(state, input, config, options = {}) {
   const { campaign, product, link, topic } = resolveDraftContext(state, input, config);
   const drafts = generatePromptDrafts({
     topic,
-    productName: product.name
+    productName: product.name,
+    offer: product.offer,
+    targetPersona: campaign.targetPersona
   });
   return createDraftPosts(state, input, config, drafts, campaign, product, link, topic, {
     ...options,
@@ -1203,7 +1205,9 @@ async function generateDraftsAsync(state, input, config, options = {}) {
     ? await generateOpenAIDrafts({ topic, offerContext, config, fetchImpl: options.fetchImpl })
       : generatePromptDrafts({
         topic,
-        productName: product.name
+        productName: product.name,
+        offer: product.offer,
+        targetPersona: campaign.targetPersona
       });
   const sourceContext = publicContextSummary(pageContext);
   return {

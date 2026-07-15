@@ -22,6 +22,15 @@ const TESTIMONIAL_PATTERNS = [
   /真實案例.*賺/i,
   /見證/i
 ];
+const THREADS_AI_STYLE_PATTERNS = [
+  /在這個快速變化的時代/u,
+  /你是否曾經想過/u,
+  /不僅[\s\S]{0,40}更/u,
+  /無論[\s\S]{0,40}還是/u,
+  /讓我們一起/u,
+  /趕快把握機會/u,
+  /千萬不要錯過/u
+];
 
 function extractUniqueUrls(text) {
   const matches = String(text || "").match(URL_PATTERN) || [];
@@ -46,6 +55,7 @@ function validatePost(post, config) {
   const byteLength = Buffer.byteLength(text, "utf8");
   const threadsUnits = countThreadsUnits(text);
   const uniqueUrls = extractUniqueUrls(text);
+  const emojiCount = Array.from(text).filter((char) => /\p{Extended_Pictographic}/u.test(char)).length;
   if (post.linkAttachment && !uniqueUrls.includes(post.linkAttachment)) {
     uniqueUrls.push(post.linkAttachment);
   }
@@ -59,6 +69,10 @@ function validatePost(post, config) {
   }
   if (uniqueUrls.length > settings.maxLinksPerPost) {
     errors.push(`Post has ${uniqueUrls.length} unique links; Threads currently allows ${settings.maxLinksPerPost} or fewer.`);
+  }
+  if (emojiCount > 3) errors.push(`Post has ${emojiCount} emoji; use 3 or fewer.`);
+  if (THREADS_AI_STYLE_PATTERNS.some((pattern) => pattern.test(text))) {
+    errors.push("Post contains disallowed AI-style template language.");
   }
   const hasCommercialLink = uniqueUrls.length > 0 || Boolean(post.linkAttachment) || post.funnelRatio === "conversion";
   if (hasCommercialLink && !hasCommercialDisclosure(text, config)) {
@@ -74,6 +88,7 @@ function validatePost(post, config) {
     risk,
     byteLength,
     threadsUnits,
+    emojiCount,
     uniqueLinkCount: uniqueUrls.length,
     uniqueUrls
   };

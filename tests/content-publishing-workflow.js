@@ -63,7 +63,7 @@ async function main() {
         async json() {
           return {
             output_text: JSON.stringify({
-              drafts: Array.from({ length: 5 }, (_, index) => ({
+              drafts: Array.from({ length: 3 }, (_, index) => ({
                 hook: `選擇自動化工具前先確認第 ${index + 1} 個條件`,
                 post: `選擇自動化工具時，先確認流程是否保留人工審核。這是第 ${index + 1} 個檢查角度。`,
                 cta: "你最想先改善哪個重複步驟？",
@@ -76,16 +76,25 @@ async function main() {
     }
   });
 
-  assert.equal(generated.created.length, 5);
+  assert.equal(generated.created.length, 3);
   assert.equal(generated.sourceContext.status, "ready");
   assert.match(capturedPrompt, /Creator Automation Suite/);
   assert.match(capturedPrompt, /UNTRUSTED_WEBPAGE_DATA/);
   assert.doesNotMatch(capturedPrompt, /publisher=secret|affiliate\.vendor-shop\.com/);
-  assert.equal(generated.created.slice(0, 4).every((post) => post.linkAttachment === ""), true);
-  assert.equal(generated.created.slice(0, 4).every((post) => post.commercialIntensity === "soft"), true);
-  assert.equal(generated.created.slice(0, 4).every((post) => post.sourceContext.status === "ready"), true);
+  assert.deepEqual(generated.created.map((post) => post.contentType), [
+    "版本 A：日常自然版",
+    "版本 B：活潑有梗版",
+    "版本 C：互動討論版"
+  ]);
+  assert.equal(generated.created.every((post) => post.linkAttachment === "https://affiliate.vendor-shop.com/click?publisher=secret"), true);
+  assert.equal(generated.created.every((post) => post.commercialIntensity === "strong"), true);
+  assert.equal(generated.created.every((post) => post.sourceContext.status === "ready"), true);
   assert.equal(generated.created.every((post) => post.topicTag === ""), true);
-  const conversionPost = generated.created[4];
+  assert.match(capturedPrompt, /版本 A：日常自然版/);
+  assert.match(capturedPrompt, /版本 B：活潑有梗版/);
+  assert.match(capturedPrompt, /版本 C：互動討論版/);
+  assert.match(capturedPrompt, /在這個快速變化的時代/);
+  const conversionPost = generated.created[0];
   assert.doesNotMatch(conversionPost.text, /含有?聯盟連結/);
   assert.match(conversionPost.text, /#廣告/);
   assert.equal(conversionPost.linkAttachment, "https://affiliate.vendor-shop.com/click?publisher=secret");
@@ -114,11 +123,12 @@ async function main() {
       caveats: ["續航時間依使用方式而異"]
     })
   });
-  assert.match(productPrompt, /實際目標受眾：租屋族與需要夜間柔和照明的人/);
+  assert.match(productPrompt, /【目標讀者】租屋族與需要夜間柔和照明的人/);
   assert.match(productPrompt, /不要把商品硬套進 AI、自動化、副業、創作者或賺錢情境/);
-  assert.match(productPrompt, /第 1 到第 4 則是非導購內容/);
-  assert.match(productPrompt, /第 5 則可以溫和推薦/);
-  assert.match(productPrompt, /限制與取捨/);
+  assert.match(productPrompt, /三個可獨立發布、角度明顯不同/);
+  assert.match(productPrompt, /每版正文控制在 100 到 250/);
+  assert.match(productPrompt, /每版最多 1 到 3 個 emoji/);
+  assert.match(productPrompt, /不能只是替換同義詞/);
   assert.doesNotMatch(productPrompt, /threads-affiliate\.example\/r\/sensor-light/);
   assert.doesNotMatch(productPrompt, /預設受眾：想了解 AI、自動化與聯盟行銷的初學者/);
 
