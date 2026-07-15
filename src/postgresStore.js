@@ -4,7 +4,8 @@ const fs = require("node:fs");
 const { clone, defaultState } = require("./store");
 
 const STATE_KEY = "json_store_state";
-const STARTUP_MIGRATION_LOCK_ID = 1_784_082_944;
+// Rotated after a canceled deploy left the previous session lock occupied.
+const STARTUP_MIGRATION_LOCK_ID = 1_784_082_945;
 const TRANSIENT_MIGRATION_CODES = new Set(["40P01", "55P03", "40001"]);
 
 function loadPg() {
