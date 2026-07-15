@@ -1,6 +1,6 @@
 const URL_PATTERN = /https?:\/\/[^\s<>"')]+/gi;
 
-const MAIN_HISTORY_STATUSES = new Set(["scheduled", "container_created", "published", "simulated"]);
+const MAIN_HISTORY_STATUSES = new Set(["scheduled", "container_created", "published"]);
 const DEDUPE_HISTORY_STATUSES = new Set(["needs_review", "approved", "scheduled", "container_created", "published", "simulated", "draft"]);
 const EXCLUDED_HISTORY_STATUSES = new Set(["rejected", "failed", "blocked_credentials"]);
 const REVIEW_STAGE_STATUSES = new Set(["generated", "needs_review", "draft"]);

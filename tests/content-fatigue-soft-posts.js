@@ -55,4 +55,24 @@ assert.equal(
   "warning"
 );
 
+const simulatedHistory = history.map((post) => ({
+  ...post,
+  status: "simulated"
+}));
+const firstLiveConversionAfterDryRun = evaluateContentFatigue({
+  ...shared,
+  id: "post_first_live_conversion",
+  funnelRatio: "conversion",
+  hook: "A new live conversion hook after dry-run",
+  cta: "https://example.com/r/sensor-light-live",
+  text: "Affiliate disclosure: first live conversion after testing https://example.com/r/sensor-light-live",
+  linkAttachment: "https://example.com/r/sensor-light-live"
+}, simulatedHistory, { now });
+
+assert.equal(firstLiveConversionAfterDryRun.status, "clear");
+assert.equal(
+  firstLiveConversionAfterDryRun.reasons.some((reason) => reason.id === "same_product_frequency"),
+  false
+);
+
 console.log("Soft same-product fatigue rules passed.");

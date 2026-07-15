@@ -103,6 +103,7 @@ Notes:
 - `WORKER_LEASE_MS` prevents overlapping workers from executing the same mission during deploys or horizontal scaling.
 - `AI_WEB_RESEARCH_TIMEOUT_MS` bounds the fallback research request; `AI_WEB_RESEARCH_MAX_SOURCES` limits stored source provenance.
 - `CONTENT_FATIGUE_*` controls product, hook, CTA, model, similarity, and commercial-ratio guardrails. Keep conservative defaults until review queue quality is proven.
+- Dry-run `simulated` posts remain in duplicate-copy checks but do not consume real product-frequency or commercial-exposure limits.
 
 ## 3. Initial Safe Deployment
 
