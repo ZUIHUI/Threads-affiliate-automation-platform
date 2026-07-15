@@ -555,7 +555,8 @@ async function main() {
     AI_DRAFT_PROVIDER: "openai",
     OPENAI_API_KEY: "test-key",
     OPENAI_BASE_URL: "https://api.openai.test/v1",
-    OPENAI_MODEL: "gpt-5.2"
+    OPENAI_MODEL: "gpt-5.2",
+    OFFER_PAGE_CONTEXT_ENABLED: "false"
   });
   const openAiState = openAiStore.read();
   const asyncGenerated = await generateDraftsAsync(openAiState, { topic: "AI 自動化聯盟行銷" }, openAiConfig, {

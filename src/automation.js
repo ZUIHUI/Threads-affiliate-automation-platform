@@ -17,6 +17,7 @@ const {
 } = require("./postReview");
 const { evaluateContentFatigue } = require("./contentFatigue");
 const { assertMonetizablePost, isMonetizableLink } = require("./offerQuality");
+const { publicContextSummary, resolveOfferPageContext } = require("./offerPageContext");
 
 function nowIso() {
   return new Date().toISOString();
@@ -1093,6 +1094,10 @@ function generateDrafts(state, input, config, options = {}) {
 
 async function generateDraftsAsync(state, input, config, options = {}) {
   const { campaign, product, link, topic } = resolveDraftContext(state, input, config);
+  const useOpenAI = shouldUseOpenAI(config, input);
+  const pageContext = useOpenAI
+    ? await resolveOfferPageContext(link.targetUrl, config, { loader: options.offerPageLoader })
+    : { status: "ai_unavailable", contextText: "" };
   const offerContext = {
     campaignName: campaign.name,
     targetPersona: campaign.targetPersona,
@@ -1103,9 +1108,10 @@ async function generateDraftsAsync(state, input, config, options = {}) {
     commissionValue: product.commissionValue,
     currency: product.currency,
     disclosureText: config.defaultDisclosureText,
-    trackingUrl: trackingUrl(config, link.slug)
+    trackingUrl: trackingUrl(config, link.slug),
+    pageContext: pageContext.contextText
   };
-  const drafts = shouldUseOpenAI(config, input)
+  const drafts = useOpenAI
     ? await generateOpenAIDrafts({ topic, offerContext, config, fetchImpl: options.fetchImpl })
     : generatePromptDrafts({
         topic,
@@ -1113,7 +1119,10 @@ async function generateDraftsAsync(state, input, config, options = {}) {
         trackingLink: trackingUrl(config, link.slug),
         disclosureText: config.defaultDisclosureText
       });
-  return createDraftPosts(state, input, config, drafts, campaign, product, link, topic, options);
+  return {
+    ...createDraftPosts(state, input, config, drafts, campaign, product, link, topic, options),
+    sourceContext: publicContextSummary(pageContext)
+  };
 }
 
 function createPost(state, input, config, options = {}) {

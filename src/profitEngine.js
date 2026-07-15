@@ -1229,6 +1229,7 @@ function runProfitEngine(state, config, options = {}) {
     updatedProductIds: offerSync.updatedProductIds,
     scriptSource,
     aiScriptError: options.aiScriptError || "",
+    sourceContext: options.sourceContext || {},
     blockedScriptCount: blockedScripts.length,
     blockedScripts,
     sourceStatuses: engine.sourceStatuses,

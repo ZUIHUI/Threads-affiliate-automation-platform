@@ -21,7 +21,7 @@ const { validatePost } = require("./src/validators");
 const { getPublishingLimit } = require("./src/threadsClient");
 const { buildProfitRunPreview, runProfitEngine } = require("./src/profitEngine");
 const { collectAdIntelligence } = require("./src/adIntelligenceClient");
-const { generateProfitScripts } = require("./src/profitScriptGenerator");
+const { generateProfitScripts, shouldUseProfitAI } = require("./src/profitScriptGenerator");
 const { buildAutonomyReadiness, buildLivePublishingGate } = require("./src/readiness");
 const {
   STATUS,
@@ -36,6 +36,7 @@ const {
 const { evaluateContentFatigue } = require("./src/contentFatigue");
 const { upsertRealOffer } = require("./src/offerManagement");
 const { importOffers } = require("./src/offerImport");
+const { publicContextSummary, resolveOfferPageContext } = require("./src/offerPageContext");
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
@@ -497,8 +498,18 @@ async function buildProfitAiScripts(runOptions, requestOptions = {}) {
   const state = await readState();
   const preview = buildProfitRunPreview(state, config, runOptions);
   if (preview.skipped || requestOptions.ai === false) {
-    return { preview, scripts: [], source: "template", error: "" };
+    return {
+      preview,
+      scripts: [],
+      source: "template",
+      error: "",
+      sourceContext: publicContextSummary({ status: requestOptions.ai === false ? "ai_disabled" : "unavailable" })
+    };
   }
+  const pageContext = shouldUseProfitAI(config, { disabled: requestOptions.ai === false })
+    ? await resolveOfferPageContext(preview.link?.targetUrl, config)
+    : { status: "ai_unavailable", contextText: "" };
+  preview.pageContext = pageContext;
   try {
     const generated = await generateProfitScripts({
       preview,
@@ -509,14 +520,16 @@ async function buildProfitAiScripts(runOptions, requestOptions = {}) {
       preview,
       scripts: generated.scripts,
       source: generated.source,
-      error: ""
+      error: "",
+      sourceContext: publicContextSummary(pageContext)
     };
   } catch (error) {
     return {
       preview,
       scripts: [],
       source: "template",
-      error: error.message || "AI script generation failed."
+      error: error.message || "AI script generation failed.",
+      sourceContext: publicContextSummary(pageContext)
     };
   }
 }
@@ -541,9 +554,14 @@ async function runProfitEngineRequest(body = {}, principal = {}) {
     intelligence,
     aiScripts: aiDraft.scripts,
     aiScriptSource: aiDraft.source,
-    aiScriptError: aiDraft.error
+    aiScriptError: aiDraft.error,
+    sourceContext: aiDraft.sourceContext
   }));
-  return { result, dashboard: buildDashboard(await readState(), config) };
+  return {
+    result,
+    dashboard: buildDashboard(await readState(), config),
+    sourceContext: aiDraft.sourceContext
+  };
 }
 
 async function runAutonomyCycle(options = {}) {
@@ -677,7 +695,8 @@ async function runAutonomyCycle(options = {}) {
       intelligence,
       aiScripts: aiDraft.scripts,
       aiScriptSource: aiDraft.source,
-      aiScriptError: aiDraft.error
+      aiScriptError: aiDraft.error,
+      sourceContext: aiDraft.sourceContext
     }));
   }
 
@@ -700,6 +719,7 @@ async function runAutonomyCycle(options = {}) {
     ingestedSignalCount: intelligence?.items?.length || 0,
     aiScriptSource: aiDraft.source || "template",
     aiScriptError: aiDraft.error || "",
+    sourceContext: aiDraft.sourceContext,
     createdPostCount: profitResult?.createdPosts?.length || 0,
     blockedScriptCount: profitResult?.blockedScripts?.length || 0,
     queueStatus: automationResult?.run?.status || "skipped",
@@ -735,6 +755,7 @@ async function runAutonomyCycle(options = {}) {
     policy,
     result: profitResult,
     automation: automationResult,
+    sourceContext: aiDraft.sourceContext,
     dashboard: buildDashboard(await readState(), config)
   };
 }

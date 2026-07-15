@@ -102,7 +102,7 @@ const requiredHtml = [
   "合規 / 風險審核",
   "聯盟收益管道",
   '<link rel="stylesheet" href="/styles.css?v=20260714-offer-import" />',
-  '<script src="/console.js?v=20260714-offer-import"></script>'
+  '<script src="/console.js?v=20260715-page-context"></script>'
 ];
 
 for (const marker of requiredHtml) {
@@ -232,6 +232,7 @@ const requiredJs = [
   "WORKSPACE_MODE_KEY",
   "setupNavigation",
   "runButtonAction",
+  "sourceContextMessage",
   "/api/offers",
   "/api/offers/import/preview",
   "/api/offers/import",

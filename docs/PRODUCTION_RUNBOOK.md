@@ -83,6 +83,8 @@ The same workflow is available through the authenticated endpoints:
 
 Send `{ "fileName": "offers.csv", "format": "csv", "content": "..." }`, or send structured JSON as `{ "offers": [...] }`. Required offer fields are `campaignName`, `targetPersona`, `productName`, `network`, and an HTTPS `targetUrl`; optional columns use the defaults shown in `public/affiliate-offer-template.csv`. Automated affiliate-network synchronization remains configured separately through `AFFILIATE_OFFER_FEED_URLS`.
 
+With `OFFER_PAGE_CONTEXT_ENABLED=true` (the default), manual AI draft generation and autonomous profit scripts read bounded product evidence from the selected affiliate landing page before writing. The server validates every HTTPS redirect and blocks local, private, metadata, oversized, unsupported, and non-text responses. Page content is marked as untrusted prompt data. A failed page read is reported to the dashboard but falls back to the verified offer fields, so reviewable draft generation can continue.
+
 Notes:
 
 - `ADMIN_TOKEN` or `ADMIN_PASSWORD` is required before exposing the dashboard.

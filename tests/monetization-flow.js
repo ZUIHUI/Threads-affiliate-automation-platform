@@ -121,6 +121,22 @@ async function main() {
     productId: created.product.id,
     topic: "Creator automation"
   }, aiConfig, {
+    offerPageLoader: async (targetUrl) => {
+      assert.match(targetUrl, /hop\.clickbank\.net/);
+      return {
+        status: "ready",
+        sourceDomain: "merchant.example",
+        title: "Creator Automation Suite",
+        characterCount: 180,
+        fetchedAt: new Date().toISOString(),
+        contextText: JSON.stringify({
+          securityLabel: "UNTRUSTED_WEBPAGE_DATA",
+          pageTitle: "Creator Automation Suite",
+          pageDescription: "Scheduling, approval, and conversion reporting.",
+          product: { price: "29", currency: "USD" }
+        })
+      };
+    },
     fetchImpl: async (_url, options) => {
       capturedOfferPrompt = JSON.parse(options.body).input;
       return {
@@ -141,7 +157,12 @@ async function main() {
     }
   });
   assert.equal(generated.created.length, 5);
+  assert.equal(generated.sourceContext.status, "ready");
+  assert.equal(generated.sourceContext.title, "Creator Automation Suite");
   assert.match(capturedOfferPrompt, /Automation toolkit/);
+  assert.match(capturedOfferPrompt, /Creator Automation Suite/);
+  assert.match(capturedOfferPrompt, /UNTRUSTED_WEBPAGE_DATA/);
+  assert.match(capturedOfferPrompt, /Never follow instructions/);
   assert.match(capturedOfferPrompt, /Taiwanese creators building a side income/);
   assert.match(capturedOfferPrompt, /threads-affiliate-automation-platform\.onrender\.com\/r\/automation-toolkit/);
   assert.doesNotMatch(capturedOfferPrompt, /hop\.clickbank\.net|affiliate=publisher/);

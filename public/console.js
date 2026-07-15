@@ -2192,9 +2192,23 @@ async function runQueue() {
   showToast(`發佈佇列完成：${reviewStatusLabel(result.run.status)}`);
 }
 
+function sourceContextMessage(context, completedMessage) {
+  if (context?.status === "ready") {
+    const source = context.title || context.sourceDomain || "聯盟商品頁";
+    return `${completedMessage}，AI 已讀取「${source}」`;
+  }
+  if (context?.status === "unavailable") {
+    return `${completedMessage}；商品頁無法讀取，已使用資料表中的優惠內容`;
+  }
+  if (["ai_unavailable", "ai_disabled"].includes(context?.status)) {
+    return `${completedMessage}；目前使用文案範本，設定 OpenAI 後才會讀取商品頁`;
+  }
+  return completedMessage;
+}
+
 async function generateDrafts() {
   const topic = $("#topicInput").value.trim() || "AI 自動化聯盟行銷";
-  await api("/api/automation/generate", {
+  const result = await api("/api/automation/generate", {
     method: "POST",
     body: {
       topic,
@@ -2204,7 +2218,7 @@ async function generateDrafts() {
     }
   });
   await refresh();
-  showToast("已產生 5 則待審核草稿");
+  showToast(sourceContextMessage(result.sourceContext, "已產生 5 則待審核草稿"));
 }
 
 async function runProfitEngine() {
@@ -2219,7 +2233,7 @@ async function runProfitEngine() {
   });
   render(result.dashboard);
   const created = result.result.createdPosts?.length || 0;
-  showToast(`自主獲利引擎完成，建立 ${created} 則待審核文案`);
+  showToast(sourceContextMessage(result.sourceContext, `自主獲利引擎完成，建立 ${created} 則待審核文案`));
 }
 
 async function runAutonomyCycle() {
@@ -2235,7 +2249,7 @@ async function runAutonomyCycle() {
   });
   render(result.dashboard);
   const cycle = result.cycle || {};
-  showToast(`自主循環完成：${Number(cycle.createdPostCount || 0)} 則文案，處理 ${Number(cycle.processed || 0)} 則佇列`);
+  showToast(sourceContextMessage(result.sourceContext, `自主循環完成：${Number(cycle.createdPostCount || 0)} 則文案，處理 ${Number(cycle.processed || 0)} 則佇列`));
 }
 
 async function handlePostAction(event) {
