@@ -1990,7 +1990,11 @@ function linkById(data, id) {
 }
 
 function renderPosts(data) {
-  const rows = data.posts.slice(0, 8).map((post) => {
+  const rows = data.posts
+    .slice()
+    .sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0))
+    .slice(0, 8)
+    .map((post) => {
     const link = linkById(data, post.affiliateLinkId);
     const reviewStatus = reviewStatusOf(post);
     const validation = post.validation || post.validationResult || {};
@@ -2056,7 +2060,7 @@ function renderPosts(data) {
         </td>
       </tr>
     `;
-  }).join("");
+    }).join("");
   $("#postRows").innerHTML = rows || `<tr><td colspan="6"><div class="empty-state">目前沒有貼文</div></td></tr>`;
 }
 
