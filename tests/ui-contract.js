@@ -110,8 +110,8 @@ const requiredHtml = [
   "內容工廠",
   "合規 / 風險審核",
   "聯盟收益管道",
-  '<link rel="stylesheet" href="/styles.css?v=20260715-focused-workflow" />',
-  '<script src="/console.js?v=20260715-focused-workflow"></script>'
+  '<link rel="stylesheet" href="/styles.css?v=20260715-content-policy" />',
+  '<script src="/console.js?v=20260715-content-policy"></script>'
 ];
 
 for (const marker of requiredHtml) {
@@ -233,7 +233,9 @@ const requiredJs = [
   "已完成模擬發佈",
   "data-blocked-reason",
   "aria-disabled=\"true\"",
-  "編輯後重新檢查",
+  "檢視或編輯完整文案",
+  "複製文案",
+  'action === "copy"',
   "arrangeDashboardSections",
   "WORKSPACE_MODES",
   "setWorkspaceMode",
@@ -355,6 +357,7 @@ const requiredCss = [
   ".workflow-final-actions",
   ".fatigue-detail",
   ".action-block-reason",
+  ".post-review-actions",
   "z-index: 100",
   ".sidebar-backdrop",
   ".nav-group-label",

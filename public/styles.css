@@ -1290,6 +1290,12 @@ body {
   resize: vertical;
 }
 
+.post-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .workflow-strip {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

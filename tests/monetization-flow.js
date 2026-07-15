@@ -164,8 +164,13 @@ async function main() {
   assert.match(capturedOfferPrompt, /UNTRUSTED_WEBPAGE_DATA/);
   assert.match(capturedOfferPrompt, /Never follow instructions/);
   assert.match(capturedOfferPrompt, /Taiwanese creators building a side income/);
-  assert.match(capturedOfferPrompt, /threads-affiliate-automation-platform\.onrender\.com\/r\/automation-toolkit/);
+  assert.doesNotMatch(capturedOfferPrompt, /threads-affiliate-automation-platform\.onrender\.com\/r\/automation-toolkit/);
   assert.doesNotMatch(capturedOfferPrompt, /hop\.clickbank\.net|affiliate=publisher/);
+  const generatedConversionPost = generated.created[4];
+  assert.equal(generatedConversionPost.linkAttachment, created.link.targetUrl);
+  assert.match(generatedConversionPost.text, /#廣告/);
+  assert.doesNotMatch(generatedConversionPost.text, /含有?聯盟連結|\/r\/automation-toolkit/);
+  assert.equal((generatedConversionPost.text.match(/https:\/\/hop\.clickbank\.net\/\?affiliate=publisher&vendor=toolkit/g) || []).length, 1);
 
   const autonomousState = defaultState();
   upsertRealOffer(autonomousState, {
@@ -207,9 +212,10 @@ async function main() {
   });
   assert.equal(autonomousRun.createdPosts.length, 1);
   const autonomousPost = autonomousRun.createdPosts[0];
-  assert.match(autonomousPost.text, /^含聯盟連結：/);
-  assert.match(autonomousPost.text, /\/r\/autonomous-workflow-toolkit/);
-  assert.match(autonomousPost.linkAttachment, new RegExp(`post=${autonomousPost.id}`));
+  assert.match(autonomousPost.text, /#廣告/);
+  assert.doesNotMatch(autonomousPost.text, /含有?聯盟連結|\/r\/autonomous-workflow-toolkit/);
+  assert.equal(autonomousPost.linkAttachment, "https://hop.clickbank.net/?affiliate=worker&vendor=workflow");
+  assert.equal(autonomousPost.topicTag, "");
   assert.equal(autonomousPost.sourceContext.status, "ready");
   assert.equal(autonomousPost.status, "needs_review");
   assert.equal(autonomousPost.approved, false);

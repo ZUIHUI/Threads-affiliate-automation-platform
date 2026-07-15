@@ -515,7 +515,7 @@ function buildAutonomyReadiness(state, config, options = {}) {
       hasValue(config.defaultDisclosureText)
         ? "Commercial disclosure text is available for every generated post."
         : "Disclosure text is missing, so autonomous affiliate posting should not run.",
-      "Set DEFAULT_DISCLOSURE_TEXT, for example: 含聯盟連結."
+      "Set DEFAULT_DISCLOSURE_TEXT, for example: #廣告."
     ),
     makeCheck(
       "offer_autopilot",

@@ -84,10 +84,13 @@ async function main() {
   assert.equal(generated.created.slice(0, 4).every((post) => post.linkAttachment === ""), true);
   assert.equal(generated.created.slice(0, 4).every((post) => post.commercialIntensity === "soft"), true);
   assert.equal(generated.created.slice(0, 4).every((post) => post.sourceContext.status === "ready"), true);
+  assert.equal(generated.created.every((post) => post.topicTag === ""), true);
   const conversionPost = generated.created[4];
-  assert.match(conversionPost.text, /^含聯盟連結：/);
-  assert.match(conversionPost.linkAttachment, /\/r\/creator-automation-suite/);
-  assert.match(conversionPost.linkAttachment, new RegExp(`post=${conversionPost.id}`));
+  assert.doesNotMatch(conversionPost.text, /含有?聯盟連結/);
+  assert.match(conversionPost.text, /#廣告/);
+  assert.equal(conversionPost.linkAttachment, "https://affiliate.vendor-shop.com/click?publisher=secret");
+  assert.equal((conversionPost.text.match(/https:\/\/affiliate\.vendor-shop\.com\/click\?publisher=secret/g) || []).length, 1);
+  assert.doesNotMatch(conversionPost.text, /\/r\/creator-automation-suite/);
   assert.equal(conversionPost.disclosureStatus, "present");
   assert.equal(conversionPost.commercialIntensity, "strong");
 
@@ -114,8 +117,9 @@ async function main() {
   assert.match(productPrompt, /實際目標受眾：租屋族與需要夜間柔和照明的人/);
   assert.match(productPrompt, /不要把商品硬套進 AI、自動化、副業、創作者或賺錢情境/);
   assert.match(productPrompt, /第 1 到第 4 則是非導購內容/);
-  assert.match(productPrompt, /只有第 5 則可以導購/);
+  assert.match(productPrompt, /第 5 則可以溫和推薦/);
   assert.match(productPrompt, /限制與取捨/);
+  assert.doesNotMatch(productPrompt, /threads-affiliate\.example\/r\/sensor-light/);
   assert.doesNotMatch(productPrompt, /預設受眾：想了解 AI、自動化與聯盟行銷的初學者/);
 
   const post = conversionPost;

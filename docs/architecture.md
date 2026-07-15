@@ -77,4 +77,4 @@ If OpenAI mode is selected without a key, the app falls back to local templates 
 
 The JSON store is intentionally simple for local MVP development. Production should use `db/schema.sql` on PostgreSQL and move `THREADS_ACCESS_TOKEN` into the deployment platform secret manager.
 
-For real affiliate operation, keep a visible disclosure in every commercial post. The default is `含聯盟連結`, and `#ad` is also accepted by the validator.
+For real affiliate operation, keep a visible disclosure in every commercial post. The default is `#廣告`; `#ad` and an explicitly configured disclosure are also accepted by the validator.

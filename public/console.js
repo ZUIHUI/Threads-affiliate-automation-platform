@@ -2058,16 +2058,19 @@ function renderPosts(data) {
             </div>
           ` : ""}
           <details class="post-review-editor">
-            <summary>編輯後重新檢查</summary>
-            <textarea data-edit-text="${escapeHtml(post.id)}" rows="4">${escapeHtml(post.text || "")}</textarea>
-            <button class="button secondary" data-action="save" data-id="${escapeHtml(post.id)}" type="button">儲存修改</button>
+            <summary>檢視或編輯完整文案</summary>
+            <textarea data-edit-text="${escapeHtml(post.id)}" rows="8">${escapeHtml(post.text || "")}</textarea>
+            <div class="post-review-actions">
+              <button class="button secondary" data-action="copy" data-id="${escapeHtml(post.id)}" type="button">複製文案</button>
+              <button class="button secondary" data-action="save" data-id="${escapeHtml(post.id)}" type="button">儲存修改</button>
+            </div>
           </details>
         </td>
         <td>
           ${statusBadge(post.status)}
           <small class="review-status">審核：${escapeHtml(reviewStatusLabel(reviewStatus))}</small>
         </td>
-        <td>${escapeHtml(post.topicTag || "-")}</td>
+        <td>${escapeHtml(post.topicTag || "未設定")}</td>
         <td>${escapeHtml(link ? link.slug : "-")}</td>
         <td>${escapeHtml(formatDate(post.scheduledAt))}</td>
         <td>
@@ -2316,7 +2319,7 @@ function sourceContextMessage(context, completedMessage) {
 }
 
 async function generateDrafts() {
-  const topic = $("#topicInput").value.trim() || "AI 自動化聯盟行銷";
+  const topic = $("#topicInput").value.trim();
   const product = (state.dashboard?.products || []).find((item) => item.id === $("#workflowProductSelect").value);
   if (!product) throw new Error("請先選擇真實聯盟商品。");
   const result = await api("/api/automation/generate", {
@@ -2370,6 +2373,20 @@ async function handlePostAction(event) {
   const action = button.dataset.action;
   if (button.dataset.blockedReason) {
     showToast(button.dataset.blockedReason);
+    return;
+  }
+  if (action === "copy") {
+    const row = button.closest("tr");
+    const textarea = row ? row.querySelector("textarea[data-edit-text]") : null;
+    if (!textarea) throw new Error("找不到可複製的文案。");
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(textarea.value);
+    } else {
+      textarea.focus();
+      textarea.select();
+      if (!document.execCommand("copy")) throw new Error("無法複製文案，請手動選取文字。");
+    }
+    showToast("文案已複製");
     return;
   }
   const busyLabels = {

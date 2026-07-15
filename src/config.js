@@ -84,7 +84,7 @@ function getRuntimeConfig(env) {
     metaAdLibraryFields: env.META_AD_LIBRARY_FIELDS || "",
     metaAdLibraryLimit: Math.max(1, Math.min(asNumber(env.META_AD_LIBRARY_LIMIT, 10), 50)),
     conversionWebhookSecret: env.CONVERSION_WEBHOOK_SECRET || "",
-    defaultDisclosureText: env.DEFAULT_DISCLOSURE_TEXT || "含聯盟連結",
+    defaultDisclosureText: env.DEFAULT_DISCLOSURE_TEXT || "#廣告",
     defaultUtmSource: env.DEFAULT_UTM_SOURCE || "threads",
     defaultUtmMedium: env.DEFAULT_UTM_MEDIUM || "affiliate_social"
   };

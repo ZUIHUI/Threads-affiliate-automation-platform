@@ -1,4 +1,5 @@
 const URL_PATTERN = /https?:\/\/[^\s<>"')]+/gi;
+const { hasCommercialDisclosure, socialDisclosureText } = require("./contentPolicy");
 const HYPE_PATTERNS = [
   /guaranteed\s+(profit|profits|income|earnings|revenue)/i,
   /earn\s+\$?\d+[\d,]*(\.\d+)?\s*(per|a|every)\s*(day|week|month)/i,
@@ -37,7 +38,7 @@ function validateTopicTag(topicTag) {
 
 function validatePost(post, config) {
   const settings = {
-    disclosureText: config.defaultDisclosureText || "含聯盟連結",
+    disclosureText: socialDisclosureText(config),
     maxLinksPerPost: 5,
     postCharacterLimitBytes: 500
   };
@@ -60,8 +61,8 @@ function validatePost(post, config) {
     errors.push(`Post has ${uniqueUrls.length} unique links; Threads currently allows ${settings.maxLinksPerPost} or fewer.`);
   }
   const hasCommercialLink = uniqueUrls.length > 0 || Boolean(post.linkAttachment) || post.funnelRatio === "conversion";
-  if (hasCommercialLink && !text.includes(settings.disclosureText) && !/#ad\b/i.test(text)) {
-    warnings.push(`Affiliate disclosure "${settings.disclosureText}" or "#ad" should be visible in the post text.`);
+  if (hasCommercialLink && !hasCommercialDisclosure(text, config)) {
+    warnings.push(`Commercial disclosure "${settings.disclosureText}" should be visible in the post text.`);
   }
   warnings.push(...risk.warnings);
   errors.push(...validateTopicTag(post.topicTag || ""));

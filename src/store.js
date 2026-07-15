@@ -42,7 +42,7 @@ function defaultState() {
     settings: {
       platformName: "Threads Affiliate Ops",
       timezone: "Asia/Taipei",
-      disclosureText: "含聯盟連結",
+      disclosureText: "#廣告",
       maxDailyApiPosts: 250,
       autoGenerateEnabled: true,
       maxLinksPerPost: 5,
@@ -193,7 +193,7 @@ function defaultState() {
         cta: "你比較能接受直接放連結，還是先導到整理頁？",
         riskNote: "低風險：有揭露聯盟連結，未保證收益。",
         topicTag: "Threads 內容自動化",
-        text: "含聯盟連結：聯盟連結不要急著每篇都放。\n\n比較穩的做法是先用內容建立信任，再把工具或資源整理成一個入口。\n\n我會把連結放在少數幾篇真正需要延伸資源的內容裡：http://localhost:4173/r/n8n-social-automation\n\n你比較能接受直接放連結，還是先導到整理頁？",
+        text: "工具不需要每篇都推薦。\n\n先用內容說清楚適合的情境，再把商品資訊放在真正需要延伸閱讀的貼文裡。\n\n商品連結：\nhttps://example.com/n8n-social-automation\n\n#廣告\n\n你會先確認功能，還是先確認價格？",
         status: "scheduled",
         approved: true,
         scheduledAt: now,

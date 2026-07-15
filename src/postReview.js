@@ -59,7 +59,7 @@ function hasCommercialPlacement(post, validation) {
 
 function missingDisclosure(validation) {
   return (validation?.warnings || []).some((warning) =>
-    /affiliate disclosure/i.test(String(warning || ""))
+    /(?:affiliate|commercial) disclosure/i.test(String(warning || ""))
   );
 }
 

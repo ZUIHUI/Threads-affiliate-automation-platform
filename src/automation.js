@@ -19,6 +19,12 @@ const { evaluateContentFatigue } = require("./contentFatigue");
 const { assertMonetizablePost, isMonetizableLink } = require("./offerQuality");
 const { publicContextSummary } = require("./offerPageContext");
 const { resolveOfferResearchContext } = require("./offerWebResearch");
+const {
+  commercialPostText,
+  editorialPostText,
+  explicitTopicTag,
+  hasCommercialDisclosure
+} = require("./contentPolicy");
 
 function nowIso() {
   return new Date().toISOString();
@@ -79,22 +85,12 @@ function findById(items, id) {
   return items.find((item) => item.id === id);
 }
 
-function attributedTrackingUrl(config, link, post) {
-  return trackingUrl(config, link.slug, {
-    postId: post.id,
-    modelId: post.funnelRatio,
-    campaignId: post.campaignId,
-    productId: post.productId
-  });
-}
-
-function attachAttributedTracking(post, link, config, baseUrl = "") {
+function attachConfiguredProductLink(post, link, config, baseUrl = "") {
   const base = baseUrl || trackingUrl(config, link.slug);
-  const attributed = attributedTrackingUrl(config, link, post);
-  post.cta = attributed;
-  post.linkAttachment = attributed;
+  const productUrl = String(link.targetUrl || "").trim();
+  post.linkAttachment = productUrl;
   if (post.text && base && post.text.includes(base)) {
-    post.text = post.text.replaceAll(base, attributed);
+    post.text = post.text.replaceAll(base, productUrl);
   }
   post.trackingCode = post.id;
   return post;
@@ -929,8 +925,7 @@ function buildDashboard(state, config) {
   const blocked = posts.filter((post) => [STATUS.failed, STATUS.blockedCredentials].includes(post.status));
   const reviewable = posts.filter((post) => [STATUS.generated, STATUS.needsReview, STATUS.draft].includes(post.status));
   const disclosureCovered = posts.filter((post) => {
-    const text = post.text || "";
-    return text.includes(config.defaultDisclosureText) || /#ad\b/i.test(text);
+    return hasCommercialDisclosure(post.text, config);
   }).length;
   const metrics = {
     drafts: reviewable.length,
@@ -1053,21 +1048,23 @@ function ensureLinkForProduct(state, product, campaign, config) {
 }
 
 function renderTemplate(product, campaign, link, config, index) {
-  const cta = trackingUrl(config, link.slug);
+  const question = [
+    "你會先確認使用情境，還是先比較規格？",
+    "你挑這類商品時最在意哪一點？",
+    "這項商品最適合放進你的哪個日常情境？"
+  ][index % 3];
   const variants = [
-    `${config.defaultDisclosureText}：${product.name} 適合${campaign.targetPersona}，重點是「${product.offer}」。我會先從這裡開始看：${cta}`,
-    `${config.defaultDisclosureText}：如果你正在處理${campaign.name}，可以先用一個小測試驗證需求。${product.name} 的賣點是 ${product.offer}。連結：${cta}`,
-    `${config.defaultDisclosureText}：今天的推薦不是要你多買東西，而是少踩一次坑。${product.name} 可以幫你做到：${product.offer}。${cta}`
+    `${product.name} 適不適合你，先看它是否真的對應日常需求。\n\n商品頁的重點是「${product.offer}」，先確認尺寸、使用方式與限制再決定。\n\n${question}`,
+    `比較 ${product.name} 時，不用被一長串功能帶著走。\n\n先抓出自己每天會用到的功能，再確認「${product.offer}」是否符合實際情境。\n\n${question}`,
+    `${product.name} 值不值得買，關鍵不是功能多，而是你會不會持續使用。\n\n先從商品頁核對「${product.offer}」和售後條件，再判斷是否適合。\n\n${question}`
   ];
-  return variants[index % variants.length];
+  return commercialPostText({ post: variants[index % variants.length], cta: question }, link.targetUrl, config);
 }
 
 function ensureCommercialDisclosure(post, config) {
   if (post.funnelRatio !== "conversion" && !post.linkAttachment) return post;
-  const disclosure = String(config.defaultDisclosureText || "含聯盟連結").trim();
-  const text = String(post.text || "").trim();
-  if (disclosure && !text.includes(disclosure) && !/#ad\b/i.test(text)) {
-    post.text = `${disclosure}：${text}`;
+  if (!hasCommercialDisclosure(post.text, config)) {
+    post.text = commercialPostText({ post: post.text, cta: post.cta }, post.linkAttachment, config);
   }
   return post;
 }
@@ -1076,12 +1073,13 @@ function createDraftPosts(state, input, config, drafts, campaign, product, link,
   const createdBy = resolvePostCreator(options.createdBy);
   const now = new Date();
   const created = [];
-  const baseTrackingUrl = trackingUrl(config, link.slug);
   for (const draft of drafts) {
     const scheduled = new Date(now.getTime() + (created.length + 1) * 60 * 60 * 1000);
     const isConversion = draft.ratio === "conversion";
-    const includesTrackingUrl = String(draft.post || "").includes(baseTrackingUrl);
-    const hasCommercialPlacement = isConversion || includesTrackingUrl;
+    const hasCommercialPlacement = isConversion;
+    const text = hasCommercialPlacement
+      ? commercialPostText(draft, link.targetUrl, config)
+      : editorialPostText(draft, config);
     const post = {
       id: makeId("post"),
       accountId: "acct_primary",
@@ -1093,19 +1091,19 @@ function createDraftPosts(state, input, config, drafts, campaign, product, link,
       hook: draft.hook,
       cta: draft.cta,
       riskNote: draft.risk_note,
-      topicTag: String(topic).replace(/[.#&]/g, "").slice(0, 50),
-      text: draft.post,
+      topicTag: explicitTopicTag(input.topicTag),
+      text,
       status: STATUS.needsReview,
       approved: false,
       scheduledAt: scheduled.toISOString(),
       createdBy,
-      linkAttachment: hasCommercialPlacement ? baseTrackingUrl : "",
+      linkAttachment: hasCommercialPlacement ? link.targetUrl : "",
       sourceContext: options.sourceContext || {},
       createdAt: nowIso(),
       updatedAt: nowIso()
     };
     if (hasCommercialPlacement) {
-      attachAttributedTracking(post, link, config, baseTrackingUrl);
+      attachConfiguredProductLink(post, link, config);
       ensureCommercialDisclosure(post, config);
     }
     prepareGeneratedPostForReview(post, config, {
@@ -1164,7 +1162,7 @@ function resolveDraftContext(state, input, config) {
     error.code = "MONETIZATION_NOT_READY";
     throw error;
   }
-  const topic = input.topic || campaign.name;
+  const topic = String(input.topic || "").trim() || product.name;
   return { campaign, product, link, topic };
 }
 
@@ -1172,9 +1170,7 @@ function generateDrafts(state, input, config, options = {}) {
   const { campaign, product, link, topic } = resolveDraftContext(state, input, config);
   const drafts = generatePromptDrafts({
     topic,
-    productName: product.name,
-    trackingLink: trackingUrl(config, link.slug),
-    disclosureText: config.defaultDisclosureText
+    productName: product.name
   });
   return createDraftPosts(state, input, config, drafts, campaign, product, link, topic, {
     ...options,
@@ -1193,9 +1189,7 @@ async function generateDraftsAsync(state, input, config, options = {}) {
     network: product.network,
     commissionModel: product.commissionModel,
     commissionValue: product.commissionValue,
-    currency: product.currency,
-    disclosureText: config.defaultDisclosureText,
-    trackingUrl: trackingUrl(config, link.slug)
+    currency: product.currency
   };
   const pageContext = useOpenAI
     ? await resolveOfferResearchContext(link.targetUrl, offerContext, config, {
@@ -1207,11 +1201,9 @@ async function generateDraftsAsync(state, input, config, options = {}) {
   offerContext.pageContext = pageContext.contextText;
   const drafts = useOpenAI
     ? await generateOpenAIDrafts({ topic, offerContext, config, fetchImpl: options.fetchImpl })
-    : generatePromptDrafts({
+      : generatePromptDrafts({
         topic,
-        productName: product.name,
-        trackingLink: trackingUrl(config, link.slug),
-        disclosureText: config.defaultDisclosureText
+        productName: product.name
       });
   const sourceContext = publicContextSummary(pageContext);
   return {
@@ -1256,17 +1248,17 @@ function createPost(state, input, config, options = {}) {
     hook: input.hook || "",
     cta: input.cta || "",
     riskNote: input.riskNote || "",
-    topicTag: input.topicTag || campaign.name.replace(/[.#&]/g, "").slice(0, 50),
+    topicTag: explicitTopicTag(input.topicTag),
     text: input.text || renderTemplate(product, campaign, link, config, state.posts.length),
     status: STATUS.needsReview,
     approved: false,
     scheduledAt: input.scheduledAt || nowIso(),
     createdBy: resolvePostCreator(options.createdBy),
-    linkAttachment: input.linkAttachment || trackingUrl(config, link.slug),
+    linkAttachment: input.linkAttachment || link.targetUrl,
     createdAt: nowIso(),
     updatedAt: nowIso()
   };
-  if (!input.linkAttachment) attachAttributedTracking(post, link, config);
+  if (!input.linkAttachment) attachConfiguredProductLink(post, link, config);
   const validation = refreshReviewMetadata(post, config, {
     recentPosts: state.posts
   });

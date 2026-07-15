@@ -4,6 +4,11 @@ const { countThreadsUnits, validatePost } = require("./validators");
 const { STATUS, prepareGeneratedPostForReview } = require("./postReview");
 const { evaluateContentFatigue, evaluateProfitModelFatigue } = require("./contentFatigue");
 const { isMonetizableLink, isMonetizableProduct } = require("./offerQuality");
+const {
+  commercialPostText,
+  editorialPostText,
+  socialDisclosureText
+} = require("./contentPolicy");
 
 const PROFIT_MODELS = [
   {
@@ -497,8 +502,9 @@ function optimizerGuidance(policy) {
 }
 
 function buildNaturalScripts(model, campaign, product, link, config, count, signal, policy = {}) {
-  const cta = trackingUrl(config, link.slug);
-  const disclosure = config.defaultDisclosureText;
+  const productUrl = link.targetUrl;
+  const cta = productUrl;
+  const disclosure = socialDisclosureText(config);
   const market = signalSummary(signal);
   const observedAngle = market.angle || model.adAngle;
   const observedOffer = market.offer || product.offer;
@@ -525,21 +531,22 @@ function buildNaturalScripts(model, campaign, product, link, config, count, sign
       post: `${disclosure}：我會把廣告裡很浮誇的承諾，改寫成可以自己驗證的小實驗。\n\n這輪測的是「${observedAngle}」。先不承諾收益，只看它能不能讓流程更短、資料更清楚。\n\n工具入口：${cta}\n\n如果你要我拆一個完整測試流程，你想看 Threads 發文、聯盟追蹤，還是自動回報？`
     }
   ];
-  return scripts.slice(0, count);
+  return scripts.slice(0, count).map((script) => {
+    const paragraphs = String(script.post || "").trim().split(/\n{2,}/);
+    const cta = paragraphs[paragraphs.length - 1] || "";
+    return {
+      ...script,
+      cta,
+      post: commercialPostText({ ...script, cta }, productUrl, config)
+    };
+  });
 }
 
 function normalizeScriptOverrides(scripts, config, cta, count) {
   if (!Array.isArray(scripts)) return [];
-  const disclosure = config.defaultDisclosureText || "含聯盟連結";
   return scripts.slice(0, count).map((script, index) => {
-    let post = String(script.post || "").trim();
+    const post = commercialPostText(script, cta, config);
     if (!post) return null;
-    if (!post.includes(disclosure) && !/#ad\b/i.test(post)) {
-      post = `${disclosure}：${post}`;
-    }
-    if (cta && !post.includes(cta)) {
-      post = `${post}\n\n延伸資源：${cta}`;
-    }
     return {
       type: script.type || `ai_script_${index + 1}`,
       hook: String(script.hook || post.split(/\r?\n/)[0] || "自然推薦").trim(),
@@ -564,21 +571,20 @@ function truncateThreadsText(text, maxUnits) {
 
 function repairPostText(post, config) {
   const maxUnits = Number(config.postCharacterLimitBytes || 500);
-  const cta = post.linkAttachment || post.cta || "";
-  const disclosure = config.defaultDisclosureText || "含聯盟連結";
+  const productUrl = post.linkAttachment || "";
+  const cta = String(post.cta || "").trim();
   const sourceText = String(post.text || "").trim();
-  const suffix = cta && !sourceText.includes(cta) ? `\n\n延伸資源：${cta}` : "";
-  const prefix = sourceText.includes(disclosure) || /#ad\b/i.test(sourceText)
-    ? ""
-    : `${disclosure}：`;
-  const completeText = `${prefix}${sourceText}${suffix}`.trim();
+  const completeText = commercialPostText({ post: sourceText, cta }, productUrl, config);
   if (countThreadsUnits(completeText) <= maxUnits) {
     post.text = completeText;
     return post;
   }
-  const allowedBodyUnits = Math.max(80, maxUnits - countThreadsUnits(`${prefix}${suffix}`) - 12);
-  const body = truncateThreadsText(sourceText.replace(cta, "").trim(), allowedBodyUnits);
-  post.text = `${prefix}${body}${suffix}`.trim();
+  const fixedSuffix = commercialPostText({ post: "", cta }, productUrl, config);
+  let bodySource = editorialPostText({ post: sourceText }, config);
+  if (cta && bodySource.endsWith(cta)) bodySource = bodySource.slice(0, -cta.length).trim();
+  const allowedBodyUnits = Math.max(40, maxUnits - countThreadsUnits(fixedSuffix) - 2);
+  const body = truncateThreadsText(bodySource, allowedBodyUnits);
+  post.text = `${body}\n\n${fixedSuffix}`.trim();
   return post;
 }
 
@@ -658,17 +664,11 @@ function createAutonomousPosts(state, config, model, campaign, product, link, sc
   const created = [];
   const blocked = [];
   const baseTime = Date.now();
-  const baseTrackingUrl = trackingUrl(config, link.slug);
   const createdBy = String(options.createdBy || "").trim() || null;
   for (const script of scripts) {
     const scheduledAt = new Date(baseTime + (created.length + 1) * 45 * 60 * 1000).toISOString();
     const postId = makeId("post");
-    const attributedUrl = trackingUrl(config, link.slug, {
-      postId,
-      modelId: model.id,
-      campaignId: campaign.id,
-      productId: product.id
-    });
+    const productUrl = link.targetUrl;
     const post = {
       id: postId,
       accountId: "acct_primary",
@@ -678,15 +678,15 @@ function createAutonomousPosts(state, config, model, campaign, product, link, sc
       contentType: "自然推薦腳本",
       funnelRatio: model.id,
       hook: script.hook,
-      cta: attributedUrl,
+      cta: script.cta || "",
       riskNote: script.risk_note || "自動獲利引擎：有揭露聯盟關係，未承諾收益，使用問題式互動結尾。",
-      topicTag: campaign.name.replace(/[.#&]/g, "").slice(0, 50),
-      text: String(script.post || "").replaceAll(baseTrackingUrl, attributedUrl),
+      topicTag: "",
+      text: commercialPostText(script, productUrl, config),
       status: STATUS.needsReview,
       approved: false,
       scheduledAt,
       createdBy,
-      linkAttachment: attributedUrl,
+      linkAttachment: productUrl,
       trackingCode: postId,
       sourceContext: options.sourceContext || {},
       createdAt: nowIso(),
@@ -1185,7 +1185,7 @@ function runProfitEngine(state, config, options = {}) {
   const { campaign, product } = pickActiveContext(state, selectedSignal, offerSync.syncedProducts, config);
   const link = ensureAffiliateLink(state, campaign, product, config);
   const count = Math.max(1, Math.min(Number(config.autonomyMaxScriptsPerRun || 3) + Number(optimizerPolicy.scriptCountDelta || 0), 5));
-  const cta = trackingUrl(config, link.slug);
+  const cta = link.targetUrl;
   const aiScripts = normalizeScriptOverrides(options.aiScripts, config, cta, count);
   const scripts = aiScripts.length
     ? aiScripts

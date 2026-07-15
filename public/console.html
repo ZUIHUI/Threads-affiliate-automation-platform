@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Threads 聯盟自動化</title>
-    <link rel="stylesheet" href="/styles.css?v=20260715-focused-workflow" />
+    <link rel="stylesheet" href="/styles.css?v=20260715-content-policy" />
   </head>
   <body>
     <div class="app-shell">
@@ -110,8 +110,8 @@
               <select id="workflowProductSelect" aria-describedby="workflowSourceDetail"></select>
             </label>
             <label class="workflow-field workflow-topic-field">
-              <span>貼文主題</span>
-              <input id="topicInput" type="text" value="真實商品使用情境與選擇建議" maxlength="80" />
+              <span>文案方向（選填）</span>
+              <input id="topicInput" type="text" value="" placeholder="留空時依商品資料產生" maxlength="80" />
             </label>
             <button class="button workflow-generate" id="generateBtn" type="button">AI 研究並產生草稿</button>
           </div>
@@ -346,7 +346,7 @@
                   <tr>
                     <th>內容</th>
                     <th>狀態</th>
-                    <th>主題</th>
+                    <th>Threads 主題</th>
                     <th>關聯連結</th>
                     <th>預計發佈</th>
                     <th>操作</th>
@@ -570,6 +570,6 @@
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="/console.js?v=20260715-focused-workflow"></script>
+    <script src="/console.js?v=20260715-content-policy"></script>
   </body>
 </html>
