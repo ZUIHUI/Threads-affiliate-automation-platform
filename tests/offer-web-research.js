@@ -69,7 +69,7 @@ async function main() {
   assert.equal(capturedRequest.url, "https://api.openai.test/v1/responses");
   assert.equal(capturedRequest.body.tools[0].type, "web_search");
   assert.equal(capturedRequest.body.reasoning.effort, "low");
-  assert.equal(capturedRequest.body.max_output_tokens, 1600);
+  assert.equal(Object.hasOwn(capturedRequest.body, "max_output_tokens"), false);
   assert.equal(capturedRequest.body.tool_choice, "required");
   assert.deepEqual(capturedRequest.body.include, ["web_search_call.action.sources"]);
   assert.equal(capturedRequest.body.text.format.name, "affiliate_offer_research");

@@ -160,7 +160,6 @@ async function researchOfferWithOpenAI({ targetUrl, offerContext = {}, config, f
       body: JSON.stringify({
         model: config.openaiModel,
         reasoning: { effort: "low" },
-        max_output_tokens: 1600,
         tools: [{ type: "web_search", search_context_size: "low" }],
         tool_choice: "required",
         include: ["web_search_call.action.sources"],
@@ -180,7 +179,10 @@ async function researchOfferWithOpenAI({ targetUrl, offerContext = {}, config, f
       throw researchError(payload.error?.message || response.statusText || "OpenAI offer research failed.");
     }
     const text = extractText(payload);
-    if (!text) throw researchError("OpenAI offer research did not include output text.");
+    if (!text) {
+      const reason = cleanValue(payload.incomplete_details?.reason || payload.status || "", 80);
+      throw researchError(`OpenAI offer research did not include output text${reason ? ` (${reason})` : ""}.`);
+    }
     const result = normalizeResearchResult(JSON.parse(text));
     const sources = extractWebSources(payload, config.aiWebResearchMaxSources);
     if (!result.exactProductMatch || result.facts.length < 2 || sources.length === 0) {
