@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const { syncPostgresState } = require("../src/postgresStore");
+const { runStartupMigration, syncPostgresState } = require("../src/postgresStore");
 const { defaultState } = require("../src/store");
 
 function createRecordingClient() {
@@ -48,6 +48,55 @@ async function run() {
 
   const schema = fs.readFileSync(path.join(__dirname, "..", "db", "schema.sql"), "utf8");
   assert.match(schema, /alter column threads_user_id drop not null/i);
+
+  let migrationAttempts = 0;
+  let migrationRetries = 0;
+  let releases = 0;
+  const migrationPool = {
+    async connect() {
+      migrationAttempts += 1;
+      return {
+        async query(sql) {
+          if (sql === "test schema" && migrationAttempts === 1) {
+            const error = new Error("deadlock detected");
+            error.code = "40P01";
+            throw error;
+          }
+          return { rows: [] };
+        },
+        release() { releases += 1; }
+      };
+    }
+  };
+  await runStartupMigration(migrationPool, "test schema", {
+    attempts: 3,
+    sleep: async () => { migrationRetries += 1; }
+  });
+  assert.equal(migrationAttempts, 2);
+  assert.equal(migrationRetries, 1);
+  assert.equal(releases, 2);
+
+  let permanentAttempts = 0;
+  await assert.rejects(
+    runStartupMigration({
+      async connect() {
+        permanentAttempts += 1;
+        return {
+          async query(sql) {
+            if (sql === "bad schema") {
+              const error = new Error("syntax error");
+              error.code = "42601";
+              throw error;
+            }
+            return { rows: [] };
+          },
+          release() {}
+        };
+      }
+    }, "bad schema", { attempts: 3, sleep: async () => {} }),
+    /syntax error/
+  );
+  assert.equal(permanentAttempts, 1);
 
   console.log("Postgres account foreign-key regression passed.");
 }

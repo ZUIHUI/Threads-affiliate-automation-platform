@@ -4,6 +4,8 @@ const fs = require("node:fs");
 const { clone, defaultState } = require("./store");
 
 const STATE_KEY = "json_store_state";
+const STARTUP_MIGRATION_LOCK_ID = 1_784_082_944;
+const TRANSIENT_MIGRATION_CODES = new Set(["40P01", "55P03", "40001"]);
 
 function loadPg() {
   try {
@@ -96,6 +98,45 @@ async function ensureSeed(connection) {
     `,
     [STATE_KEY, JSON.stringify(defaultState())]
   );
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runStartupMigration(pool, schema, options = {}) {
+  const attempts = Math.max(1, Number(options.attempts || 6));
+  const lockTimeoutMs = Math.max(1000, Number(options.lockTimeoutMs || 5000));
+  const sleep = options.sleep || wait;
+  let lastError;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const client = await pool.connect();
+    let advisoryLockHeld = false;
+    try {
+      await client.query("select pg_advisory_lock($1)", [STARTUP_MIGRATION_LOCK_ID]);
+      advisoryLockHeld = true;
+      await client.query("select set_config('lock_timeout', $1, false)", [`${lockTimeoutMs}ms`]);
+      await client.query(schema);
+      await ensureSeed(client);
+      return;
+    } catch (error) {
+      lastError = error;
+      const retryable = TRANSIENT_MIGRATION_CODES.has(String(error?.code || ""));
+      if (!retryable || attempt >= attempts) throw error;
+    } finally {
+      if (advisoryLockHeld) {
+        try {
+          await client.query("select pg_advisory_unlock($1)", [STARTUP_MIGRATION_LOCK_ID]);
+        } catch {
+          // Releasing the connection also releases a session advisory lock.
+        }
+      }
+      client.release();
+    }
+    await sleep(Math.min(250 * (2 ** (attempt - 1)), 2000));
+  }
+  throw lastError;
 }
 
 async function syncPostgresState(client, existingTables, state, options = {}) {
@@ -586,19 +627,16 @@ function createPostgresStore(options) {
   async function ensureReady() {
     if (!readyPromise) {
       readyPromise = (async () => {
-        if (normalizedOptions.autoMigrate && normalizedOptions.schemaPath) {
-          const schema = fs.readFileSync(normalizedOptions.schemaPath, "utf8");
-          await pool.query(schema);
-        } else {
-          await pool.query(`
+        const schema = normalizedOptions.autoMigrate && normalizedOptions.schemaPath
+          ? fs.readFileSync(normalizedOptions.schemaPath, "utf8")
+          : `
             create table if not exists app_settings (
               key text primary key,
               value jsonb not null,
               updated_at timestamptz not null default now()
             )
-          `);
-        }
-        await ensureSeed(pool);
+          `;
+        await runStartupMigration(pool, schema);
       })();
     }
     return readyPromise;
@@ -661,4 +699,4 @@ function createPostgresStore(options) {
   };
 }
 
-module.exports = { createPostgresStore, syncPostgresState, STATE_KEY };
+module.exports = { createPostgresStore, runStartupMigration, syncPostgresState, STATE_KEY };
