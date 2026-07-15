@@ -152,6 +152,7 @@ function evaluateContentFatigue(post, recentPosts = [], inputOptions = {}) {
   const textHistory = REVIEW_STAGE_STATUSES.has(currentStatus) ? dedupeHistory : mainHistory;
   const reasons = [];
   let bestSimilarity = { score: 0, post: null };
+  const intensity = commercialIntensity(post);
 
   const similarityCutoff = now - options.lookbackDays * dayMs;
   for (const candidate of textHistory.filter((item) => withinWindow(item, similarityCutoff))) {
@@ -178,11 +179,14 @@ function evaluateContentFatigue(post, recentPosts = [], inputOptions = {}) {
       item.productId === post.productId && withinWindow(item, productCutoff)
     );
     if (productMatches.length >= options.maxProductPostsPerWindow) {
+      const severity = intensity === "strong" ? "blocked" : "warning";
       addReason(
         reasons,
-        "blocked",
+        severity,
         "same_product_frequency",
-        `Same product already has ${productMatches.length} scheduled or published post(s) in ${options.productWindowHours}h.`,
+        severity === "blocked"
+          ? `同一商品在 ${options.productWindowHours} 小時內已有 ${productMatches.length} 則導購或已排程內容，暫停再次導購。`
+          : `同一商品在 ${options.productWindowHours} 小時內已有 ${productMatches.length} 則內容；這篇沒有購買連結，可審核但請確認角度不重複。`,
         {
           productId: post.productId,
           count: productMatches.length,
@@ -269,7 +273,6 @@ function evaluateContentFatigue(post, recentPosts = [], inputOptions = {}) {
     }
   }
 
-  const intensity = commercialIntensity(post);
   if (intensity === "strong") {
     const lastPosts = mainHistory.slice(0, Math.max(0, options.commercialWindowPosts - 1));
     const strongHistoryCount = lastPosts.filter((item) => commercialIntensity(item) === "strong").length;
