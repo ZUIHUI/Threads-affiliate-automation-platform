@@ -240,6 +240,7 @@ const requiredJs = [
   "renderWorkflowSummary",
   "renderContentWorkflow",
   "contentWorkflow",
+  "postSourceBadge",
   ".sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0))",
   "WORKSPACE_MODE_KEY",
   "setupNavigation",

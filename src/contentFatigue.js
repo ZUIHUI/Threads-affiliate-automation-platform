@@ -118,8 +118,8 @@ function withinWindow(post, cutoffMs) {
 
 function commercialIntensity(post) {
   const hasUrl = extractUrls(post?.text).length > 0 || Boolean(post?.linkAttachment);
-  if (post?.funnelRatio === "conversion" || hasUrl || post?.affiliateLinkId) return "strong";
-  if (post?.productId || post?.cta) return "soft";
+  if (post?.funnelRatio === "conversion" || hasUrl) return "strong";
+  if (post?.affiliateLinkId || post?.productId || post?.cta) return "soft";
   return "none";
 }
 

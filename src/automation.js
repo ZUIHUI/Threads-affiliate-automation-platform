@@ -1059,6 +1059,16 @@ function renderTemplate(product, campaign, link, config, index) {
   return variants[index % variants.length];
 }
 
+function ensureCommercialDisclosure(post, config) {
+  if (post.funnelRatio !== "conversion" && !post.linkAttachment) return post;
+  const disclosure = String(config.defaultDisclosureText || "含聯盟連結").trim();
+  const text = String(post.text || "").trim();
+  if (disclosure && !text.includes(disclosure) && !/#ad\b/i.test(text)) {
+    post.text = `${disclosure}：${text}`;
+  }
+  return post;
+}
+
 function createDraftPosts(state, input, config, drafts, campaign, product, link, topic, options = {}) {
   const createdBy = resolvePostCreator(options.createdBy);
   const now = new Date();
@@ -1067,6 +1077,8 @@ function createDraftPosts(state, input, config, drafts, campaign, product, link,
   for (const draft of drafts) {
     const scheduled = new Date(now.getTime() + (created.length + 1) * 60 * 60 * 1000);
     const isConversion = draft.ratio === "conversion";
+    const includesTrackingUrl = String(draft.post || "").includes(baseTrackingUrl);
+    const hasCommercialPlacement = isConversion || includesTrackingUrl;
     const post = {
       id: makeId("post"),
       accountId: "acct_primary",
@@ -1084,12 +1096,15 @@ function createDraftPosts(state, input, config, drafts, campaign, product, link,
       approved: false,
       scheduledAt: scheduled.toISOString(),
       createdBy,
-      linkAttachment: isConversion ? baseTrackingUrl : "",
+      linkAttachment: hasCommercialPlacement ? baseTrackingUrl : "",
+      sourceContext: options.sourceContext || {},
       createdAt: nowIso(),
       updatedAt: nowIso()
     };
-    attachAttributedTracking(post, link, config, baseTrackingUrl);
-    if (!isConversion && !draft.post.includes(baseTrackingUrl)) post.linkAttachment = "";
+    if (hasCommercialPlacement) {
+      attachAttributedTracking(post, link, config, baseTrackingUrl);
+      ensureCommercialDisclosure(post, config);
+    }
     prepareGeneratedPostForReview(post, config, {
       source: "automation_generate",
       createdBy,

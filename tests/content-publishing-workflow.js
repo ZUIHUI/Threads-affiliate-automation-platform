@@ -64,7 +64,7 @@ async function main() {
             output_text: JSON.stringify({
               drafts: Array.from({ length: 5 }, (_, index) => ({
                 hook: `選擇自動化工具前先確認第 ${index + 1} 個條件`,
-                post: `含聯盟連結：選擇自動化工具時，先確認流程是否保留人工審核。這是第 ${index + 1} 個檢查角度。\n\n工具資料：${offer.trackingUrl}`,
+                post: `選擇自動化工具時，先確認流程是否保留人工審核。這是第 ${index + 1} 個檢查角度。`,
                 cta: "你最想先改善哪個重複步驟？",
                 risk_note: "僅使用商品頁可驗證資訊，未承諾成效。"
               }))
@@ -80,6 +80,15 @@ async function main() {
   assert.match(capturedPrompt, /Creator Automation Suite/);
   assert.match(capturedPrompt, /UNTRUSTED_WEBPAGE_DATA/);
   assert.doesNotMatch(capturedPrompt, /publisher=secret|affiliate\.vendor-shop\.com/);
+  assert.equal(generated.created.slice(0, 4).every((post) => post.linkAttachment === ""), true);
+  assert.equal(generated.created.slice(0, 4).every((post) => post.commercialIntensity === "soft"), true);
+  assert.equal(generated.created.slice(0, 4).every((post) => post.sourceContext.status === "ready"), true);
+  const conversionPost = generated.created[4];
+  assert.match(conversionPost.text, /^含聯盟連結：/);
+  assert.match(conversionPost.linkAttachment, /\/r\/creator-automation-suite/);
+  assert.match(conversionPost.linkAttachment, new RegExp(`post=${conversionPost.id}`));
+  assert.equal(conversionPost.disclosureStatus, "present");
+  assert.equal(conversionPost.commercialIntensity, "strong");
 
   const generatedDashboard = buildDashboard(persisted, config);
   assert.equal(generatedDashboard.contentWorkflow.hasOffers, true);
@@ -88,7 +97,7 @@ async function main() {
   assert.equal(generatedDashboard.contentWorkflow.stages.find((stage) => stage.id === "review").status, "active");
   assert.equal(generatedDashboard.contentWorkflow.nextAction, "review");
 
-  const post = generated.created[0];
+  const post = conversionPost;
   approvePost(post, config, { actor: "workflow-test", recentPosts: [] });
   schedulePost(post, config, {
     actor: "workflow-test",

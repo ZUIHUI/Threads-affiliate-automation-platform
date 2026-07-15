@@ -438,6 +438,22 @@ function disclosureBadge(status) {
   return `<span class="badge ${tone}">${escapeHtml(label)}</span>`;
 }
 
+function postSourceBadge(post) {
+  const context = post.sourceContext || {};
+  if (context.status === "ready") {
+    const detail = context.title || context.sourceDomain || "已讀取商品頁";
+    return `<span class="badge good" title="${escapeHtml(detail)}">商品頁依據</span>`;
+  }
+  if (context.status === "unavailable") {
+    const detail = context.error || "商品頁無法讀取，使用資料表優惠內容";
+    return `<span class="badge warn" title="${escapeHtml(detail)}">資料表備援</span>`;
+  }
+  if (context.status === "ai_unavailable") {
+    return `<span class="badge info">範本文案</span>`;
+  }
+  return "";
+}
+
 function fatigueBadge(status) {
   const map = {
     clear: ["疲勞檢查通過", "good"],
@@ -2029,6 +2045,7 @@ function renderPosts(data) {
             ${riskBadge(riskLevel)}
             ${disclosureBadge(disclosureStatus)}
             ${fatigueBadge(fatigue.status)}
+            ${postSourceBadge(post)}
           </div>
           ${warning ? `<p class="claim-warning">${escapeHtml(warning)}</p>` : ""}
           ${fatigue.lines.length ? `
