@@ -57,6 +57,9 @@ async function run() {
       migrationAttempts += 1;
       return {
         async query(sql) {
+          if (String(sql).includes("pg_try_advisory_lock")) {
+            return { rows: [{ locked: true }] };
+          }
           if (sql === "test schema" && migrationAttempts === 1) {
             const error = new Error("deadlock detected");
             error.code = "40P01";
@@ -76,6 +79,28 @@ async function run() {
   assert.equal(migrationRetries, 1);
   assert.equal(releases, 2);
 
+  let lockAttempts = 0;
+  let lockRetries = 0;
+  await runStartupMigration({
+    async connect() {
+      lockAttempts += 1;
+      return {
+        async query(sql) {
+          if (String(sql).includes("pg_try_advisory_lock")) {
+            return { rows: [{ locked: lockAttempts > 1 }] };
+          }
+          return { rows: [] };
+        },
+        release() {}
+      };
+    }
+  }, "contended schema", {
+    attempts: 3,
+    sleep: async () => { lockRetries += 1; }
+  });
+  assert.equal(lockAttempts, 2);
+  assert.equal(lockRetries, 1);
+
   let permanentAttempts = 0;
   await assert.rejects(
     runStartupMigration({
@@ -83,6 +108,9 @@ async function run() {
         permanentAttempts += 1;
         return {
           async query(sql) {
+            if (String(sql).includes("pg_try_advisory_lock")) {
+              return { rows: [{ locked: true }] };
+            }
             if (sql === "bad schema") {
               const error = new Error("syntax error");
               error.code = "42601";

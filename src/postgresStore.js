@@ -114,7 +114,15 @@ async function runStartupMigration(pool, schema, options = {}) {
     const client = await pool.connect();
     let advisoryLockHeld = false;
     try {
-      await client.query("select pg_advisory_lock($1)", [STARTUP_MIGRATION_LOCK_ID]);
+      const lockResult = await client.query(
+        "select pg_try_advisory_lock($1) as locked",
+        [STARTUP_MIGRATION_LOCK_ID]
+      );
+      if (lockResult.rows[0]?.locked !== true) {
+        const error = new Error("Postgres startup migration lock is busy.");
+        error.code = "55P03";
+        throw error;
+      }
       advisoryLockHeld = true;
       await client.query("select set_config('lock_timeout', $1, false)", [`${lockTimeoutMs}ms`]);
       await client.query(schema);
@@ -623,6 +631,13 @@ function createPostgresStore(options) {
     ssl: sslOptions(normalizedOptions.connectionString, normalizedOptions.ssl)
   });
   let readyPromise = null;
+  let mutationQueue = Promise.resolve();
+
+  function enqueueMutation(operation) {
+    const queued = mutationQueue.then(operation, operation);
+    mutationQueue = queued.catch(() => {});
+    return queued;
+  }
 
   async function ensureReady() {
     if (!readyPromise) {
@@ -648,45 +663,49 @@ function createPostgresStore(options) {
     return clone(result.rows[0]?.value || defaultState());
   }
 
-  async function write(state) {
-    await ensureReady();
-    const client = await pool.connect();
-    try {
-      await client.query("begin");
-      await writeAppSetting(client, state);
-      const existingTables = await getExistingTables(client);
-      await syncPostgresState(client, existingTables, state, normalizedOptions);
-      await client.query("commit");
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    } finally {
-      client.release();
-    }
+  function write(state) {
+    return enqueueMutation(async () => {
+      await ensureReady();
+      const client = await pool.connect();
+      try {
+        await client.query("begin");
+        await writeAppSetting(client, state);
+        const existingTables = await getExistingTables(client);
+        await syncPostgresState(client, existingTables, state, normalizedOptions);
+        await client.query("commit");
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
+    });
   }
 
-  async function update(mutator) {
-    await ensureReady();
-    const client = await pool.connect();
-    try {
-      await client.query("begin");
-      const result = await client.query(
-        "select value from app_settings where key = $1 for update",
-        [STATE_KEY]
-      );
-      const state = clone(result.rows[0]?.value || defaultState());
-      const mutationResult = mutator(state) || {};
-      await writeAppSetting(client, state);
-      const existingTables = await getExistingTables(client);
-      await syncPostgresState(client, existingTables, state, normalizedOptions);
-      await client.query("commit");
-      return mutationResult;
-    } catch (error) {
-      await client.query("rollback");
-      throw error;
-    } finally {
-      client.release();
-    }
+  function update(mutator) {
+    return enqueueMutation(async () => {
+      await ensureReady();
+      const client = await pool.connect();
+      try {
+        await client.query("begin");
+        const result = await client.query(
+          "select value from app_settings where key = $1 for update",
+          [STATE_KEY]
+        );
+        const state = clone(result.rows[0]?.value || defaultState());
+        const mutationResult = mutator(state) || {};
+        await writeAppSetting(client, state);
+        const existingTables = await getExistingTables(client);
+        await syncPostgresState(client, existingTables, state, normalizedOptions);
+        await client.query("commit");
+        return mutationResult;
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
+    });
   }
 
   return {

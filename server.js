@@ -1490,17 +1490,21 @@ async function startWorker() {
     try {
       await runWorkerTick("worker");
     } catch (error) {
-      await store.update((state) => {
-        state.automationRuns.unshift({
-          id: `run_${Date.now()}`,
-          status: "failed",
-          source: "worker",
-          message: error.message,
-          startedAt: new Date().toISOString(),
-          finishedAt: new Date().toISOString()
+      try {
+        await store.update((state) => {
+          state.automationRuns.unshift({
+            id: `run_${Date.now()}`,
+            status: "failed",
+            source: "worker",
+            message: error.message,
+            startedAt: new Date().toISOString(),
+            finishedAt: new Date().toISOString()
+          });
+          return {};
         });
-        return {};
-      });
+      } catch (persistenceError) {
+        console.error("Worker failure could not be persisted:", persistenceError);
+      }
     } finally {
       workerActive = false;
     }
