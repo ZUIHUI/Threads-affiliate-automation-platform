@@ -22,6 +22,23 @@ function requireThreadsCredentials(config) {
   }
 }
 
+async function fetchGraph(config, url, options, operation) {
+  const timeoutMs = Number(config.threadsApiTimeoutMs || 20_000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error?.name !== "AbortError") throw error;
+    const timeoutError = new Error(`Threads API ${operation} timed out after ${timeoutMs}ms.`);
+    timeoutError.code = operation === "publish" ? "THREADS_PUBLISH_TIMEOUT" : "THREADS_API_TIMEOUT";
+    timeoutError.statusCode = 504;
+    throw timeoutError;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function createTextContainer(config, post) {
   requireThreadsCredentials(config);
   const params = new URLSearchParams();
@@ -31,10 +48,10 @@ async function createTextContainer(config, post) {
   if (post.linkAttachment) params.set("link_attachment", post.linkAttachment);
   if (post.topicTag) params.set("topic_tag", post.topicTag);
 
-  const response = await fetch(`${config.threadsGraphBase}/${config.threadsUserId}/threads`, {
+  const response = await fetchGraph(config, `${config.threadsGraphBase}/${config.threadsUserId}/threads`, {
     method: "POST",
     body: params
-  });
+  }, "container creation");
   return parseGraphResponse(response);
 }
 
@@ -44,10 +61,10 @@ async function publishContainer(config, creationId) {
   params.set("creation_id", creationId);
   params.set("access_token", config.threadsAccessToken);
 
-  const response = await fetch(`${config.threadsGraphBase}/${config.threadsUserId}/threads_publish`, {
+  const response = await fetchGraph(config, `${config.threadsGraphBase}/${config.threadsUserId}/threads_publish`, {
     method: "POST",
     body: params
-  });
+  }, "publish");
   return parseGraphResponse(response);
 }
 
@@ -65,7 +82,7 @@ async function getPublishingLimit(config) {
 
   const fields = "quota_usage,config";
   const url = `${config.threadsGraphBase}/${config.threadsUserId}/threads_publishing_limit?fields=${encodeURIComponent(fields)}&access_token=${encodeURIComponent(config.threadsAccessToken)}`;
-  const response = await fetch(url);
+  const response = await fetchGraph(config, url, {}, "publishing limit check");
   const payload = await parseGraphResponse(response);
   return payload.data?.[0] || payload;
 }

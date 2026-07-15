@@ -105,6 +105,23 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function runWithTransientRetries(operation, options = {}) {
+  const attempts = Math.max(1, Number(options.attempts || 4));
+  const sleep = options.sleep || wait;
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation(attempt);
+    } catch (error) {
+      lastError = error;
+      const retryable = TRANSIENT_MIGRATION_CODES.has(String(error?.code || ""));
+      if (!retryable || attempt >= attempts) throw error;
+      await sleep(Math.min(250 * (2 ** (attempt - 1)), 2000));
+    }
+  }
+  throw lastError;
+}
+
 async function runStartupMigration(pool, schema, options = {}) {
   const attempts = Math.max(1, Number(options.attempts || 6));
   const lockTimeoutMs = Math.max(1000, Number(options.lockTimeoutMs || 5000));
@@ -665,7 +682,7 @@ function createPostgresStore(options) {
   }
 
   function write(state) {
-    return enqueueMutation(async () => {
+    return enqueueMutation(() => runWithTransientRetries(async () => {
       await ensureReady();
       const client = await pool.connect();
       try {
@@ -680,11 +697,11 @@ function createPostgresStore(options) {
       } finally {
         client.release();
       }
-    });
+    }));
   }
 
   function update(mutator) {
-    return enqueueMutation(async () => {
+    return enqueueMutation(() => runWithTransientRetries(async () => {
       await ensureReady();
       const client = await pool.connect();
       try {
@@ -706,7 +723,7 @@ function createPostgresStore(options) {
       } finally {
         client.release();
       }
-    });
+    }));
   }
 
   return {
@@ -719,4 +736,10 @@ function createPostgresStore(options) {
   };
 }
 
-module.exports = { createPostgresStore, runStartupMigration, syncPostgresState, STATE_KEY };
+module.exports = {
+  createPostgresStore,
+  runStartupMigration,
+  runWithTransientRetries,
+  syncPostgresState,
+  STATE_KEY
+};

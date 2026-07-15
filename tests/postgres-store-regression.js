@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const { runStartupMigration, syncPostgresState } = require("../src/postgresStore");
+const { runStartupMigration, runWithTransientRetries, syncPostgresState } = require("../src/postgresStore");
 const { defaultState } = require("../src/store");
 
 function createRecordingClient() {
@@ -100,6 +100,24 @@ async function run() {
   });
   assert.equal(lockAttempts, 2);
   assert.equal(lockRetries, 1);
+
+  let mutationAttempts = 0;
+  let mutationRetries = 0;
+  const mutationResult = await runWithTransientRetries(async () => {
+    mutationAttempts += 1;
+    if (mutationAttempts < 3) {
+      const error = new Error("lock timeout");
+      error.code = "55P03";
+      throw error;
+    }
+    return "saved";
+  }, {
+    attempts: 4,
+    sleep: async () => { mutationRetries += 1; }
+  });
+  assert.equal(mutationResult, "saved");
+  assert.equal(mutationAttempts, 3);
+  assert.equal(mutationRetries, 2);
 
   let permanentAttempts = 0;
   await assert.rejects(

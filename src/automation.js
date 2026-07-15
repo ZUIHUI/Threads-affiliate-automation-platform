@@ -1599,6 +1599,13 @@ async function runAutomation(store, config, options = {}) {
         remaining -= 1;
       }
     } catch (error) {
+      console.error("Threads publishing operation failed:", {
+        postId: post.id,
+        phase: post.status,
+        code: error.code || "",
+        statusCode: error.statusCode || 0,
+        message: error.message
+      });
       post.status = error.message.includes("THREADS_USER_ID") ? STATUS.blockedCredentials : STATUS.failed;
       post.error = error.message;
       post.updatedAt = nowIso();

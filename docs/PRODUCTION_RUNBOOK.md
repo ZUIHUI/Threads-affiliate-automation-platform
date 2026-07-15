@@ -38,6 +38,7 @@ THREADS_USER_ID=<threads-user-id-required-before-live>
 THREADS_ACCESS_TOKEN=<long-lived-token-required-before-live>
 THREADS_GRAPH_BASE=https://graph.threads.net/v1.0
 THREADS_PUBLISH_DELAY_MS=30000
+THREADS_API_TIMEOUT_MS=20000
 
 OPENAI_API_KEY=<optional-for-openai-drafts>
 AI_DRAFT_PROVIDER=openai

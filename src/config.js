@@ -25,6 +25,7 @@ function getRuntimeConfig(env) {
     automationIntervalMs: Math.max(10_000, asNumber(env.AUTOMATION_INTERVAL_MS, 60_000)),
     workerLeaseMs: Math.max(30_000, asNumber(env.WORKER_LEASE_MS, 180_000)),
     threadsGraphBase: env.THREADS_GRAPH_BASE || "https://graph.threads.net/v1.0",
+    threadsApiTimeoutMs: Math.max(5_000, Math.min(asNumber(env.THREADS_API_TIMEOUT_MS, 20_000), 60_000)),
     threadsUserId: env.THREADS_USER_ID || "",
     threadsAccessToken: env.THREADS_ACCESS_TOKEN || "",
     adminToken: env.ADMIN_TOKEN || "",

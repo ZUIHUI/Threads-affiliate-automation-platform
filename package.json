@@ -9,8 +9,9 @@
   },
   "scripts": {
     "start": "node server.js",
-    "test": "node tests/postgres-store-regression.js && node tests/monetization-flow.js && node tests/offer-import.js && node tests/offer-page-context.js && node tests/offer-web-research.js && node tests/content-publishing-workflow.js && node tests/content-fatigue-soft-posts.js && node tests/run-tests.js && node tests/ui-contract.js",
+    "test": "node tests/postgres-store-regression.js && node tests/threads-client-timeout.js && node tests/monetization-flow.js && node tests/offer-import.js && node tests/offer-page-context.js && node tests/offer-web-research.js && node tests/content-publishing-workflow.js && node tests/content-fatigue-soft-posts.js && node tests/run-tests.js && node tests/ui-contract.js",
     "test:postgres": "node tests/postgres-store-regression.js",
+    "test:threads": "node tests/threads-client-timeout.js",
     "test:monetization": "node tests/monetization-flow.js",
     "test:offer-import": "node tests/offer-import.js",
     "test:offer-page": "node tests/offer-page-context.js",
