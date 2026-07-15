@@ -44,6 +44,7 @@ AI_DRAFT_PROVIDER=openai
 PROFIT_SCRIPT_PROVIDER=openai
 OPENAI_MODEL=gpt-5.2
 OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_TIMEOUT_MS=90000
 
 CONVERSION_WEBHOOK_SECRET=<long-random-webhook-secret>
 

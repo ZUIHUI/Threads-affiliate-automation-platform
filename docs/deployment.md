@@ -65,13 +65,14 @@ PROFIT_SCRIPT_PROVIDER=openai
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_MODEL=gpt-5.2
 OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_TIMEOUT_MS=90000
 OFFER_PAGE_CONTEXT_ENABLED=true
 OFFER_PAGE_TIMEOUT_MS=8000
 OFFER_PAGE_MAX_BYTES=524288
 OFFER_PAGE_MAX_CHARS=6000
 ```
 
-When `OFFER_PAGE_CONTEXT_ENABLED=true`, AI draft generation follows the selected affiliate link to its public HTTPS landing page and extracts bounded product evidence before writing. Redirects are revalidated, private and local networks are blocked, and webpage text is treated as untrusted data rather than instructions. If the merchant blocks automated reading or returns a non-HTML response, generation continues with the verified campaign and product fields already stored in the database.
+When `OFFER_PAGE_CONTEXT_ENABLED=true`, AI draft generation follows the selected affiliate link to its public HTTPS landing page and extracts bounded product evidence before writing. Redirects are revalidated, private and local networks are blocked, and webpage text is treated as untrusted data rather than instructions. If the merchant blocks automated reading or returns a non-HTML response, generation continues with the verified campaign and product fields already stored in the database. `OPENAI_TIMEOUT_MS` bounds the complete AI request and returns a retryable gateway timeout instead of leaving the dashboard waiting indefinitely.
 
 For offline demos, set `AI_DRAFT_PROVIDER=template` and
 `PROFIT_SCRIPT_PROVIDER=template`.

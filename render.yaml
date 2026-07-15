@@ -72,6 +72,8 @@ services:
         value: gpt-5.2
       - key: OPENAI_BASE_URL
         value: https://api.openai.com/v1
+      - key: OPENAI_TIMEOUT_MS
+        value: "90000"
       - key: DEFAULT_DISCLOSURE_TEXT
         value: 含聯盟連結
       - key: DEFAULT_UTM_SOURCE

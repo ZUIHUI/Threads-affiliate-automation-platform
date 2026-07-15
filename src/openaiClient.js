@@ -56,42 +56,71 @@ function normalizeDrafts(value) {
   }));
 }
 
+function openAITimeoutError(timeoutMs) {
+  const seconds = Math.ceil(timeoutMs / 1000);
+  const error = new Error(`OpenAI 產生文案逾時（${seconds} 秒），請稍後重試。`);
+  error.code = "OPENAI_TIMEOUT";
+  error.statusCode = 504;
+  return error;
+}
+
 async function generateOpenAIDrafts({ topic, offerContext = {}, config, fetchImpl = fetch }) {
   if (!config.openaiApiKey) {
     throw new Error("OPENAI_API_KEY is required for OpenAI draft generation.");
   }
 
-  const response = await fetchImpl(`${config.openaiBaseUrl.replace(/\/$/, "")}/responses`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${config.openaiApiKey}`,
-      "content-type": "application/json"
-    },
-    body: JSON.stringify({
-      model: config.openaiModel,
-      input: buildPrompt(topic, offerContext),
-      text: {
-        format: {
-          type: "json_schema",
-          name: "threads_affiliate_drafts",
-          strict: true,
-          schema: DRAFT_SCHEMA
-        }
-      }
-    })
+  const timeoutMs = Math.max(1, Number(config.openaiTimeoutMs || 90_000));
+  const controller = new AbortController();
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      controller.abort();
+      reject(openAITimeoutError(timeoutMs));
+    }, timeoutMs);
   });
+  const request = (async () => {
+    const response = await fetchImpl(`${config.openaiBaseUrl.replace(/\/$/, "")}/responses`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${config.openaiApiKey}`,
+        "content-type": "application/json"
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: config.openaiModel,
+        input: buildPrompt(topic, offerContext),
+        text: {
+          format: {
+            type: "json_schema",
+            name: "threads_affiliate_drafts",
+            strict: true,
+            schema: DRAFT_SCHEMA
+          }
+        }
+      })
+    });
 
-  const payload = await response.json();
-  if (!response.ok) {
-    const message = payload.error?.message || response.statusText || "OpenAI request failed.";
-    throw new Error(message);
-  }
+    const payload = await response.json();
+    if (!response.ok) {
+      const message = payload.error?.message || response.statusText || "OpenAI request failed.";
+      throw new Error(message);
+    }
 
-  const text = extractText(payload);
-  if (!text) {
-    throw new Error("OpenAI response did not include output text.");
+    const text = extractText(payload);
+    if (!text) {
+      throw new Error("OpenAI response did not include output text.");
+    }
+    return normalizeDrafts(JSON.parse(text));
+  })();
+
+  try {
+    return await Promise.race([request, timeout]);
+  } catch (error) {
+    if (error?.name === "AbortError") throw openAITimeoutError(timeoutMs);
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return normalizeDrafts(JSON.parse(text));
 }
 
 module.exports = {

@@ -41,6 +41,7 @@ function getRuntimeConfig(env) {
     openaiBaseUrl: env.OPENAI_BASE_URL || "https://api.openai.com/v1",
     openaiApiKey: env.OPENAI_API_KEY || "",
     openaiModel: env.OPENAI_MODEL || "gpt-5.2",
+    openaiTimeoutMs: Math.max(10_000, Math.min(asNumber(env.OPENAI_TIMEOUT_MS, 90_000), 120_000)),
     offerPageContextEnabled: asBoolean(env.OFFER_PAGE_CONTEXT_ENABLED, true),
     offerPageTimeoutMs: Math.max(1000, Math.min(asNumber(env.OFFER_PAGE_TIMEOUT_MS, 8000), 15_000)),
     offerPageMaxBytes: Math.max(64 * 1024, Math.min(asNumber(env.OFFER_PAGE_MAX_BYTES, 512 * 1024), 1024 * 1024)),

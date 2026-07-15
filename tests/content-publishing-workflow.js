@@ -5,6 +5,7 @@ const { getRuntimeConfig } = require("../src/config");
 const { upsertRealOffer } = require("../src/offerManagement");
 const { approvePost, schedulePost, STATUS } = require("../src/postReview");
 const { defaultState } = require("../src/store");
+const { generateOpenAIDrafts } = require("../src/openaiClient");
 
 async function main() {
   const config = getRuntimeConfig({
@@ -104,6 +105,18 @@ async function main() {
   assert.equal(published.run.simulated, 1);
   assert.equal(persisted.posts[0].status, STATUS.simulated);
   assert.equal(published.dashboard.contentWorkflow.stages.find((stage) => stage.id === "publish").status, "completed");
+
+  await assert.rejects(
+    generateOpenAIDrafts({
+      topic: "timeout proof",
+      config: { ...config, openaiTimeoutMs: 25 },
+      fetchImpl: async (_url, options) => {
+        assert.equal(options.signal instanceof AbortSignal, true);
+        return new Promise(() => {});
+      }
+    }),
+    (error) => error.code === "OPENAI_TIMEOUT" && error.statusCode === 504
+  );
 
   console.log("Content publishing workflow passed.");
 }
