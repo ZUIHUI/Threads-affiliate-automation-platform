@@ -6,6 +6,7 @@ const { upsertRealOffer } = require("../src/offerManagement");
 const { approvePost, schedulePost, STATUS } = require("../src/postReview");
 const { defaultState } = require("../src/store");
 const { generateOpenAIDrafts } = require("../src/openaiClient");
+const { buildPrompt } = require("../src/contentTemplates");
 
 async function main() {
   const config = getRuntimeConfig({
@@ -96,6 +97,26 @@ async function main() {
   assert.equal(generatedDashboard.contentWorkflow.stages.find((stage) => stage.id === "research").status, "completed");
   assert.equal(generatedDashboard.contentWorkflow.stages.find((stage) => stage.id === "review").status, "active");
   assert.equal(generatedDashboard.contentWorkflow.nextAction, "review");
+
+  const productPrompt = buildPrompt("小空間照明的選擇建議", {
+    targetPersona: "租屋族與需要夜間柔和照明的人",
+    productName: "USB-C 磁吸感應燈",
+    offer: "人體感應、三種色溫、免拉線安裝",
+    network: "Shopee",
+    disclosureText: "含聯盟連結",
+    trackingUrl: "https://threads-affiliate.example/r/sensor-light",
+    pageContext: JSON.stringify({
+      securityLabel: "UNTRUSTED_WEB_RESEARCH_DATA",
+      facts: [{ label: "充電", value: "USB-C" }],
+      caveats: ["續航時間依使用方式而異"]
+    })
+  });
+  assert.match(productPrompt, /實際目標受眾：租屋族與需要夜間柔和照明的人/);
+  assert.match(productPrompt, /不要把商品硬套進 AI、自動化、副業、創作者或賺錢情境/);
+  assert.match(productPrompt, /第 1 到第 4 則是非導購內容/);
+  assert.match(productPrompt, /只有第 5 則可以導購/);
+  assert.match(productPrompt, /限制與取捨/);
+  assert.doesNotMatch(productPrompt, /預設受眾：想了解 AI、自動化與聯盟行銷的初學者/);
 
   const post = conversionPost;
   approvePost(post, config, { actor: "workflow-test", recentPosts: [] });
