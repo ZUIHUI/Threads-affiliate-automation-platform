@@ -81,7 +81,7 @@ services:
       - key: AI_WEB_RESEARCH_ENABLED
         value: "true"
       - key: AI_WEB_RESEARCH_TIMEOUT_MS
-        value: "45000"
+        value: "60000"
       - key: AI_WEB_RESEARCH_MAX_SOURCES
         value: "6"
       - key: DEFAULT_DISCLOSURE_TEXT

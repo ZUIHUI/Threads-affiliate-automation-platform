@@ -47,7 +47,7 @@ function getRuntimeConfig(env) {
     offerPageMaxBytes: Math.max(64 * 1024, Math.min(asNumber(env.OFFER_PAGE_MAX_BYTES, 512 * 1024), 1024 * 1024)),
     offerPageMaxChars: Math.max(1000, Math.min(asNumber(env.OFFER_PAGE_MAX_CHARS, 6000), 10_000)),
     aiWebResearchEnabled: asBoolean(env.AI_WEB_RESEARCH_ENABLED, false),
-    aiWebResearchTimeoutMs: Math.max(5000, Math.min(asNumber(env.AI_WEB_RESEARCH_TIMEOUT_MS, 45_000), 60_000)),
+    aiWebResearchTimeoutMs: Math.max(5000, Math.min(asNumber(env.AI_WEB_RESEARCH_TIMEOUT_MS, 60_000), 90_000)),
     aiWebResearchMaxSources: Math.max(1, Math.min(asNumber(env.AI_WEB_RESEARCH_MAX_SOURCES, 6), 10)),
     databaseUrl: env.DATABASE_URL || "",
     databaseAutoMigrate: asBoolean(env.DATABASE_AUTO_MIGRATE, true),

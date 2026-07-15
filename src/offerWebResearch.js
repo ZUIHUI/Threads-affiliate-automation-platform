@@ -159,6 +159,8 @@ async function researchOfferWithOpenAI({ targetUrl, offerContext = {}, config, f
       signal: controller.signal,
       body: JSON.stringify({
         model: config.openaiModel,
+        reasoning: { effort: "low" },
+        max_output_tokens: 1600,
         tools: [{ type: "web_search", search_context_size: "low" }],
         tool_choice: "required",
         include: ["web_search_call.action.sources"],
