@@ -11,6 +11,9 @@ const state = {
     content: "",
     preview: null,
     canImport: false
+  },
+  workflow: {
+    selectedProductId: ""
   }
 };
 
@@ -20,8 +23,8 @@ const OFFER_IMPORT_MAX_BYTES = 256 * 1024;
 const WORKSPACE_MODE_KEY = "threads-affiliate-workspace-mode";
 const WORKSPACE_MODES = {
   operate: {
-    title: "日常營運",
-    subtitle: "草稿、審核、排程與發佈",
+    title: "內容發布",
+    subtitle: "商品研究、AI 文案、審核與發布",
     target: "#workflow-overview"
   },
   insights: {
@@ -512,6 +515,85 @@ function renderWorkflowSummary(data) {
   $("#workflowApprovedCount").textContent = Number(metrics.approved || 0);
   $("#workflowQueuedCount").textContent = Number(metrics.queued || 0);
   $("#workflowSentCount").textContent = Number(metrics.published || 0) + Number(metrics.simulated || 0);
+}
+
+function workflowStatusBadge(status) {
+  if (["completed", "ready"].includes(status)) return "good";
+  if (["active", "warning", "waiting"].includes(status)) return "warn";
+  return "bad";
+}
+
+function renderContentWorkflow(data) {
+  const workflow = data.contentWorkflow || {};
+  const metrics = data.metrics || {};
+  const stages = new Map((workflow.stages || []).map((stage) => [stage.id, stage]));
+  document.querySelectorAll("[data-workflow-stage]").forEach((node) => {
+    const stage = stages.get(node.dataset.workflowStage) || {};
+    node.className = `status-${stage.status || "waiting"}`;
+  });
+  const researchStage = stages.get("research");
+  if (researchStage) $("#workflowResearchDetail").textContent = researchStage.detail;
+
+  const monetizableProductIds = new Set((data.affiliateLinks || [])
+    .filter((link) => link.monetizable)
+    .map((link) => link.productId));
+  const products = (data.products || []).filter((product) => monetizableProductIds.has(product.id));
+  const campaigns = new Map((data.campaigns || []).map((campaign) => [campaign.id, campaign]));
+  const select = $("#workflowProductSelect");
+  const selectedId = state.workflow.selectedProductId || select.value || products[0]?.id || "";
+  select.innerHTML = products.map((product) => {
+    const campaign = campaigns.get(product.campaignId);
+    const label = campaign ? `${product.name} · ${campaign.name}` : product.name;
+    return `<option value="${escapeHtml(product.id)}" ${product.id === selectedId ? "selected" : ""}>${escapeHtml(label)}</option>`;
+  }).join("") || `<option value="">請先建立真實聯盟商品</option>`;
+  state.workflow.selectedProductId = select.value;
+
+  const product = products.find((item) => item.id === select.value);
+  const link = (data.affiliateLinks || []).find((item) => item.productId === product?.id && item.monetizable);
+  const sourceContext = workflow.sourceProductId === product?.id ? workflow.sourceContext || {} : {};
+  const sourceStatus = $("#workflowSourceStatus");
+  const sourceTitle = $("#workflowSourceTitle");
+  const sourceDetail = $("#workflowSourceDetail");
+  let status = "waiting";
+  let statusLabel = "等待研究";
+
+  if (!product) {
+    status = "blocked";
+    statusLabel = "缺少商品";
+    sourceTitle.textContent = "先建立真實聯盟商品";
+    sourceDetail.textContent = "請到系統設定新增或批次匯入 HTTPS 聯盟連結";
+  } else if (!workflow.aiReady) {
+    status = "blocked";
+    statusLabel = "AI 未設定";
+    sourceTitle.textContent = product.name;
+    sourceDetail.textContent = "Render 尚未設定 OPENAI_API_KEY";
+  } else if (sourceContext.status === "ready") {
+    status = "completed";
+    statusLabel = "資料已讀取";
+    sourceTitle.textContent = sourceContext.title || product.name;
+    sourceDetail.textContent = `${sourceContext.sourceDomain || link?.network || "商品頁"} · ${Number(sourceContext.characterCount || 0)} 字元資料`;
+  } else if (sourceContext.status === "unavailable") {
+    status = "warning";
+    statusLabel = "使用備援";
+    sourceTitle.textContent = product.name;
+    sourceDetail.textContent = sourceContext.error || "商品頁無法讀取，使用資料表優惠內容";
+  } else {
+    status = "ready";
+    statusLabel = "商品已就緒";
+    sourceTitle.textContent = product.name;
+    sourceDetail.textContent = `${link?.network || product.network || "聯盟平台"} · 等待 AI 讀取商品頁`;
+  }
+  sourceStatus.className = `badge ${workflowStatusBadge(status)}`;
+  sourceStatus.textContent = statusLabel;
+
+  const generateButton = $("#generateBtn");
+  generateButton.disabled = !product || !workflow.aiReady;
+  const runButton = $("#runBtn");
+  runButton.disabled = Number(metrics.queued || 0) === 0;
+  $("#workflowReviewLink").textContent = metrics.needsReview > 0
+    ? `審核 ${Number(metrics.needsReview)} 則草稿`
+    : "查看貼文佇列";
+  $("#workflowModeBadge").textContent = workflow.dryRun ? "測試發布" : "正式發布";
 }
 
 function pipelineStatusScore(status) {
@@ -2144,9 +2226,8 @@ function populateForm(data) {
     `<option value="${product.id}">${escapeHtml(product.name)}</option>`
   )).join("") || `<option value="">沒有可發佈的產品</option>`;
   const canCreateContent = eligibleCampaigns.length > 0 && eligibleProducts.length > 0;
-  [$("#generateBtn"), $("#topicGenerateBtn"), $("#composeForm button[type='submit']")].forEach((button) => {
-    if (button) button.disabled = !canCreateContent;
-  });
+  const composeButton = $("#composeForm button[type='submit']");
+  if (composeButton) composeButton.disabled = !canCreateContent;
 
   if (!$("#scheduledAt").value) {
     const date = new Date(Date.now() + 30 * 60 * 1000);
@@ -2175,6 +2256,7 @@ function render(data) {
   renderRevenue(data);
   renderCampaigns(data);
   populateForm(data);
+  renderContentWorkflow(data);
 }
 
 async function refresh() {
@@ -2208,13 +2290,15 @@ function sourceContextMessage(context, completedMessage) {
 
 async function generateDrafts() {
   const topic = $("#topicInput").value.trim() || "AI 自動化聯盟行銷";
+  const product = (state.dashboard?.products || []).find((item) => item.id === $("#workflowProductSelect").value);
+  if (!product) throw new Error("請先選擇真實聯盟商品。");
   const result = await api("/api/automation/generate", {
     method: "POST",
     body: {
       topic,
       autoApprove: false,
-      campaignId: $("#campaignSelect").value,
-      productId: $("#productSelect").value
+      campaignId: product.campaignId,
+      productId: product.id
     }
   });
   await refresh();
@@ -2516,7 +2600,11 @@ function bindEvents() {
   const bindAsyncButton = (selector, action, busyLabel) => {
     const button = $(selector);
     button?.addEventListener("click", () => {
-      runButtonAction(button, action, busyLabel).catch((error) => showToast(error.message));
+      runButtonAction(button, action, busyLabel)
+        .catch((error) => showToast(error.message))
+        .finally(() => {
+          if (state.dashboard) renderContentWorkflow(state.dashboard);
+        });
     });
   };
 
@@ -2528,7 +2616,6 @@ function bindEvents() {
   bindAsyncButton("#profitRunBtn", runProfitEngine, "研究中");
   bindAsyncButton("#cycleRunBtn", runAutonomyCycle, "執行中");
   bindAsyncButton("#generateBtn", generateDrafts, "產生中");
-  bindAsyncButton("#topicGenerateBtn", generateDrafts, "產生中");
   $("#postRows").addEventListener("click", (event) => {
     handlePostAction(event).catch((error) => {
       showToast(error.message);
@@ -2593,6 +2680,15 @@ function bindEvents() {
     });
   });
   $("#campaignSelect").addEventListener("change", () => populateForm(state.dashboard));
+  $("#workflowProductSelect").addEventListener("change", (event) => {
+    state.workflow.selectedProductId = event.currentTarget.value;
+    if (state.dashboard) renderContentWorkflow(state.dashboard);
+  });
+  $("#topicInput").addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || $("#generateBtn").disabled) return;
+    event.preventDefault();
+    $("#generateBtn").click();
+  });
 }
 
 bindEvents();

@@ -853,6 +853,69 @@ function buildWorkerLeaseStatus(state, config) {
   };
 }
 
+function buildContentWorkflow(state, config, metrics, monetizableLinks) {
+  const latestGeneration = (state.events || []).find((event) => event.type === "automation.drafts_generated");
+  const latestProfitContext = state.profitEngine?.runs?.find((run) => run.sourceContext)?.sourceContext;
+  const sourceContext = latestGeneration?.sourceContext || latestProfitContext || {};
+  const aiReady = config.aiDraftProvider === "openai" && Boolean(config.openaiApiKey);
+  const hasOffers = monetizableLinks.length > 0;
+  const publishedCount = Number(metrics.published || 0) + Number(metrics.simulated || 0);
+  const stages = [
+    {
+      id: "research",
+      status: !hasOffers ? "blocked" : sourceContext.status === "ready" ? "completed" : sourceContext.status === "unavailable" ? "warning" : "ready",
+      count: monetizableLinks.length,
+      detail: !hasOffers
+        ? "尚未建立真實聯盟商品"
+        : sourceContext.status === "ready"
+          ? `已讀取 ${sourceContext.title || sourceContext.sourceDomain || "商品頁"}`
+          : sourceContext.status === "unavailable"
+            ? "商品頁無法讀取，使用已存優惠資料"
+            : "真實商品連結已就緒"
+    },
+    {
+      id: "generate",
+      status: !aiReady ? "blocked" : metrics.needsReview > 0 ? "completed" : "ready",
+      count: Number(metrics.needsReview || 0),
+      detail: !aiReady ? "尚未設定 OpenAI" : metrics.needsReview > 0 ? `${metrics.needsReview} 則草稿等待審核` : "AI 文案服務已就緒"
+    },
+    {
+      id: "review",
+      status: metrics.needsReview > 0 ? "active" : (metrics.approved > 0 || metrics.queued > 0 || publishedCount > 0) ? "completed" : "waiting",
+      count: Number(metrics.needsReview || 0),
+      detail: metrics.needsReview > 0 ? "請確認事實、語氣與揭露" : "目前沒有待審核草稿"
+    },
+    {
+      id: "publish",
+      status: metrics.queued > 0 ? "active" : publishedCount > 0 ? "completed" : "waiting",
+      count: Number(metrics.queued || 0),
+      detail: metrics.queued > 0
+        ? `${metrics.queued} 則已核准並排程`
+        : config.threadsDryRun
+          ? "目前為測試發布模式"
+          : "目前沒有待發布貼文"
+    }
+  ];
+  const nextAction = !hasOffers
+    ? "add_offer"
+    : !aiReady
+      ? "configure_ai"
+      : metrics.needsReview > 0
+        ? "review"
+        : metrics.queued > 0
+          ? "publish"
+          : "generate";
+  return {
+    nextAction,
+    sourceContext,
+    sourceProductId: latestGeneration?.productId || "",
+    aiReady,
+    hasOffers,
+    dryRun: config.threadsDryRun,
+    stages
+  };
+}
+
 function buildDashboard(state, config) {
   const posts = state.posts;
   const affiliateLinks = state.affiliateLinks;
@@ -889,6 +952,7 @@ function buildDashboard(state, config) {
   const growthLoop = buildAutonomousGrowthLoop(state, config, profitEngine, readiness, autonomyPolicy, autonomyPipeline, metrics);
   const attribution = buildAttributionDashboard(state);
   const workerLease = buildWorkerLeaseStatus(state, config);
+  const contentWorkflow = buildContentWorkflow(state, config, metrics, monetizableLinks);
 
   return {
     generatedAt: nowIso(),
@@ -903,6 +967,7 @@ function buildDashboard(state, config) {
       autonomyMode: config.autonomyMode
     },
     metrics,
+    contentWorkflow,
     campaigns: state.campaigns,
     products: state.products,
     affiliateLinks: state.affiliateLinks.map((link) => ({
@@ -1039,6 +1104,10 @@ function createDraftPosts(state, input, config, drafts, campaign, product, link,
     id: makeId("evt"),
     type: "automation.drafts_generated",
     count: created.length,
+    campaignId: campaign.id,
+    productId: product.id,
+    affiliateLinkId: link.id,
+    sourceContext: options.sourceContext || {},
     createdAt: nowIso()
   });
   return { created };
@@ -1089,7 +1158,10 @@ function generateDrafts(state, input, config, options = {}) {
     trackingLink: trackingUrl(config, link.slug),
     disclosureText: config.defaultDisclosureText
   });
-  return createDraftPosts(state, input, config, drafts, campaign, product, link, topic, options);
+  return createDraftPosts(state, input, config, drafts, campaign, product, link, topic, {
+    ...options,
+    sourceContext: publicContextSummary({ status: "ai_unavailable" })
+  });
 }
 
 async function generateDraftsAsync(state, input, config, options = {}) {
@@ -1119,9 +1191,13 @@ async function generateDraftsAsync(state, input, config, options = {}) {
         trackingLink: trackingUrl(config, link.slug),
         disclosureText: config.defaultDisclosureText
       });
+  const sourceContext = publicContextSummary(pageContext);
   return {
-    ...createDraftPosts(state, input, config, drafts, campaign, product, link, topic, options),
-    sourceContext: publicContextSummary(pageContext)
+    ...createDraftPosts(state, input, config, drafts, campaign, product, link, topic, {
+      ...options,
+      sourceContext
+    }),
+    sourceContext
   };
 }
 

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Threads 聯盟自動化</title>
-    <link rel="stylesheet" href="/styles.css?v=20260714-offer-import" />
+    <link rel="stylesheet" href="/styles.css?v=20260715-focused-workflow" />
   </head>
   <body>
     <div class="app-shell">
@@ -20,7 +20,7 @@
         <div class="workspace-mode-switcher" aria-label="工作模式">
           <span>工作模式</span>
           <div class="workspace-mode-options" role="tablist" aria-label="選擇工作模式">
-            <button type="button" role="tab" data-workspace-mode="operate" aria-selected="true">日常營運</button>
+            <button type="button" role="tab" data-workspace-mode="operate" aria-selected="true">內容發布</button>
             <button type="button" role="tab" data-workspace-mode="insights" aria-selected="false">成效分析</button>
             <button type="button" role="tab" data-workspace-mode="system" aria-selected="false">系統設定</button>
           </div>
@@ -28,11 +28,9 @@
 
         <nav class="nav-list" aria-label="功能導覽">
           <div class="nav-group" data-mode-nav="operate">
-            <p class="nav-group-label">貼文流程</p>
-            <a href="#workflow-overview" class="nav-item is-active">流程總覽</a>
-            <a href="#factory" class="nav-item">內容審核</a>
-            <a href="#risk" class="nav-item">合規風險</a>
-            <a href="#compose" class="nav-item">手動新增</a>
+            <p class="nav-group-label">內容發布</p>
+            <a href="#workflow-overview" class="nav-item is-active">AI 發文流程</a>
+            <a href="#factory" class="nav-item">審核與發布</a>
           </div>
           <div class="nav-group" data-mode-nav="insights" hidden>
             <p class="nav-group-label">收益與優化</p>
@@ -49,6 +47,8 @@
             <a href="#operating-map" class="nav-item">營運地圖</a>
             <a href="#timeline" class="nav-item">營運紀錄</a>
             <a href="#worker-health" class="nav-item">工作程序</a>
+            <a href="#risk" class="nav-item">合規風險</a>
+            <a href="#compose" class="nav-item">手動工具</a>
             <a href="#settings" class="nav-item">活動設定</a>
           </div>
         </nav>
@@ -75,8 +75,8 @@
         <header class="topbar">
           <button class="icon-button" id="sidebarToggle" type="button" aria-label="開啟導覽" aria-controls="sidebar" aria-expanded="false">☰</button>
           <div class="view-title">
-            <h2 id="workspaceModeTitle">日常營運</h2>
-            <span id="workspaceModeSubtitle">草稿、審核、排程與發佈</span>
+            <h2 id="workspaceModeTitle">內容發布</h2>
+            <span id="workspaceModeSubtitle">商品研究、AI 文案、審核與發布</span>
             <small>資料更新於 <strong id="updatedAt">--</strong></small>
           </div>
           <div class="topbar-actions">
@@ -84,12 +84,8 @@
               <span class="runtime-pill" id="runtimePill">載入中</span>
             </div>
             <div class="topbar-secondary-actions">
-              <button class="button secondary" id="generateBtn" type="button" data-action-modes="operate">產生草稿</button>
               <button class="button secondary" id="cycleRunBtn" type="button" data-action-modes="insights">執行自主循環</button>
               <button class="button tertiary" id="adminLogoutBtn" type="button">登出</button>
-            </div>
-            <div class="topbar-primary-actions">
-              <button class="button" id="runBtn" type="button" data-action-modes="operate">執行發佈佇列</button>
             </div>
           </div>
         </header>
@@ -97,17 +93,41 @@
         <section class="workflow-overview" id="workflow-overview" data-workspace-section="operate" aria-labelledby="workflowOverviewTitle">
           <div class="workflow-overview-header">
             <div>
-              <p class="eyebrow">日常營運</p>
-              <h3 id="workflowOverviewTitle">貼文發佈流程</h3>
+              <p class="eyebrow">主要工作</p>
+              <h3 id="workflowOverviewTitle">從真實商品資料到 Threads 發布</h3>
             </div>
             <span class="workflow-mode-badge" id="workflowModeBadge">測試模式</span>
           </div>
           <ol class="workflow-mode-steps">
-            <li><span>1</span><div><strong>產生草稿</strong><small><b id="workflowDraftCount">0</b> 則待審核</small></div></li>
-            <li><span>2</span><div><strong>人工審核</strong><small><b id="workflowApprovedCount">0</b> 則已核准</small></div></li>
-            <li><span>3</span><div><strong>設定排程</strong><small><b id="workflowQueuedCount">0</b> 則待發佈</small></div></li>
-            <li><span>4</span><div><strong>發佈追蹤</strong><small><b id="workflowSentCount">0</b> 則已送出</small></div></li>
+            <li data-workflow-stage="research"><span>1</span><div><strong>讀取商品資料</strong><small id="workflowResearchDetail">等待選擇商品</small></div></li>
+            <li data-workflow-stage="generate"><span>2</span><div><strong>AI 產生文案</strong><small><b id="workflowDraftCount">0</b> 則待審核</small></div></li>
+            <li data-workflow-stage="review"><span>3</span><div><strong>人工審核</strong><small><b id="workflowApprovedCount">0</b> 則已核准</small></div></li>
+            <li data-workflow-stage="publish"><span>4</span><div><strong>發布 Threads</strong><small><b id="workflowQueuedCount">0</b> 則待發布 · <b id="workflowSentCount">0</b> 則完成</small></div></li>
           </ol>
+          <div class="workflow-control-bar">
+            <label class="workflow-field workflow-product-field">
+              <span>聯盟商品</span>
+              <select id="workflowProductSelect" aria-describedby="workflowSourceDetail"></select>
+            </label>
+            <label class="workflow-field workflow-topic-field">
+              <span>貼文主題</span>
+              <input id="topicInput" type="text" value="真實商品使用情境與選擇建議" maxlength="80" />
+            </label>
+            <button class="button workflow-generate" id="generateBtn" type="button">AI 研究並產生草稿</button>
+          </div>
+          <div class="workflow-status-bar" id="workflowStatusBar">
+            <div class="workflow-source-state">
+              <span class="badge" id="workflowSourceStatus">等待研究</span>
+              <div>
+                <strong id="workflowSourceTitle">請選擇真實聯盟商品</strong>
+                <small id="workflowSourceDetail">AI 將讀取商品頁後產生 5 則草稿</small>
+              </div>
+            </div>
+            <div class="workflow-final-actions">
+              <a class="button secondary" id="workflowReviewLink" href="#factory">審核草稿</a>
+              <button class="button" id="runBtn" type="button">發布已排程貼文</button>
+            </div>
+          </div>
         </section>
 
         <section class="command-strip" id="commandStats" data-workspace-section="insights" aria-label="成效摘要">
@@ -269,7 +289,7 @@
           </div>
         </section>
 
-        <section class="ops-grid" data-workspace-section="operate insights">
+        <section class="ops-grid" data-workspace-section="operate insights system">
           <section class="panel profit-engine-panel" id="profit-engine" data-workspace-section="insights">
             <div class="panel-header">
               <div>
@@ -338,7 +358,7 @@
 
           </section>
 
-          <section class="panel risk-panel" id="risk" data-workspace-section="operate">
+          <section class="panel risk-panel" id="risk" data-workspace-section="system">
             <div class="panel-header">
               <div>
                 <p class="eyebrow">合規 / 風險審核</p>
@@ -381,8 +401,8 @@
           </section>
         </section>
 
-        <section class="lower-grid" data-workspace-section="operate system">
-          <section class="panel compose-panel" id="compose" data-workspace-section="operate">
+        <section class="lower-grid" data-workspace-section="system">
+          <section class="panel compose-panel" id="compose" data-workspace-section="system">
             <div class="panel-header compact">
               <div>
                 <p class="eyebrow">手動建立</p>
@@ -424,13 +444,6 @@
                 <p class="eyebrow">AI 指令設定</p>
                 <h3>發文指令範本</h3>
               </div>
-            </div>
-            <div class="prompt-controls">
-              <label>
-                <span>主題</span>
-                <input id="topicInput" type="text" value="AI 自動化聯盟行銷" />
-              </label>
-              <button class="button secondary" id="topicGenerateBtn" type="button">依主題產 5 則</button>
             </div>
             <pre id="promptTemplate"></pre>
           </section>
@@ -557,6 +570,6 @@
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="/console.js?v=20260715-page-context"></script>
+    <script src="/console.js?v=20260715-focused-workflow"></script>
   </body>
 </html>

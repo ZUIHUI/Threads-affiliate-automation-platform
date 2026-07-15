@@ -56,6 +56,15 @@ const requiredHtml = [
   'id="commandStats"',
   'id="workflow-overview"',
   'id="workflowModeBadge"',
+  'id="workflowProductSelect"',
+  'id="workflowSourceStatus"',
+  'id="workflowSourceTitle"',
+  'id="workflowSourceDetail"',
+  'id="workflowReviewLink"',
+  'data-workflow-stage="research"',
+  'data-workflow-stage="generate"',
+  'data-workflow-stage="review"',
+  'data-workflow-stage="publish"',
   'data-workspace-mode="operate"',
   'data-workspace-mode="insights"',
   'data-workspace-mode="system"',
@@ -101,8 +110,8 @@ const requiredHtml = [
   "內容工廠",
   "合規 / 風險審核",
   "聯盟收益管道",
-  '<link rel="stylesheet" href="/styles.css?v=20260714-offer-import" />',
-  '<script src="/console.js?v=20260715-page-context"></script>'
+  '<link rel="stylesheet" href="/styles.css?v=20260715-focused-workflow" />',
+  '<script src="/console.js?v=20260715-focused-workflow"></script>'
 ];
 
 for (const marker of requiredHtml) {
@@ -229,6 +238,8 @@ const requiredJs = [
   "setWorkspaceMode",
   "setupWorkspaceModes",
   "renderWorkflowSummary",
+  "renderContentWorkflow",
+  "contentWorkflow",
   "WORKSPACE_MODE_KEY",
   "setupNavigation",
   "runButtonAction",
@@ -335,6 +346,10 @@ const requiredCss = [
   ".workspace-mode-options",
   ".workflow-overview",
   ".workflow-mode-steps",
+  ".workflow-control-bar",
+  ".workflow-status-bar",
+  ".workflow-source-state",
+  ".workflow-final-actions",
   ".fatigue-detail",
   ".action-block-reason",
   "z-index: 100",
