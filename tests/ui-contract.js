@@ -110,8 +110,8 @@ const requiredHtml = [
   "內容工廠",
   "合規 / 風險審核",
   "聯盟收益管道",
-  '<link rel="stylesheet" href="/styles.css?v=20260715-content-policy" />',
-  '<script src="/console.js?v=20260715-content-policy"></script>'
+  '<link rel="stylesheet" href="/styles.css?v=20260715-natural-variants" />',
+  '<script src="/console.js?v=20260715-natural-variants"></script>'
 ];
 
 for (const marker of requiredHtml) {
